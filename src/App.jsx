@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
@@ -62,6 +62,66 @@ async function apiPatch(path, body) {
 }
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
+}
+// --- CSV helpers for bulk inventory export/import ---
+function csvEscape(val) {
+  const s = String(val ?? '');
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+function toCSV(rows, headers) {
+  const lines = [headers.join(',')];
+  for (const row of rows) {
+    lines.push(headers.map(h => csvEscape(row[h])).join(','));
+  }
+  return lines.join('\n');
+}
+// Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes, commas/newlines inside quotes.
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field); field = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else {
+      field += c;
+    }
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  if (rows.length === 0) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).map(r => {
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = (r[idx] ?? '').trim(); });
+    return obj;
+  });
+}
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 // Price is stored per single "each"; each case/pack ordered contains
 // item.pack eaches. Line total = price × pack size × cases ordered.
@@ -367,6 +427,13 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
 
       {screen === 'brands' && !searching && (
         <div style={styles.brandGrid}>
+          <button
+            style={{ ...styles.brandTile, background: '#3C4132' }}
+            onClick={() => { setBrand('All'); setScreen('items'); }}
+          >
+            <span style={styles.brandTileName}>All Items</span>
+            <span style={styles.brandTileCount}>{items.length} items</span>
+          </button>
           {brandList.map((b, idx) => (
             <button
               key={b}
@@ -386,7 +453,7 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
             <ChevronLeft size={16} color="#14181F" />
             <span>Brands</span>
           </button>
-          <span style={styles.itemsSubHeaderBrand}>{brand}</span>
+          <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
         </div>
       )}
       {searching && (
@@ -720,6 +787,13 @@ function InventoryTab({ items }) {
 
       {screen === 'brands' && !searching && !lowOnly && (
         <div style={styles.brandGrid}>
+          <button
+            style={{ ...styles.brandTile, background: '#3C4132' }}
+            onClick={() => { setBrand('All'); setScreen('items'); }}
+          >
+            <span style={styles.brandTileName}>All Items</span>
+            <span style={styles.brandTileCount}>{items.length} items</span>
+          </button>
           {brandList.map((b, idx) => (
             <button
               key={b}
@@ -739,7 +813,7 @@ function InventoryTab({ items }) {
             <ChevronLeft size={16} color="#14181F" />
             <span>Brands</span>
           </button>
-          <span style={styles.itemsSubHeaderBrand}>{brand}</span>
+          <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
         </div>
       )}
       {(searching || lowOnly) && (
@@ -1049,6 +1123,9 @@ function OfficeInventory({ items, onRefresh }) {
   const [showInactive, setShowInactive] = useState(false);
   const [renamingBrand, setRenamingBrand] = useState(false);
   const [brandNameInput, setBrandNameInput] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const fileInputRef = useRef(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
 
@@ -1088,8 +1165,54 @@ function OfficeInventory({ items, onRefresh }) {
     setRenamingBrand(false);
   }
 
+  function exportCSV() {
+    const headers = ['SKU', 'Item', 'Brand', 'Pack', 'Price', 'Stock', 'Active'];
+    const rows = filtered.map(i => ({
+      SKU: i.id, Item: i.name, Brand: i.brand, Pack: i.pack || 1,
+      Price: i.price, Stock: i.stock, Active: i.active ? 'yes' : 'no',
+    }));
+    const name = brand === 'All' ? 'inventory' : brand.replace(/[^a-z0-9]+/gi, '_');
+    downloadTextFile(`${name}-${new Date().toISOString().slice(0, 10)}.csv`, toCSV(rows, headers));
+  }
+
+  function triggerImport() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // reset so re-selecting the same file re-triggers onChange
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      const skuKey = Object.keys(rows[0] || {}).find(k => k.toLowerCase() === 'sku') || 'SKU';
+      const stockKey = Object.keys(rows[0] || {}).find(k => k.toLowerCase() === 'stock');
+      const priceKey = Object.keys(rows[0] || {}).find(k => k.toLowerCase() === 'price');
+      const updates = rows
+        .map(r => ({ id: r[skuKey], stock: stockKey ? r[stockKey] : undefined, price: priceKey ? r[priceKey] : undefined }))
+        .filter(u => u.id);
+      const result = await apiPost('/items/bulk-update', { updates });
+      setImportResult(result);
+      await onRefresh();
+    } catch (err) {
+      setImportResult({ error: err.message || 'Import failed' });
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: 'none' }}
+        onChange={handleImportFile}
+      />
       <div style={officeStyles.sectionHeader}>
         <div style={officeStyles.sectionTitle}>Inventory</div>
         <input
@@ -1125,12 +1248,30 @@ function OfficeInventory({ items, onRefresh }) {
             <button style={officeStyles.smallBtn} onClick={startRenameBrand}>Rename brand</button>
           </>
         )}
+        <button style={officeStyles.smallBtn} onClick={exportCSV} title="Download the items currently shown as a CSV">
+          Export CSV
+        </button>
+        <button style={officeStyles.smallBtn} onClick={triggerImport} disabled={importing} title="Upload a CSV to bulk-update stock and/or price">
+          {importing ? 'Importing…' : 'Import CSV'}
+        </button>
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
         <div style={officeStyles.countPill}>{filtered.length} item{filtered.length === 1 ? '' : 's'}</div>
       </div>
+
+      {importResult && (
+        <div style={importResult.error ? officeStyles.importBannerError : officeStyles.importBanner}>
+          {importResult.error
+            ? `Import failed: ${importResult.error}`
+            : `Updated ${importResult.updated} of ${importResult.totalRows} rows.` +
+              (importResult.notFound.length > 0
+                ? ` ${importResult.notFound.length} SKU${importResult.notFound.length === 1 ? '' : 's'} not found: ${importResult.notFound.slice(0, 8).join(', ')}${importResult.notFound.length > 8 ? '…' : ''}`
+                : '')}
+          <button style={officeStyles.dismissBtn} onClick={() => setImportResult(null)}>×</button>
+        </div>
+      )}
 
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
@@ -1236,6 +1377,15 @@ function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '
   const [value, setValue] = useState(String(original));
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [focused, setFocused] = useState(false);
+
+  // Resync displayed value when the item changes from outside this editor
+  // (e.g. a CSV bulk import, or someone else's edit landing via refresh) —
+  // but never while the user is actively focused/typing in this field.
+  useEffect(() => {
+    if (!focused) setValue(String(original));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [original]);
 
   async function save() {
     const num = Number(value);
@@ -1261,7 +1411,8 @@ function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '
         style={{ ...officeStyles.stockInput, width }}
         value={value}
         onChange={e => setValue(e.target.value)}
-        onBlur={save}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); save(); }}
         onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
         inputMode="decimal"
       />
@@ -1292,7 +1443,13 @@ function StockEditor({ item, onSaved }) {
   const [value, setValue] = useState(String(item.stock));
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [focused, setFocused] = useState(false);
   const dirty = Number(value) !== item.stock;
+
+  useEffect(() => {
+    if (!focused) setValue(String(item.stock));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.stock]);
 
   async function save() {
     const num = Number(value);
@@ -1317,7 +1474,8 @@ function StockEditor({ item, onSaved }) {
         style={{ ...officeStyles.stockInput, ...(item.stock <= 5 ? officeStyles.stockInputLow : {}) }}
         value={value}
         onChange={e => setValue(e.target.value)}
-        onBlur={save}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); save(); }}
         onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
         inputMode="numeric"
       />
@@ -1524,6 +1682,9 @@ const officeStyles = {
   navBtnActive: { background: '#2B5D50', color: '#F7F8F4' },
   refreshBtn: { display: 'flex', alignItems: 'center', gap: 6, background: '#2A2E23', color: '#EDEBE3', border: '1px solid #3C4132', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   autoLink: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', whiteSpace: 'nowrap' },
+  importBanner: { display: 'flex', alignItems: 'center', gap: 10, background: '#DCEEE8', color: '#1E4238', border: '1px solid #B7DBCF', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
+  importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
+  dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
   body: { flex: 1, padding: '20px 24px 40px', background: '#F7F8F4' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
