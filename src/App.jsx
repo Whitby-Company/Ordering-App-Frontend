@@ -3,8 +3,28 @@ import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
   AlertTriangle, ChevronRight, Loader2, WifiOff, RefreshCw, Monitor,
+  Grid2x2, Rows,
 } from 'lucide-react';
 
+const GRID_SIZES = [
+  { id: 'tiny', minWidth: 76 },
+  { id: 'compact', minWidth: 100 },
+  { id: 'cozy', minWidth: 150 },
+  { id: 'large', minWidth: 220 },
+];
+function nextGridSize(current) {
+  const idx = GRID_SIZES.findIndex(s => s.id === current);
+  return GRID_SIZES[(idx + 1) % GRID_SIZES.length].id;
+}
+function gridSizeMinWidth(id) {
+  return (GRID_SIZES.find(s => s.id === id) || GRID_SIZES[1]).minWidth;
+}
+function GridSizeIcon({ variant, ...props }) {
+  if (variant === 'tiny') return <Grid2x2 {...props} />;
+  if (variant === 'compact') return <LayoutGrid {...props} />;
+  if (variant === 'cozy') return <Boxes {...props} />;
+  return <Rows {...props} />;
+}
 // Your live backend, deployed on Render.
 const API_BASE = 'https://ordering-app-ycc9.onrender.com/api';
 
@@ -357,7 +377,7 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
 
   function toggleGridSize() {
     setGridSize(prev => {
-      const next = prev === 'compact' ? 'cozy' : 'compact';
+      const next = nextGridSize(prev);
       try { localStorage.setItem('orderGridSize', next); } catch { /* ignore */ }
       return next;
     });
@@ -519,27 +539,27 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
             </button>
           )}
         </div>
-        <button style={styles.gridSizeBtn} onClick={toggleGridSize} title="Change tile size">
-          {gridSize === 'compact' ? <LayoutGrid size={16} color="#5B6058" /> : <Boxes size={16} color="#5B6058" />}
+        <button style={styles.gridSizeBtn} onClick={toggleGridSize} title={`Tile size: ${gridSize} (tap to change)`}>
+          <GridSizeIcon variant={gridSize} size={16} color="#5B6058" />
         </button>
       </div>
 
       {screen === 'brands' && !searching && (
-        <div style={{ ...styles.brandGrid, gridTemplateColumns: `repeat(auto-fill, minmax(${gridSize === 'compact' ? 100 : 150}px, 1fr))` }}>
+        <div style={{ ...styles.brandGrid, gridTemplateColumns: `repeat(auto-fill, minmax(${gridSizeMinWidth(gridSize)}px, 1fr))` }}>
           <button
-            style={{ ...styles.brandTile, background: '#3C4132', ...(gridSize === 'compact' ? styles.brandTileCompact : {}) }}
+            style={{ ...styles.brandTile, background: '#3C4132', ...styles.brandTileVariant[gridSize] }}
             onClick={() => { setBrand('All'); setScreen('items'); }}
           >
-            <span style={styles.brandTileName}>All Items</span>
+            <span style={{ ...styles.brandTileName, ...styles.brandTileNameVariant[gridSize] }}>All Items</span>
             <span style={styles.brandTileCount}>{items.length} items</span>
           </button>
           {brandList.map((b, idx) => (
             <button
               key={b}
-              style={{ ...styles.brandTile, background: brandColor(b, idx), ...(gridSize === 'compact' ? styles.brandTileCompact : {}) }}
+              style={{ ...styles.brandTile, background: brandColor(b, idx), ...styles.brandTileVariant[gridSize] }}
               onClick={() => { setBrand(b); setScreen('items'); }}
             >
-              <span style={styles.brandTileName}>{b}</span>
+              <span style={{ ...styles.brandTileName, ...styles.brandTileNameVariant[gridSize] }}>{b}</span>
               <span style={styles.brandTileCount}>{brandCounts[b] || 0} items</span>
             </button>
           ))}
@@ -2017,8 +2037,19 @@ const styles = {
   gridSizeBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
   brandGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, padding: '8px 16px 20px', flex: 1, minHeight: 0, overflowY: 'auto', alignContent: 'start' },
   brandTile: { border: 'none', borderRadius: 14, padding: '20px 14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, cursor: 'pointer', minHeight: 78 },
-  brandTileCompact: { padding: '13px 10px', minHeight: 58, borderRadius: 12, gap: 2 },
+  brandTileVariant: {
+    tiny: { padding: '9px 7px', minHeight: 44, borderRadius: 10, gap: 1 },
+    compact: { padding: '13px 10px', minHeight: 58, borderRadius: 12, gap: 2 },
+    cozy: {},
+    large: { padding: '26px 18px', minHeight: 96, borderRadius: 16, gap: 6 },
+  },
   brandTileName: { color: '#F7F8F4', fontSize: 15, fontWeight: 700 },
+  brandTileNameVariant: {
+    tiny: { fontSize: 11.5, lineHeight: 1.2 },
+    compact: {},
+    cozy: {},
+    large: { fontSize: 17 },
+  },
   brandTileCount: { color: 'rgba(247,248,244,0.75)', fontSize: 11.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
   itemsSubHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 6px' },
   backBtn: { display: 'flex', alignItems: 'center', gap: 2, background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', padding: 0, fontFamily: 'inherit' },
