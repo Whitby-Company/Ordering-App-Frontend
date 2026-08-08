@@ -1154,11 +1154,20 @@ function OfficeInventory({ items, onRefresh }) {
               <tr key={item.id} style={!item.active ? officeStyles.rowInactive : undefined}>
                 <td style={officeStyles.td}>{item.id}</td>
                 <td style={officeStyles.td}>
-                  <NameEditor item={item} onSaved={onRefresh} />
+                  <TextFieldEditor item={item} field="name" onSaved={onRefresh} />
                 </td>
-                <td style={officeStyles.td}>{item.brand}</td>
-                <td style={{ ...officeStyles.td, textAlign: 'right' }}>{item.packLabel || item.pack || 1}</td>
-                <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(item.price)}</td>
+                <td style={officeStyles.td}>
+                  <TextFieldEditor item={item} field="brand" onSaved={onRefresh} />
+                </td>
+                <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                    <NumberFieldEditor item={item} field="pack" onSaved={onRefresh} min={1} width={56} />
+                    {item.packLabel && <span style={{ fontSize: 10.5, color: '#8A8F87' }}>{item.packLabel}</span>}
+                  </div>
+                </td>
+                <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                  <NumberFieldEditor item={item} field="price" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} />
+                </td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   <StockEditor item={item} onSaved={onRefresh} />
@@ -1178,20 +1187,21 @@ function OfficeInventory({ items, onRefresh }) {
   );
 }
 
-function NameEditor({ item, onSaved }) {
+function TextFieldEditor({ item, field, onSaved, placeholder }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(item.name);
+  const [value, setValue] = useState(item[field] || '');
   const [saving, setSaving] = useState(false);
+  const original = item[field] || '';
 
   async function save() {
     const trimmed = value.trim();
-    if (!trimmed || trimmed === item.name) { setValue(item.name); setEditing(false); return; }
+    if (!trimmed || trimmed === original) { setValue(original); setEditing(false); return; }
     setSaving(true);
     try {
-      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { name: trimmed });
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { [field]: trimmed });
       await onSaved();
     } catch (err) {
-      setValue(item.name);
+      setValue(original);
     } finally {
       setSaving(false);
       setEditing(false);
@@ -1200,8 +1210,8 @@ function NameEditor({ item, onSaved }) {
 
   if (!editing) {
     return (
-      <button style={officeStyles.nameEditBtn} onClick={() => { setValue(item.name); setEditing(true); }} title="Click to rename">
-        {item.name}
+      <button style={officeStyles.nameEditBtn} onClick={() => { setValue(original); setEditing(true); }} title={`Click to edit ${field}`}>
+        {original || <span style={{ color: '#8A8F87' }}>{placeholder || '—'}</span>}
       </button>
     );
   }
@@ -1213,10 +1223,50 @@ function NameEditor({ item, onSaved }) {
         value={value}
         onChange={e => setValue(e.target.value)}
         onBlur={save}
-        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setValue(item.name); setEditing(false); } }}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setValue(original); setEditing(false); } }}
         autoFocus
       />
       {saving && <Loader2 size={13} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
+    </span>
+  );
+}
+
+function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '', width = 70 }) {
+  const original = Number(item[field]) || 0;
+  const [value, setValue] = useState(String(original));
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  async function save() {
+    const num = Number(value);
+    if (Number.isNaN(num) || num < min) { setValue(String(original)); return; }
+    if (num === original) return;
+    setSaving(true);
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { [field]: num });
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1200);
+      await onSaved();
+    } catch (err) {
+      setValue(String(original));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {prefix && <span style={{ fontSize: 12.5, color: '#8A8F87' }}>{prefix}</span>}
+      <input
+        style={{ ...officeStyles.stockInput, width }}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+        inputMode="decimal"
+      />
+      {saving && <Loader2 size={13} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
+      {!saving && savedFlash && <Check size={14} color="#2B5D50" />}
     </span>
   );
 }
