@@ -349,6 +349,44 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
   const [confirmed, setConfirmed] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [gridSize, setGridSize] = useState(() => {
+    try { return localStorage.getItem('orderGridSize') || 'compact'; } catch { return 'compact'; }
+  });
+  const [pickersExpanded, setPickersExpanded] = useState(true);
+  const touchStartRef = useRef(null);
+
+  function toggleGridSize() {
+    setGridSize(prev => {
+      const next = prev === 'compact' ? 'cozy' : 'compact';
+      try { localStorage.setItem('orderGridSize', next); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  const bothPicked = !!customerId && !!deliveryDate;
+  useEffect(() => {
+    if (bothPicked) setPickersExpanded(false);
+  }, [bothPicked]);
+
+  function goBackToBrands() {
+    setScreen('brands');
+    setBrand('All');
+  }
+
+  function handleTouchStart(e) {
+    if (screen !== 'items' || searching) return;
+    const t = e.touches[0];
+    if (t.clientX < 24) touchStartRef.current = { x: t.clientX, y: t.clientY };
+    else touchStartRef.current = null;
+  }
+  function handleTouchEnd(e) {
+    if (!touchStartRef.current) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartRef.current.x;
+    const dy = Math.abs(t.clientY - touchStartRef.current.y);
+    touchStartRef.current = null;
+    if (dx > 60 && dy < 50) goBackToBrands();
+  }
 
   const customerName = customers.find(c => c.id === customerId)?.name || '';
 
@@ -431,47 +469,65 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
   }
 
   return (
-    <div style={styles.screenWrap}>
+    <div style={styles.screenWrap} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div style={styles.header}>
         <div style={styles.headerTop}>
           <Package size={18} color="#EDEBE3" strokeWidth={2} />
           <span style={styles.headerTitle}>New Order</span>
         </div>
-        <button style={styles.customerBtn} onClick={() => setCustomerOpen(true)}>
-          <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
-          <span style={{ ...styles.customerBtnText, color: customerId ? '#14181F' : '#8A8F87' }}>
-            {customerName || 'Select customer'}
-          </span>
-          <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
-        </button>
-        <button style={styles.dateBtn} onClick={() => setDateOpen(true)}>
-          <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
-          <span style={{ ...styles.customerBtnText, color: deliveryDate ? '#14181F' : '#8A8F87' }}>
-            {deliveryDate ? formatDate(deliveryDate) : 'Delivery date'}
-          </span>
-          <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
-        </button>
-      </div>
-
-      <div style={styles.searchWrap}>
-        <Search size={16} color="#8A8F87" style={styles.searchIcon} />
-        <input
-          style={styles.searchInput}
-          placeholder="Search any item or SKU"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-        />
-        {query && (
-          <button style={styles.clearSearchBtn} onClick={() => setQuery('')}>
-            <X size={14} color="#8A8F87" />
+        {pickersExpanded ? (
+          <>
+            <button style={styles.customerBtn} onClick={() => setCustomerOpen(true)}>
+              <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
+              <span style={{ ...styles.customerBtnText, color: customerId ? '#14181F' : '#8A8F87' }}>
+                {customerName || 'Select customer'}
+              </span>
+              <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
+            </button>
+            <button style={styles.dateBtn} onClick={() => setDateOpen(true)}>
+              <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
+              <span style={{ ...styles.customerBtnText, color: deliveryDate ? '#14181F' : '#8A8F87' }}>
+                {deliveryDate ? formatDate(deliveryDate) : 'Delivery date'}
+              </span>
+              <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
+            </button>
+          </>
+        ) : (
+          <button style={styles.pickersSummary} onClick={() => setPickersExpanded(true)}>
+            <User size={14} color="#EDEBE3" />
+            <span style={styles.pickersSummaryText}>{customerName}</span>
+            <span style={styles.pickersSummaryDot}>·</span>
+            <Calendar size={14} color="#EDEBE3" />
+            <span style={styles.pickersSummaryText}>{formatDate(deliveryDate)}</span>
+            <ChevronDown size={14} color="#B7BCB2" style={{ marginLeft: 'auto' }} />
           </button>
         )}
       </div>
 
+      <div style={styles.searchWrap}>
+        <div style={styles.searchInputWrap}>
+          <Search size={16} color="#8A8F87" style={styles.searchIconInner} />
+          <input
+            style={styles.searchInputInner}
+            placeholder="Search any item or SKU"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+          {query && (
+            <button style={styles.clearSearchBtnInner} onClick={() => setQuery('')}>
+              <X size={14} color="#8A8F87" />
+            </button>
+          )}
+        </div>
+        <button style={styles.gridSizeBtn} onClick={toggleGridSize} title="Change tile size">
+          {gridSize === 'compact' ? <LayoutGrid size={16} color="#5B6058" /> : <Boxes size={16} color="#5B6058" />}
+        </button>
+      </div>
+
       {screen === 'brands' && !searching && (
-        <div style={styles.brandGrid}>
+        <div style={{ ...styles.brandGrid, gridTemplateColumns: `repeat(auto-fill, minmax(${gridSize === 'compact' ? 100 : 150}px, 1fr))` }}>
           <button
-            style={{ ...styles.brandTile, background: '#3C4132' }}
+            style={{ ...styles.brandTile, background: '#3C4132', ...(gridSize === 'compact' ? styles.brandTileCompact : {}) }}
             onClick={() => { setBrand('All'); setScreen('items'); }}
           >
             <span style={styles.brandTileName}>All Items</span>
@@ -480,7 +536,7 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
           {brandList.map((b, idx) => (
             <button
               key={b}
-              style={{ ...styles.brandTile, background: brandColor(b, idx) }}
+              style={{ ...styles.brandTile, background: brandColor(b, idx), ...(gridSize === 'compact' ? styles.brandTileCompact : {}) }}
               onClick={() => { setBrand(b); setScreen('items'); }}
             >
               <span style={styles.brandTileName}>{b}</span>
@@ -492,8 +548,8 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
 
       {screen === 'items' && !searching && (
         <div style={styles.itemsSubHeader}>
-          <button style={styles.backBtn} onClick={() => { setScreen('brands'); setBrand('All'); }}>
-            <ChevronLeft size={16} color="#14181F" />
+          <button style={styles.backBtnBig} onClick={goBackToBrands}>
+            <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
             <span>Brands</span>
           </button>
           <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
@@ -782,6 +838,10 @@ function InventoryTab({ items }) {
   const lowStockTotal = items.filter(i => i.stock <= 5).length;
   const searching = query.trim().length > 0;
 
+  useEffect(() => {
+    if (lowStockTotal === 0 && lowOnly) setLowOnly(false);
+  }, [lowStockTotal, lowOnly]);
+
   const filteredItems = useMemo(() => {
     const effectiveBrand = screen === 'brands' ? 'All' : brand;
     return items
@@ -802,15 +862,17 @@ function InventoryTab({ items }) {
           <Boxes size={18} color="#EDEBE3" strokeWidth={2} />
           <span style={styles.headerTitle}>Inventory</span>
         </div>
-        <button
-          style={{ ...styles.lowStockBtn, ...(lowOnly ? styles.lowStockBtnActive : {}) }}
-          onClick={() => setLowOnly(v => !v)}
-        >
-          <AlertTriangle size={15} color={lowOnly ? '#F7F8F4' : '#E7A98B'} />
-          <span style={{ color: lowOnly ? '#F7F8F4' : '#EDEBE3' }}>
-            {lowStockTotal} item{lowStockTotal === 1 ? '' : 's'} low on stock
-          </span>
-        </button>
+        {lowStockTotal > 0 && (
+          <button
+            style={{ ...styles.lowStockBtn, ...(lowOnly ? styles.lowStockBtnActive : {}) }}
+            onClick={() => setLowOnly(v => !v)}
+          >
+            <AlertTriangle size={15} color={lowOnly ? '#F7F8F4' : '#E7A98B'} />
+            <span style={{ color: lowOnly ? '#F7F8F4' : '#EDEBE3' }}>
+              {lowStockTotal} item{lowStockTotal === 1 ? '' : 's'} low on stock
+            </span>
+          </button>
+        )}
       </div>
 
       <div style={styles.searchWrap}>
@@ -1103,7 +1165,7 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
 
   return (
     <div style={styles.sheetOverlay} onClick={() => !saving && !deleting && onClose()}>
-      <div style={styles.sheet} onClick={e => e.stopPropagation()}>
+      <div style={styles.sheetTall} onClick={e => e.stopPropagation()}>
         <div style={styles.sheetHandle} />
         <div style={styles.sheetHeader}>
           <span style={styles.sheetTitle}>Edit order #{order.id}</span>
@@ -1433,6 +1495,8 @@ function OfficeInventory({ items, onRefresh }) {
   const [brandNameInput, setBrandNameInput] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editField, setEditField] = useState('all');
   const fileInputRef = useRef(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
@@ -1566,6 +1630,23 @@ function OfficeInventory({ items, onRefresh }) {
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
+        <button
+          style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
+          onClick={() => setEditMode(v => !v)}
+        >
+          {editMode ? 'Done editing' : 'Edit'}
+        </button>
+        {editMode && (
+          <select style={officeStyles.select} value={editField} onChange={e => setEditField(e.target.value)}>
+            <option value="all">Edit: All fields</option>
+            <option value="name">Edit: Item name</option>
+            <option value="brand">Edit: Brand</option>
+            <option value="pack">Edit: Pack</option>
+            <option value="price">Edit: Price</option>
+            <option value="stock">Edit: Stock</option>
+            <option value="active">Edit: Active</option>
+          </select>
+        )}
         <div style={officeStyles.countPill}>{filtered.length} item{filtered.length === 1 ? '' : 's'}</div>
       </div>
 
@@ -1599,36 +1680,58 @@ function OfficeInventory({ items, onRefresh }) {
             {filtered.length === 0 && (
               <tr><td style={officeStyles.emptyCell} colSpan={8}>No items match "{query}"</td></tr>
             )}
-            {filtered.map(item => (
+            {filtered.map(item => {
+              const canEdit = f => editMode && (editField === 'all' || editField === f);
+              return (
               <tr key={item.id} style={!item.active ? officeStyles.rowInactive : undefined}>
                 <td style={officeStyles.td}>{item.id}</td>
                 <td style={officeStyles.td}>
-                  <TextFieldEditor item={item} field="name" onSaved={onRefresh} />
+                  {canEdit('name') ? <TextFieldEditor item={item} field="name" onSaved={onRefresh} /> : item.name}
                 </td>
                 <td style={officeStyles.td}>
-                  <TextFieldEditor item={item} field="brand" onSaved={onRefresh} />
+                  {canEdit('brand') ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                    <NumberFieldEditor item={item} field="pack" onSaved={onRefresh} min={1} width={56} />
-                    <TextFieldEditor item={item} field="packLabel" onSaved={onRefresh} placeholder="add label" small />
-                  </div>
+                  {canEdit('pack') ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                      <NumberFieldEditor item={item} field="pack" onSaved={onRefresh} min={1} width={56} />
+                      <TextFieldEditor item={item} field="packLabel" onSaved={onRefresh} placeholder="add label" small />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                      <span>{item.pack || 1}</span>
+                      {item.packLabel && <span style={{ fontSize: 10.5, color: '#8A8F87' }}>{item.packLabel}</span>}
+                    </div>
+                  )}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  <NumberFieldEditor item={item} field="price" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} />
+                  {canEdit('price') ? (
+                    <NumberFieldEditor item={item} field="price" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} />
+                  ) : formatMoney(item.price)}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  <StockEditor item={item} onSaved={onRefresh} />
+                  {canEdit('stock') ? (
+                    <StockEditor item={item} onSaved={onRefresh} />
+                  ) : (
+                    <span style={item.stock <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined}>{item.stock}</span>
+                  )}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
-                  <ActiveToggle
-                    active={!!item.active}
-                    onToggle={async next => { await apiPatch(`/items/${encodeURIComponent(item.id)}`, { active: next }); await onRefresh(); }}
-                  />
+                  {canEdit('active') ? (
+                    <ActiveToggle
+                      active={!!item.active}
+                      onToggle={async next => { await apiPatch(`/items/${encodeURIComponent(item.id)}`, { active: next }); await onRefresh(); }}
+                    />
+                  ) : (
+                    <span style={{ ...officeStyles.toggleBtn, ...(item.active ? officeStyles.toggleBtnOn : officeStyles.toggleBtnOff), cursor: 'default' }}>
+                      {item.active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1897,19 +2000,29 @@ const styles = {
   customerBtn: { width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#EDEBE3', border: 'none', borderRadius: 10, padding: '11px 12px', cursor: 'pointer', fontFamily: 'inherit' },
   customerBtnText: { fontSize: 14, fontWeight: 500 },
   dateBtn: { position: 'relative', width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#EDEBE3', border: 'none', borderRadius: 10, padding: '11px 12px', cursor: 'pointer', marginTop: 8, boxSizing: 'border-box', fontFamily: 'inherit' },
+  pickersSummary: { width: '100%', display: 'flex', alignItems: 'center', gap: 7, background: '#2A2E23', border: '1px solid #3C4132', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' },
+  pickersSummaryText: { fontSize: 12.5, fontWeight: 600, color: '#EDEBE3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  pickersSummaryDot: { color: '#5B6058' },
   lowStockBtn: { width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#2A2E23', border: '1px solid #3C4132', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 },
   lowStockBtnActive: { background: '#B5493B', border: '1px solid #B5493B' },
   orderCountPill: { display: 'inline-block', color: '#EDEBE3', fontSize: 12.5, fontWeight: 600, background: '#2A2E23', borderRadius: 999, padding: '6px 12px' },
-  searchWrap: { position: 'relative', display: 'flex', alignItems: 'center', padding: '14px 16px 8px' },
+  searchWrap: { position: 'relative', display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px 8px' },
+  searchInputWrap: { position: 'relative', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' },
   searchIcon: { position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' },
+  searchIconInner: { position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' },
   searchInput: { width: '100%', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, padding: '10px 12px 10px 38px', fontSize: 14, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  searchInputInner: { width: '100%', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, padding: '10px 34px 10px 38px', fontSize: 14, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   clearSearchBtn: { position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: '#EAE8DD', border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
-  brandGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '8px 16px 20px', flex: 1, minHeight: 0, overflowY: 'auto', alignContent: 'start' },
+  clearSearchBtnInner: { position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: '#EAE8DD', border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
+  gridSizeBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
+  brandGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, padding: '8px 16px 20px', flex: 1, minHeight: 0, overflowY: 'auto', alignContent: 'start' },
   brandTile: { border: 'none', borderRadius: 14, padding: '20px 14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, cursor: 'pointer', minHeight: 78 },
+  brandTileCompact: { padding: '13px 10px', minHeight: 58, borderRadius: 12, gap: 2 },
   brandTileName: { color: '#F7F8F4', fontSize: 15, fontWeight: 700 },
   brandTileCount: { color: 'rgba(247,248,244,0.75)', fontSize: 11.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
   itemsSubHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 6px' },
   backBtn: { display: 'flex', alignItems: 'center', gap: 2, background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', padding: 0, fontFamily: 'inherit' },
+  backBtnBig: { display: 'flex', alignItems: 'center', gap: 4, background: '#EDEBE3', border: 'none', borderRadius: 10, color: '#14181F', fontSize: 15, fontWeight: 700, cursor: 'pointer', padding: '8px 14px 8px 8px', fontFamily: 'inherit' },
   itemsSubHeaderBrand: { fontSize: 13, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.04em' },
   list: { flex: 1, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
@@ -1930,6 +2043,7 @@ const styles = {
   ticketBarCta: { marginLeft: 'auto', color: '#EDEBE3', fontSize: 13, fontWeight: 600, background: '#2B5D50', padding: '6px 12px', borderRadius: 7 },
   sheetOverlay: { position: 'absolute', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 10 },
   sheet: { background: '#F7F8F4', width: '100%', maxHeight: '80%', borderRadius: '18px 18px 0 0', padding: '10px 16px 20px', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 20px rgba(20,24,31,0.15)' },
+  sheetTall: { background: '#F7F8F4', width: '100%', height: '92dvh', maxHeight: '92dvh', borderRadius: '18px 18px 0 0', padding: '10px 16px 20px', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 20px rgba(20,24,31,0.15)' },
   sheetHandle: { width: 36, height: 4, background: '#D6D3C6', borderRadius: 999, margin: '4px auto 12px' },
   sheetHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   sheetTitle: { fontSize: 15, fontWeight: 700, color: '#14181F' },
@@ -1998,11 +2112,12 @@ const officeStyles = {
   navBtnActive: { background: '#2B5D50', color: '#F7F8F4' },
   refreshBtn: { display: 'flex', alignItems: 'center', gap: 6, background: '#2A2E23', color: '#EDEBE3', border: '1px solid #3C4132', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   autoLink: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', whiteSpace: 'nowrap' },
+  editModeBtnActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   importBanner: { display: 'flex', alignItems: 'center', gap: 10, background: '#DCEEE8', color: '#1E4238', border: '1px solid #B7DBCF', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
   body: { flex: 1, padding: '20px 24px 40px', background: '#F7F8F4' },
-  orderFormWrap: { maxWidth: 480, margin: '0 auto', height: 'calc(100vh - 140px)', minHeight: 600, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
+  orderFormWrap: { maxWidth: 880, margin: '0 auto', height: 'calc(100vh - 140px)', minHeight: 600, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
