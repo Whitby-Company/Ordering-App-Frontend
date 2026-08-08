@@ -677,7 +677,7 @@ function OrderTab({ items, customers, orders, onOrderSubmitted }) {
                   {item.price > 0 && (
                     <div style={styles.itemMeta}>
                       <span style={styles.brandLabel}>
-                        {formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/case of ${item.pack}` : ''}
+                        {formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/cs` : ''}
                       </span>
                     </div>
                   )}
@@ -1066,7 +1066,7 @@ function InventoryTab({ items, orders }) {
                     {item.packLabel && <span style={styles.brandLabel}>{item.packLabel}</span>}
                     {item.price > 0 && (
                       <span style={styles.brandLabel}>
-                        {formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/case` : ''}
+                        {formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/cs` : ''}
                       </span>
                     )}
                   </div>
