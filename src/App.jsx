@@ -63,6 +63,14 @@ async function apiPatch(path, body) {
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
 }
+// Price is stored per single "each"; each case/pack ordered contains
+// item.pack eaches. Line total = price × pack size × cases ordered.
+function lineTotal(item, qty) {
+  return (Number(item.price) || 0) * (Number(item.pack) || 1) * (Number(qty) || 0);
+}
+function casePrice(item) {
+  return (Number(item.price) || 0) * (Number(item.pack) || 1);
+}
 
 // Switches between the mobile ordering UI and the desktop office view based
 // on viewport width — same site, same live data, just adapts to the device.
@@ -90,7 +98,18 @@ export default function App() {
   const [orderHistory, setOrderHistory] = useState([]);
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [tab, setTab] = useState('order');
-  const isDesktop = useIsDesktop();
+  const isDesktopWidth = useIsDesktop();
+  const [viewOverride, setViewOverride] = useState(() => {
+    try { return localStorage.getItem('viewOverride') || null; } catch { return null; }
+  });
+  function setOverride(next) {
+    setViewOverride(next);
+    try {
+      if (next) localStorage.setItem('viewOverride', next);
+      else localStorage.removeItem('viewOverride');
+    } catch { /* localStorage unavailable — override just won't persist */ }
+  }
+  const isDesktop = viewOverride ? viewOverride === 'desktop' : isDesktopWidth;
 
   const loadAll = useCallback(async () => {
     try {
@@ -147,7 +166,15 @@ export default function App() {
     return (
       <div style={styles.appDesktop}>
         <style>{fontImport}</style>
-        <OfficeView items={itemsAll} customers={customersAll} orders={orderHistory} onRefresh={loadAll} />
+        <OfficeView
+          items={itemsAll}
+          customers={customersAll}
+          orders={orderHistory}
+          onRefresh={loadAll}
+          onSwitchToMobile={() => setOverride('mobile')}
+          isManualOverride={!!viewOverride}
+          onResetToAuto={() => setOverride(null)}
+        />
       </div>
     );
   }
@@ -162,12 +189,18 @@ export default function App() {
         {tab === 'inventory' && <InventoryTab items={items} />}
         {tab === 'orders' && <OrdersTab orders={orderHistory} />}
       </div>
-      <TabBar active={tab} onChange={setTab} />
+      <TabBar
+        active={tab}
+        onChange={setTab}
+        onSwitchToOffice={() => setOverride('desktop')}
+        isManualOverride={!!viewOverride}
+        onResetToAuto={() => setOverride(null)}
+      />
     </div>
   );
 }
 
-function TabBar({ active, onChange }) {
+function TabBar({ active, onChange, onSwitchToOffice }) {
   const tabs = [
     { id: 'order', label: 'New Order', icon: PlusCircle },
     { id: 'inventory', label: 'Inventory', icon: Boxes },
@@ -185,6 +218,10 @@ function TabBar({ active, onChange }) {
           </button>
         );
       })}
+      <button style={styles.tabBtn} onClick={onSwitchToOffice}>
+        <Monitor size={20} color="#8A8F87" strokeWidth={2} />
+        <span style={{ ...styles.tabBtnLabel, color: '#8A8F87' }}>Office View</span>
+      </button>
     </div>
   );
 }
@@ -375,10 +412,18 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
                   <div style={styles.itemName}>{item.name}</div>
                   <div style={styles.itemMeta}>
                     <span style={styles.sku}>{item.id}</span>
+                    {item.packLabel && <span style={styles.brandLabel}>{item.packLabel}</span>}
                     <span style={{ ...styles.stockTag, ...(low ? styles.stockTagLow : {}) }}>
                       {item.stock} in stock
                     </span>
                   </div>
+                  {item.price > 0 && (
+                    <div style={styles.itemMeta}>
+                      <span style={styles.brandLabel}>
+                        {formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/case of ${item.pack}` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div style={styles.stepper}>
                   <button style={styles.stepBtn} onClick={() => setQty(item.id, qty - 1)} disabled={qty === 0}>
@@ -431,7 +476,9 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
                 <div key={l.id} style={styles.sheetLine}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.sheetLineName}>{l.name}</div>
-                    <div style={styles.sheetLineSku}>{l.id}</div>
+                    <div style={styles.sheetLineSku}>
+                      {l.id}{l.price > 0 ? ` · ${formatMoney(lineTotal(l, l.qty))}` : ''}
+                    </div>
                   </div>
                   <div style={styles.sheetLineQty}>×{l.qty}</div>
                   <button style={styles.removeBtn} onClick={() => setQty(l.id, 0)} disabled={submitting}>
@@ -444,6 +491,14 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
               <span>Total units</span>
               <span style={styles.sheetTotalNum}>{totalUnits}</span>
             </div>
+            {orderLines.some(l => l.price > 0) && (
+              <div style={styles.sheetTotal}>
+                <span>Order total</span>
+                <span style={styles.sheetTotalNum}>
+                  {formatMoney(orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0))}
+                </span>
+              </div>
+            )}
             {submitError && <div style={styles.sheetWarning}>{submitError}</div>}
             <button
               style={{ ...styles.submitBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.submitBtnDisabled) }}
@@ -569,7 +624,9 @@ function Confirmation({ data, onNewOrder }) {
             <div key={l.id} style={styles.receiptLine}>
               <div>
                 <div style={styles.receiptItemName}>{l.name}</div>
-                <div style={styles.receiptSku}>{l.id}</div>
+                <div style={styles.receiptSku}>
+                  {l.id}{l.price > 0 ? ` · ${formatMoney(lineTotal(l, l.qty))}` : ''}
+                </div>
               </div>
               <span style={styles.receiptQty}>{l.qty}</span>
             </div>
@@ -579,6 +636,14 @@ function Confirmation({ data, onNewOrder }) {
             <span>Total units</span>
             <span style={styles.receiptTotalNum}>{data.totalUnits}</span>
           </div>
+          {data.lines.some(l => l.price > 0) && (
+            <div style={styles.receiptTotalRow}>
+              <span>Order total</span>
+              <span style={styles.receiptTotalNum}>
+                {formatMoney(data.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0))}
+              </span>
+            </div>
+          )}
         </div>
         <div style={styles.confirmNote}>
           Saved to your live database — inventory updated for the whole team. This is where the order would also queue for QuickBooks.
@@ -700,7 +765,12 @@ function InventoryTab({ items }) {
                   <div style={styles.itemMeta}>
                     <span style={styles.sku}>{item.id}</span>
                     <span style={styles.brandLabel}>{item.brand}</span>
-                    {item.price > 0 && <span style={styles.brandLabel}>{formatMoney(item.price)}</span>}
+                    {item.packLabel && <span style={styles.brandLabel}>{item.packLabel}</span>}
+                    {item.price > 0 && (
+                      <span style={styles.brandLabel}>
+                        {formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/case` : ''}
+                      </span>
+                    )}
                   </div>
                   <div style={styles.stockBarTrack}>
                     <div style={{ ...styles.stockBarFill, width: `${pct}%`, background: low ? '#B5493B' : '#2B5D50' }} />
@@ -808,7 +878,7 @@ function OrdersTab({ orders }) {
 // DESKTOP — OFFICE VIEW (orders table for QuickBooks entry,
 // inventory table with editable stock)
 // ============================================================
-function OfficeView({ items, customers, orders, onRefresh }) {
+function OfficeView({ items, customers, orders, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
   const [section, setSection] = useState('orders');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -845,6 +915,14 @@ function OfficeView({ items, customers, orders, onRefresh }) {
             Customers
           </button>
         </div>
+        {isManualOverride && (
+          <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
+            Auto
+          </button>
+        )}
+        <button style={officeStyles.refreshBtn} onClick={onSwitchToMobile}>
+          Mobile View
+        </button>
         <button style={officeStyles.refreshBtn} onClick={handleRefresh} disabled={refreshing}>
           <RefreshCw size={14} style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }} />
           Refresh
@@ -874,7 +952,7 @@ function OfficeOrders({ orders }) {
   }, [orders, query]);
 
   function orderTotal(o) {
-    return o.lines.reduce((s, l) => s + l.qty * (l.price || 0), 0);
+    return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   }
 
   return (
@@ -932,8 +1010,9 @@ function OfficeOrders({ orders }) {
                               <th style={officeStyles.subTh}>SKU</th>
                               <th style={officeStyles.subTh}>Item</th>
                               <th style={officeStyles.subTh}>Brand</th>
-                              <th style={{ ...officeStyles.subTh, textAlign: 'right' }}>Qty</th>
-                              <th style={{ ...officeStyles.subTh, textAlign: 'right' }}>Price</th>
+                              <th style={{ ...officeStyles.subTh, textAlign: 'right' }}>Pack</th>
+                              <th style={{ ...officeStyles.subTh, textAlign: 'right' }}>Cases ordered</th>
+                              <th style={{ ...officeStyles.subTh, textAlign: 'right' }}>Price/ea</th>
                               <th style={{ ...officeStyles.subTh, textAlign: 'right' }}>Line total</th>
                             </tr>
                           </thead>
@@ -943,9 +1022,10 @@ function OfficeOrders({ orders }) {
                                 <td style={officeStyles.subTd}>{l.id}</td>
                                 <td style={officeStyles.subTd}>{l.name}</td>
                                 <td style={officeStyles.subTd}>{l.brand}</td>
+                                <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{l.pack || 1}</td>
                                 <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{l.qty}</td>
                                 <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{formatMoney(l.price)}</td>
-                                <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{formatMoney(l.qty * (l.price || 0))}</td>
+                                <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{formatMoney(lineTotal(l, l.qty))}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -967,6 +1047,8 @@ function OfficeInventory({ items, onRefresh }) {
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
+  const [renamingBrand, setRenamingBrand] = useState(false);
+  const [brandNameInput, setBrandNameInput] = useState('');
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
 
@@ -990,6 +1072,22 @@ function OfficeInventory({ items, onRefresh }) {
     } catch (err) { /* no-op, row-level state stays in sync on next refresh */ }
   }
 
+  function startRenameBrand() {
+    setBrandNameInput(brand);
+    setRenamingBrand(true);
+  }
+
+  async function saveRenameBrand() {
+    const newName = brandNameInput.trim();
+    if (!newName || newName === brand) { setRenamingBrand(false); return; }
+    try {
+      await apiPatch(`/items/brand/${encodeURIComponent(brand)}`, { rename: newName });
+      await onRefresh();
+      setBrand(newName);
+    } catch (err) { /* keep old brand selected on failure */ }
+    setRenamingBrand(false);
+  }
+
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
@@ -1000,14 +1098,32 @@ function OfficeInventory({ items, onRefresh }) {
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
-        <select style={officeStyles.select} value={brand} onChange={e => setBrand(e.target.value)}>
-          <option value="All">All brands</option>
-          {brandList.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
-        {brand !== 'All' && (
-          <button style={officeStyles.smallBtn} onClick={toggleBrand}>
-            {brandAllActive ? 'Deactivate brand' : 'Activate brand'}
-          </button>
+        {!renamingBrand && (
+          <select style={officeStyles.select} value={brand} onChange={e => setBrand(e.target.value)}>
+            <option value="All">All brands</option>
+            {brandList.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        )}
+        {renamingBrand && (
+          <>
+            <input
+              style={officeStyles.search}
+              value={brandNameInput}
+              onChange={e => setBrandNameInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveRenameBrand(); if (e.key === 'Escape') setRenamingBrand(false); }}
+              autoFocus
+            />
+            <button style={officeStyles.smallBtn} onClick={saveRenameBrand}>Save</button>
+            <button style={officeStyles.smallBtn} onClick={() => setRenamingBrand(false)}>Cancel</button>
+          </>
+        )}
+        {brand !== 'All' && !renamingBrand && (
+          <>
+            <button style={officeStyles.smallBtn} onClick={toggleBrand}>
+              {brandAllActive ? 'Deactivate brand' : 'Activate brand'}
+            </button>
+            <button style={officeStyles.smallBtn} onClick={startRenameBrand}>Rename brand</button>
+          </>
         )}
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
@@ -1023,21 +1139,27 @@ function OfficeInventory({ items, onRefresh }) {
               <th style={officeStyles.th}>SKU</th>
               <th style={officeStyles.th}>Item</th>
               <th style={officeStyles.th}>Brand</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Price</th>
+              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Pack</th>
+              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Price/ea</th>
+              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Case price</th>
               <th style={{ ...officeStyles.th, textAlign: 'right' }}>Stock</th>
               <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={6}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={8}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => (
               <tr key={item.id} style={!item.active ? officeStyles.rowInactive : undefined}>
                 <td style={officeStyles.td}>{item.id}</td>
-                <td style={officeStyles.td}>{item.name}</td>
+                <td style={officeStyles.td}>
+                  <NameEditor item={item} onSaved={onRefresh} />
+                </td>
                 <td style={officeStyles.td}>{item.brand}</td>
+                <td style={{ ...officeStyles.td, textAlign: 'right' }}>{item.packLabel || item.pack || 1}</td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(item.price)}</td>
+                <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   <StockEditor item={item} onSaved={onRefresh} />
                 </td>
@@ -1053,6 +1175,49 @@ function OfficeInventory({ items, onRefresh }) {
         </table>
       </div>
     </div>
+  );
+}
+
+function NameEditor({ item, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(item.name);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === item.name) { setValue(item.name); setEditing(false); return; }
+    setSaving(true);
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { name: trimmed });
+      await onSaved();
+    } catch (err) {
+      setValue(item.name);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button style={officeStyles.nameEditBtn} onClick={() => { setValue(item.name); setEditing(true); }} title="Click to rename">
+        {item.name}
+      </button>
+    );
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <input
+        style={officeStyles.nameInput}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setValue(item.name); setEditing(false); } }}
+        autoFocus
+      />
+      {saving && <Loader2 size={13} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
+    </span>
   );
 }
 
@@ -1217,7 +1382,7 @@ const styles = {
   searchIcon: { position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' },
   searchInput: { width: '100%', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, padding: '10px 12px 10px 38px', fontSize: 14, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   clearSearchBtn: { position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: '#EAE8DD', border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
-  brandGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '8px 16px 4px' },
+  brandGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '8px 16px 20px', flex: 1, minHeight: 0, overflowY: 'auto', alignContent: 'start' },
   brandTile: { border: 'none', borderRadius: 14, padding: '20px 14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, cursor: 'pointer', minHeight: 78 },
   brandTileName: { color: '#F7F8F4', fontSize: 15, fontWeight: 700 },
   brandTileCount: { color: 'rgba(247,248,244,0.75)', fontSize: 11.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
@@ -1301,13 +1466,14 @@ const styles = {
 
 const officeStyles = {
   wrap: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' },
-  topBar: { display: 'flex', alignItems: 'center', gap: 24, background: '#14181F', padding: '14px 24px', position: 'sticky', top: 0, zIndex: 5 },
+  topBar: { display: 'flex', alignItems: 'center', gap: 12, rowGap: 8, flexWrap: 'wrap', background: '#14181F', padding: '14px 16px', position: 'sticky', top: 0, zIndex: 5 },
   brand: { display: 'flex', alignItems: 'center', gap: 8 },
   brandText: { color: '#EDEBE3', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap' },
   nav: { display: 'flex', gap: 4, flex: 1 },
   navBtn: { background: 'none', border: 'none', color: '#B7BCB2', fontSize: 13.5, fontWeight: 600, padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' },
   navBtnActive: { background: '#2B5D50', color: '#F7F8F4' },
   refreshBtn: { display: 'flex', alignItems: 'center', gap: 6, background: '#2A2E23', color: '#EDEBE3', border: '1px solid #3C4132', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
+  autoLink: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', whiteSpace: 'nowrap' },
   body: { flex: 1, padding: '20px 24px 40px', background: '#F7F8F4' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
@@ -1328,6 +1494,8 @@ const officeStyles = {
   subTh: { textAlign: 'left', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6' },
   subTd: { padding: '8px 12px', borderBottom: '1px solid #EAE8DD', color: '#14181F' },
   stockInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 8px', fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: '#14181F', outline: 'none' },
+  nameEditBtn: { background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontFamily: 'inherit', textAlign: 'left', cursor: 'text', padding: '2px 4px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 3 },
+  nameInput: { width: '100%', minWidth: 180, background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 6, padding: '5px 8px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   stockInputLow: { borderColor: '#B5493B', color: '#B5493B' },
   unsavedDot: { width: 6, height: 6, borderRadius: '50%', background: '#C9A227' },
   toggleBtn: { border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', minWidth: 62 },
