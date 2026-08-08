@@ -708,7 +708,7 @@ function OrderTab({ items, customers, orders, onOrderSubmitted }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.sheetLineName}>{l.name}</div>
                     <div style={styles.sheetLineSku}>
-                      {l.id}{l.pack > 1 ? ` · pack of ${l.pack}` : ''}
+                      {l.id}{l.pack > 1 ? ` · ${l.pack}ea` : ''}
                       {l.price > 0 ? ` · ${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
                     </div>
                   </div>
