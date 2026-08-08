@@ -60,6 +60,49 @@ async function apiPatch(path, body) {
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
+async function apiDelete(path) {
+  const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+function printOrder(order) {
+  const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+  const rows = order.lines.map(l => `
+    <tr>
+      <td>${l.id}</td>
+      <td>${l.name}</td>
+      <td>${l.brand || ''}</td>
+      <td style="text-align:right">${l.qty}</td>
+      <td style="text-align:right">${formatMoney(l.price)}</td>
+      <td style="text-align:right">${formatMoney(lineTotal(l, l.qty))}</td>
+    </tr>`).join('');
+  const win = window.open('', '_blank', 'width=800,height=900');
+  if (!win) return;
+  win.document.write(`<!doctype html><html><head><title>Order ${order.id}</title>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; padding: 32px; color: #14181F; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .meta { color: #5B6058; margin-bottom: 22px; font-size: 13px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 8px 10px; border-bottom: 1px solid #E3E1D6; text-align: left; }
+      th { background: #FBFAF6; font-size: 11px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.04em; }
+      tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
+      @media print { body { padding: 0; } }
+    </style></head><body>
+    <h1>Order #${order.id} — ${order.customer}</h1>
+    <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
+    <table>
+      <thead><tr><th>SKU</th><th>Item</th><th>Brand</th><th style="text-align:right">Qty</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="5" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr></tfoot>
+    </table>
+    </body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
 }
@@ -229,6 +272,8 @@ export default function App() {
         <OfficeView
           items={itemsAll}
           customers={customersAll}
+          activeItems={items}
+          activeCustomers={customers}
           orders={orderHistory}
           onRefresh={loadAll}
           onSwitchToMobile={() => setOverride('mobile')}
@@ -247,20 +292,22 @@ export default function App() {
           <OrderTab items={items} customers={customers} onOrderSubmitted={loadAll} />
         )}
         {tab === 'inventory' && <InventoryTab items={items} />}
-        {tab === 'orders' && <OrdersTab orders={orderHistory} />}
+        {tab === 'orders' && (
+          <OrdersTab
+            orders={orderHistory}
+            onSwitchToOffice={() => setOverride('desktop')}
+            items={items}
+            customers={customers}
+            onOrderChanged={loadAll}
+          />
+        )}
       </div>
-      <TabBar
-        active={tab}
-        onChange={setTab}
-        onSwitchToOffice={() => setOverride('desktop')}
-        isManualOverride={!!viewOverride}
-        onResetToAuto={() => setOverride(null)}
-      />
+      <TabBar active={tab} onChange={setTab} />
     </div>
   );
 }
 
-function TabBar({ active, onChange, onSwitchToOffice }) {
+function TabBar({ active, onChange }) {
   const tabs = [
     { id: 'order', label: 'New Order', icon: PlusCircle },
     { id: 'inventory', label: 'Inventory', icon: Boxes },
@@ -278,10 +325,6 @@ function TabBar({ active, onChange, onSwitchToOffice }) {
           </button>
         );
       })}
-      <button style={styles.tabBtn} onClick={onSwitchToOffice}>
-        <Monitor size={20} color="#8A8F87" strokeWidth={2} />
-        <span style={{ ...styles.tabBtnLabel, color: '#8A8F87' }}>Office View</span>
-      </button>
     </div>
   );
 }
@@ -864,9 +907,10 @@ function InventoryTab({ items }) {
 // ============================================================
 // TAB 3 — ORDERS
 // ============================================================
-function OrdersTab({ orders }) {
+function OrdersTab({ orders, onSwitchToOffice, items, customers, onOrderChanged }) {
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState('');
+  const [editingOrder, setEditingOrder] = useState(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -883,6 +927,10 @@ function OrdersTab({ orders }) {
         <div style={styles.headerTop}>
           <ClipboardCheck size={18} color="#EDEBE3" strokeWidth={2} />
           <span style={styles.headerTitle}>Orders</span>
+          <button style={styles.officeLinkBtn} onClick={onSwitchToOffice}>
+            <Monitor size={13} color="#B7BCB2" strokeWidth={2} />
+            <span>Office View</span>
+          </button>
         </div>
         <div style={styles.orderCountPill}>
           {orders.length} order{orders.length === 1 ? '' : 's'} logged
@@ -937,6 +985,10 @@ function OrdersTab({ orders }) {
                       <div style={styles.sheetLineQty}>×{l.qty}</div>
                     </div>
                   ))}
+                  <div style={styles.orderCardActions}>
+                    <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o)}>Print / PDF</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -944,15 +996,240 @@ function OrdersTab({ orders }) {
         })}
         <div style={{ height: 24 }} />
       </div>
+
+      {editingOrder && (
+        <OrderEditModal
+          order={editingOrder}
+          items={items}
+          customers={customers}
+          onClose={() => setEditingOrder(null)}
+          onSaved={async () => { setEditingOrder(null); await onOrderChanged(); }}
+        />
+      )}
     </div>
   );
 }
 
 // ============================================================
+// SHARED — ORDER EDIT MODAL (used by both mobile Orders tab and
+// desktop Office Orders table)
+// ============================================================
+function OrderEditModal({ order, items, customers, onClose, onSaved }) {
+  const [customerId, setCustomerId] = useState(order.customerId);
+  const [deliveryDate, setDeliveryDate] = useState(order.deliveryDate);
+  const [lines, setLines] = useState(() => order.lines.map(l => ({ id: l.id, qty: l.qty })));
+  const [addQuery, setAddQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Build a lookup of item details (name/brand/price/pack/stock) for every
+  // line, falling back to the order's own snapshot for items that may have
+  // since gone inactive or been renamed elsewhere.
+  const itemById = useMemo(() => {
+    const map = {};
+    for (const i of items) map[i.id] = i;
+    for (const l of order.lines) if (!map[l.id]) map[l.id] = { ...l, stock: 0 };
+    return map;
+  }, [items, order.lines]);
+
+  const origQtyById = useMemo(() => {
+    const map = {};
+    for (const l of order.lines) map[l.id] = l.qty;
+    return map;
+  }, [order.lines]);
+
+  const searchResults = useMemo(() => {
+    const q = addQuery.trim().toLowerCase();
+    if (!q) return [];
+    return items
+      .filter(i => !lines.some(l => l.id === i.id))
+      .filter(i => i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [addQuery, items, lines]);
+
+  function setQty(id, qty) {
+    const item = itemById[id];
+    if (!item) return;
+    // Max allowed = current stock + whatever this order already had reserved for this item
+    const maxQty = (item.stock || 0) + (origQtyById[id] || 0);
+    const clamped = Math.max(0, Math.min(qty, maxQty));
+    setLines(prev => {
+      if (clamped === 0) return prev.filter(l => l.id !== id);
+      const exists = prev.find(l => l.id === id);
+      if (exists) return prev.map(l => (l.id === id ? { ...l, qty: clamped } : l));
+      return [...prev, { id, qty: clamped }];
+    });
+  }
+
+  function addItem(item) {
+    setQty(item.id, (origQtyById[item.id] || 0) + 1 > 0 ? 1 : 1);
+    setAddQuery('');
+  }
+
+  const totalUnits = lines.reduce((s, l) => s + l.qty, 0);
+  const totalPrice = lines.reduce((s, l) => s + lineTotal(itemById[l.id] || {}, l.qty), 0);
+
+  async function save() {
+    if (!customerId || !deliveryDate || lines.length === 0) return;
+    setSaving(true);
+    setError('');
+    try {
+      await apiPatch(`/orders/${order.id}`, {
+        customerId,
+        deliveryDate,
+        lines: lines.map(l => ({ itemId: l.id, qty: l.qty })),
+      });
+      await onSaved();
+    } catch (err) {
+      setError(err.message || 'Could not save changes.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteOrder() {
+    setDeleting(true);
+    setError('');
+    try {
+      await apiDelete(`/orders/${order.id}`);
+      await onSaved();
+    } catch (err) {
+      setError(err.message || 'Could not delete this order.');
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div style={styles.sheetOverlay} onClick={() => !saving && !deleting && onClose()}>
+      <div style={styles.sheet} onClick={e => e.stopPropagation()}>
+        <div style={styles.sheetHandle} />
+        <div style={styles.sheetHeader}>
+          <span style={styles.sheetTitle}>Edit order #{order.id}</span>
+          <button style={styles.iconBtn} onClick={onClose} disabled={saving || deleting}>
+            <X size={18} color="#8A8F87" />
+          </button>
+        </div>
+
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <select
+            style={editStyles.select}
+            value={customerId || ''}
+            onChange={e => setCustomerId(Number(e.target.value))}
+          >
+            <option value="" disabled>Select customer</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input
+            type="date"
+            style={editStyles.select}
+            value={deliveryDate}
+            onChange={e => setDeliveryDate(e.target.value)}
+          />
+        </div>
+
+        <div style={styles.sheetLines}>
+          {lines.map(l => {
+            const item = itemById[l.id] || { name: l.id, id: l.id };
+            return (
+              <div key={l.id} style={styles.sheetLine}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.sheetLineName}>{item.name}</div>
+                  <div style={styles.sheetLineSku}>
+                    {item.id}{item.price > 0 ? ` · ${formatMoney(lineTotal(item, l.qty))}` : ''}
+                  </div>
+                </div>
+                <div style={styles.stepper}>
+                  <button style={styles.stepBtn} onClick={() => setQty(l.id, l.qty - 1)}>
+                    <Minus size={14} color="#14181F" />
+                  </button>
+                  <span style={styles.stepQty}>{l.qty}</span>
+                  <button style={styles.stepBtn} onClick={() => setQty(l.id, l.qty + 1)}>
+                    <Plus size={14} color="#14181F" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: '0 20px', position: 'relative' }}>
+          <input
+            style={editStyles.select}
+            placeholder="Search item or SKU to add…"
+            value={addQuery}
+            onChange={e => setAddQuery(e.target.value)}
+          />
+          {searchResults.length > 0 && (
+            <div style={editStyles.searchDropdown}>
+              {searchResults.map(item => (
+                <button key={item.id} style={editStyles.searchResultRow} onClick={() => addItem(item)}>
+                  <span style={{ fontWeight: 600 }}>{item.name}</span>
+                  <span style={{ color: '#8A8F87', fontSize: 12 }}>{item.id} · {item.stock} in stock</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={styles.sheetTotal}>
+          <span>Total units</span>
+          <span style={styles.sheetTotalNum}>{totalUnits}</span>
+        </div>
+        {totalPrice > 0 && (
+          <div style={styles.sheetTotal}>
+            <span>Order total</span>
+            <span style={styles.sheetTotalNum}>{formatMoney(totalPrice)}</span>
+          </div>
+        )}
+
+        {error && <div style={styles.sheetWarning}>{error}</div>}
+
+        <button
+          style={{ ...styles.submitBtn, ...((customerId && deliveryDate && lines.length > 0 && !saving) ? {} : styles.submitBtnDisabled) }}
+          disabled={!customerId || !deliveryDate || lines.length === 0 || saving || deleting}
+          onClick={save}
+        >
+          {saving ? <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} /> : <Check size={16} color="#F7F8F4" />}
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+
+        {!confirmDelete ? (
+          <button style={editStyles.deleteLink} onClick={() => setConfirmDelete(true)} disabled={saving || deleting}>
+            Delete this order
+          </button>
+        ) : (
+          <div style={editStyles.confirmDeleteRow}>
+            <span>Delete this order permanently?</span>
+            <button style={editStyles.confirmDeleteBtn} onClick={deleteOrder} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Yes, delete'}
+            </button>
+            <button style={editStyles.cancelLink} onClick={() => setConfirmDelete(false)} disabled={deleting}>
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const editStyles = {
+  select: { width: '100%', boxSizing: 'border-box', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 8, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  searchDropdown: { position: 'absolute', left: 20, right: 20, top: '100%', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, boxShadow: '0 4px 12px rgba(20,24,31,0.12)', zIndex: 30, maxHeight: 220, overflowY: 'auto' },
+  searchResultRow: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #EAE8DD', padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 },
+  deleteLink: { display: 'block', margin: '10px auto 4px', background: 'none', border: 'none', color: '#B5493B', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' },
+  confirmDeleteRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, margin: '10px 20px 4px', fontSize: 12.5, color: '#7A2E22', flexWrap: 'wrap' },
+  confirmDeleteBtn: { background: '#B5493B', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  cancelLink: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' },
+};
+
+// ============================================================
 // DESKTOP — OFFICE VIEW (orders table for QuickBooks entry,
 // inventory table with editable stock)
 // ============================================================
-function OfficeView({ items, customers, orders, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
+function OfficeView({ items, customers, activeItems, activeCustomers, orders, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
   const [section, setSection] = useState('orders');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -970,6 +1247,12 @@ function OfficeView({ items, customers, orders, onRefresh, onSwitchToMobile, isM
           <span style={officeStyles.brandText}>Order Entry — Office View</span>
         </div>
         <div style={officeStyles.nav}>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'neworder' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('neworder')}
+          >
+            New Order
+          </button>
           <button
             style={{ ...officeStyles.navBtn, ...(section === 'orders' ? officeStyles.navBtnActive : {}) }}
             onClick={() => setSection('orders')}
@@ -1004,7 +1287,16 @@ function OfficeView({ items, customers, orders, onRefresh, onSwitchToMobile, isM
       </div>
 
       <div style={officeStyles.body}>
-        {section === 'orders' && <OfficeOrders orders={orders} />}
+        {section === 'neworder' && (
+          <div style={officeStyles.orderFormWrap}>
+            <OrderTab
+              items={activeItems}
+              customers={activeCustomers}
+              onOrderSubmitted={async () => { await onRefresh(); }}
+            />
+          </div>
+        )}
+        {section === 'orders' && <OfficeOrders orders={orders} items={activeItems} customers={activeCustomers} onRefresh={onRefresh} />}
         {section === 'inventory' && <OfficeInventory items={items} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
@@ -1012,9 +1304,10 @@ function OfficeView({ items, customers, orders, onRefresh, onSwitchToMobile, isM
   );
 }
 
-function OfficeOrders({ orders }) {
+function OfficeOrders({ orders, items, customers, onRefresh }) {
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1053,31 +1346,36 @@ function OfficeOrders({ orders }) {
               <th style={officeStyles.th}>Items</th>
               <th style={officeStyles.th}>Units</th>
               <th style={{ ...officeStyles.th, textAlign: 'right' }}>Order total</th>
+              <th style={officeStyles.th}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={7}>No orders match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={8}>No orders match "{query}"</td></tr>
             )}
             {filtered.map(o => {
               const isOpen = openId === o.id;
               const totalUnits = o.lines.reduce((s, l) => s + l.qty, 0);
               return (
                 <React.Fragment key={o.id}>
-                  <tr style={officeStyles.rowClickable} onClick={() => setOpenId(isOpen ? null : o.id)}>
-                    <td style={officeStyles.td}>
+                  <tr style={officeStyles.rowClickable}>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                     </td>
-                    <td style={{ ...officeStyles.td, fontWeight: 700 }}>{o.customer}</td>
-                    <td style={officeStyles.td}>{formatDate(o.deliveryDate)}</td>
-                    <td style={officeStyles.td}>{formatDateTime(o.submittedAt)}</td>
-                    <td style={officeStyles.td}>{o.lines.length}</td>
-                    <td style={officeStyles.td}>{totalUnits}</td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(orderTotal(o))}</td>
+                    <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDateTime(o.submittedAt)}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
+                      <button style={officeStyles.smallBtn} onClick={() => printOrder(o)}>Print</button>
+                    </td>
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={7}>
+                      <td style={officeStyles.detailCell} colSpan={8}>
                         <table style={officeStyles.subTable}>
                           <thead>
                             <tr>
@@ -1113,6 +1411,16 @@ function OfficeOrders({ orders }) {
           </tbody>
         </table>
       </div>
+
+      {editingOrder && (
+        <OrderEditModal
+          order={editingOrder}
+          items={items}
+          customers={customers}
+          onClose={() => setEditingOrder(null)}
+          onSaved={async () => { setEditingOrder(null); await onRefresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -1303,7 +1611,7 @@ function OfficeInventory({ items, onRefresh }) {
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                     <NumberFieldEditor item={item} field="pack" onSaved={onRefresh} min={1} width={56} />
-                    {item.packLabel && <span style={{ fontSize: 10.5, color: '#8A8F87' }}>{item.packLabel}</span>}
+                    <TextFieldEditor item={item} field="packLabel" onSaved={onRefresh} placeholder="add label" small />
                   </div>
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
@@ -1328,7 +1636,7 @@ function OfficeInventory({ items, onRefresh }) {
   );
 }
 
-function TextFieldEditor({ item, field, onSaved, placeholder }) {
+function TextFieldEditor({ item, field, onSaved, placeholder, small }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(item[field] || '');
   const [saving, setSaving] = useState(false);
@@ -1336,7 +1644,8 @@ function TextFieldEditor({ item, field, onSaved, placeholder }) {
 
   async function save() {
     const trimmed = value.trim();
-    if (!trimmed || trimmed === original) { setValue(original); setEditing(false); return; }
+    if (trimmed === original) { setEditing(false); return; }
+    if (!trimmed && field !== 'packLabel') { setValue(original); setEditing(false); return; }
     setSaving(true);
     try {
       await apiPatch(`/items/${encodeURIComponent(item.id)}`, { [field]: trimmed });
@@ -1351,8 +1660,12 @@ function TextFieldEditor({ item, field, onSaved, placeholder }) {
 
   if (!editing) {
     return (
-      <button style={officeStyles.nameEditBtn} onClick={() => { setValue(original); setEditing(true); }} title={`Click to edit ${field}`}>
-        {original || <span style={{ color: '#8A8F87' }}>{placeholder || '—'}</span>}
+      <button
+        style={small ? officeStyles.packLabelEditBtn : officeStyles.nameEditBtn}
+        onClick={() => { setValue(original); setEditing(true); }}
+        title={`Click to edit ${field}`}
+      >
+        {original || <span style={{ color: '#B7BCB2' }}>{placeholder || 'add label'}</span>}
       </button>
     );
   }
@@ -1360,14 +1673,14 @@ function TextFieldEditor({ item, field, onSaved, placeholder }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <input
-        style={officeStyles.nameInput}
+        style={small ? officeStyles.packLabelInput : officeStyles.nameInput}
         value={value}
         onChange={e => setValue(e.target.value)}
         onBlur={save}
         onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setValue(original); setEditing(false); } }}
         autoFocus
       />
-      {saving && <Loader2 size={13} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
+      {saving && <Loader2 size={12} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
     </span>
   );
 }
@@ -1547,7 +1860,7 @@ const styles = {
   app: {
     fontFamily: "'Inter', system-ui, sans-serif",
     background: '#F7F8F4',
-    height: '100vh',
+    height: '100dvh',
     maxHeight: 900,
     width: '100%',
     maxWidth: 480,
@@ -1574,11 +1887,12 @@ const styles = {
   retryBtn: { marginTop: 6, background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   tabContent: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   screenWrap: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' },
-  tabBar: { display: 'flex', borderTop: '1px solid #E3E1D6', background: '#FFFFFF', padding: '8px 0 10px' },
-  tabBtn: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' },
-  tabBtnLabel: { fontSize: 10.5, fontWeight: 700 },
+  tabBar: { display: 'flex', borderTop: '1px solid #E3E1D6', background: '#FFFFFF', padding: '10px 0 calc(12px + env(safe-area-inset-bottom, 0px))', flexShrink: 0, position: 'relative', zIndex: 10 },
+  tabBtn: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0' },
+  tabBtnLabel: { fontSize: 11, fontWeight: 700 },
   header: { background: '#14181F', padding: '18px 16px 16px' },
   headerTop: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 },
+  officeLinkBtn: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: '#B7BCB2', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 6px' },
   headerTitle: { color: '#EDEBE3', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em' },
   customerBtn: { width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#EDEBE3', border: 'none', borderRadius: 10, padding: '11px 12px', cursor: 'pointer', fontFamily: 'inherit' },
   customerBtnText: { fontSize: 14, fontWeight: 500 },
@@ -1670,6 +1984,8 @@ const styles = {
   orderCardDelivery: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#5B6058', background: '#EAE8DD', borderRadius: 999, padding: '4px 8px', whiteSpace: 'nowrap' },
   orderCardLines: { borderTop: '1px solid #EAE8DD', padding: '4px 14px' },
   orderCardLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid #EAE8DD' },
+  orderCardActions: { display: 'flex', gap: 8, padding: '10px 0 4px' },
+  orderCardActionBtn: { flex: 1, background: '#F0EEE4', border: 'none', borderRadius: 8, padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
 };
 
 const officeStyles = {
@@ -1686,6 +2002,7 @@ const officeStyles = {
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
   body: { flex: 1, padding: '20px 24px 40px', background: '#F7F8F4' },
+  orderFormWrap: { maxWidth: 480, margin: '0 auto', height: 'calc(100vh - 140px)', minHeight: 600, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
@@ -1707,6 +2024,8 @@ const officeStyles = {
   stockInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 8px', fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: '#14181F', outline: 'none' },
   nameEditBtn: { background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontFamily: 'inherit', textAlign: 'left', cursor: 'text', padding: '2px 4px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 3 },
   nameInput: { width: '100%', minWidth: 180, background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 6, padding: '5px 8px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  packLabelEditBtn: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 10.5, fontFamily: 'inherit', textAlign: 'right', cursor: 'text', padding: '1px 3px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 2 },
+  packLabelInput: { width: 90, textAlign: 'right', background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 5, padding: '3px 6px', fontSize: 10.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   stockInputLow: { borderColor: '#B5493B', color: '#B5493B' },
   unsavedDot: { width: 6, height: 6, borderRadius: '50%', background: '#C9A227' },
   toggleBtn: { border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', minWidth: 62 },
