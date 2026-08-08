@@ -25,6 +25,31 @@ function GridSizeIcon({ variant, ...props }) {
   if (variant === 'cozy') return <Boxes {...props} />;
   return <Rows {...props} />;
 }
+function computePopularity(orders) {
+  const map = {};
+  for (const o of orders || []) {
+    for (const l of o.lines || []) {
+      map[l.id] = (map[l.id] || 0) + (Number(l.qty) || 0);
+    }
+  }
+  return map;
+}
+function sortItemsBy(items, sortBy, popularity) {
+  const arr = [...items];
+  if (sortBy === 'popularity') {
+    arr.sort((a, b) => (popularity[b.id] || 0) - (popularity[a.id] || 0) || a.name.localeCompare(b.name));
+  } else if (sortBy === 'pack') {
+    arr.sort((a, b) => (Number(b.pack) || 1) - (Number(a.pack) || 1) || a.name.localeCompare(b.name));
+  } else {
+    arr.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return arr;
+}
+const SORT_OPTIONS = [
+  { id: 'name', label: 'Name (A–Z)' },
+  { id: 'popularity', label: 'Most ordered' },
+  { id: 'pack', label: 'Case pack' },
+];
 // Your live backend, deployed on Render.
 const API_BASE = 'https://ordering-app-ycc9.onrender.com/api';
 
@@ -93,6 +118,7 @@ function printOrder(order) {
       <td>${l.id}</td>
       <td>${l.name}</td>
       <td>${l.brand || ''}</td>
+      <td style="text-align:right">${l.pack || 1}</td>
       <td style="text-align:right">${l.qty}</td>
       <td style="text-align:right">${formatMoney(l.price)}</td>
       <td style="text-align:right">${formatMoney(lineTotal(l, l.qty))}</td>
@@ -109,19 +135,20 @@ function printOrder(order) {
       th, td { padding: 8px 10px; border-bottom: 1px solid #E3E1D6; text-align: left; }
       th { background: #FBFAF6; font-size: 11px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.04em; }
       tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
-      @media print { body { padding: 0; } }
+      .printBtn { display: inline-block; margin-bottom: 20px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+      @media print { body { padding: 0; } .no-print { display: none; } }
     </style></head><body>
+    <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <h1>Order #${order.id} — ${order.customer}</h1>
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
     <table>
-      <thead><tr><th>SKU</th><th>Item</th><th>Brand</th><th style="text-align:right">Qty</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
+      <thead><tr><th>SKU</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Qty</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="5" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr></tfoot>
+      <tfoot><tr><td colspan="6" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr></tfoot>
     </table>
     </body></html>`);
   win.document.close();
   win.focus();
-  setTimeout(() => win.print(), 300);
 }
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
@@ -309,9 +336,9 @@ export default function App() {
       <style>{fontImport}</style>
       <div style={styles.tabContent}>
         {tab === 'order' && (
-          <OrderTab items={items} customers={customers} onOrderSubmitted={loadAll} />
+          <OrderTab items={items} customers={customers} orders={orderHistory} onOrderSubmitted={loadAll} />
         )}
-        {tab === 'inventory' && <InventoryTab items={items} />}
+        {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} />}
         {tab === 'orders' && (
           <OrdersTab
             orders={orderHistory}
@@ -352,7 +379,7 @@ function TabBar({ active, onChange }) {
 // ============================================================
 // TAB 1 — NEW ORDER
 // ============================================================
-function OrderTab({ items, customers, onOrderSubmitted }) {
+function OrderTab({ items, customers, orders, onOrderSubmitted }) {
   const [customerId, setCustomerId] = useState(null);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -416,18 +443,27 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
     items.forEach(i => { counts[i.brand] = (counts[i.brand] || 0) + 1; });
     return counts;
   }, [items]);
+  const popularity = useMemo(() => computePopularity(orders), [orders]);
+  const [sortBy, setSortBy] = useState(() => {
+    try { return localStorage.getItem('orderSortBy') || 'name'; } catch { return 'name'; }
+  });
+  function changeSortBy(next) {
+    setSortBy(next);
+    try { localStorage.setItem('orderSortBy', next); } catch { /* ignore */ }
+  }
 
   const searching = query.trim().length > 0;
 
   const filteredItems = useMemo(() => {
     const effectiveBrand = screen === 'brands' ? 'All' : brand;
-    return items.filter(i => {
+    const filtered = items.filter(i => {
       const brandMatch = effectiveBrand === 'All' || i.brand === effectiveBrand;
       const q = query.trim().toLowerCase();
       const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
       return brandMatch && queryMatch;
     });
-  }, [items, brand, query, screen]);
+    return sortItemsBy(filtered, sortBy, popularity);
+  }, [items, brand, query, screen, sortBy, popularity]);
 
   const orderLines = useMemo(() => {
     return order.map(o => {
@@ -476,6 +512,7 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
       setQuery('');
       setScreen('brands');
       setBrand('All');
+      setPickersExpanded(true);
       await onOrderSubmitted(); // refresh items + order history from server
     } catch (err) {
       setSubmitError(err.message || 'Something went wrong submitting this order.');
@@ -568,11 +605,16 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
 
       {screen === 'items' && !searching && (
         <div style={styles.itemsSubHeader}>
-          <button style={styles.backBtnBig} onClick={goBackToBrands}>
-            <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
-            <span>Brands</span>
-          </button>
-          <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <button style={styles.backBtnBig} onClick={goBackToBrands}>
+              <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
+              <span>Brands</span>
+            </button>
+            <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
+          </div>
+          <select style={styles.sortSelect} value={sortBy} onChange={e => changeSortBy(e.target.value)}>
+            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
         </div>
       )}
       {searching && (
@@ -581,6 +623,9 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
             <LayoutGrid size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
             Searching all brands
           </span>
+          <select style={styles.sortSelect} value={sortBy} onChange={e => changeSortBy(e.target.value)}>
+            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
         </div>
       )}
 
@@ -663,7 +708,8 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.sheetLineName}>{l.name}</div>
                     <div style={styles.sheetLineSku}>
-                      {l.id}{l.price > 0 ? ` · ${formatMoney(lineTotal(l, l.qty))}` : ''}
+                      {l.id}{l.pack > 1 ? ` · pack of ${l.pack}` : ''}
+                      {l.price > 0 ? ` · ${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
                     </div>
                   </div>
                   <div style={styles.sheetLineQty}>×{l.qty}</div>
@@ -855,7 +901,7 @@ function Confirmation({ data, onNewOrder }) {
 // ============================================================
 // TAB 2 — INVENTORY
 // ============================================================
-function InventoryTab({ items }) {
+function InventoryTab({ items, orders }) {
   const [brand, setBrand] = useState('All');
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
@@ -869,6 +915,14 @@ function InventoryTab({ items }) {
   }, [items]);
   const lowStockTotal = items.filter(i => i.stock <= 5).length;
   const searching = query.trim().length > 0;
+  const popularity = useMemo(() => computePopularity(orders), [orders]);
+  const [sortBy, setSortBy] = useState(() => {
+    try { return localStorage.getItem('inventorySortBy') || 'name'; } catch { return 'name'; }
+  });
+  function changeSortBy(next) {
+    setSortBy(next);
+    try { localStorage.setItem('inventorySortBy', next); } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     if (lowStockTotal === 0 && lowOnly) setLowOnly(false);
@@ -876,16 +930,15 @@ function InventoryTab({ items }) {
 
   const filteredItems = useMemo(() => {
     const effectiveBrand = screen === 'brands' ? 'All' : brand;
-    return items
-      .filter(i => {
-        const brandMatch = effectiveBrand === 'All' || i.brand === effectiveBrand;
-        const q = query.trim().toLowerCase();
-        const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
-        const lowMatch = !lowOnly || i.stock <= 5;
-        return brandMatch && queryMatch && lowMatch;
-      })
-      .sort((a, b) => a.stock - b.stock);
-  }, [items, brand, query, screen, lowOnly]);
+    const filtered = items.filter(i => {
+      const brandMatch = effectiveBrand === 'All' || i.brand === effectiveBrand;
+      const q = query.trim().toLowerCase();
+      const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
+      const lowMatch = !lowOnly || i.stock <= 5;
+      return brandMatch && queryMatch && lowMatch;
+    });
+    return sortItemsBy(filtered, sortBy, popularity);
+  }, [items, brand, query, screen, lowOnly, sortBy, popularity]);
 
   return (
     <div style={styles.screenWrap}>
@@ -946,11 +999,16 @@ function InventoryTab({ items }) {
 
       {screen === 'items' && !searching && !lowOnly && (
         <div style={styles.itemsSubHeader}>
-          <button style={styles.backBtn} onClick={() => { setScreen('brands'); setBrand('All'); }}>
-            <ChevronLeft size={16} color="#14181F" />
-            <span>Brands</span>
-          </button>
-          <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <button style={styles.backBtnBig} onClick={() => { setScreen('brands'); setBrand('All'); }}>
+              <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
+              <span>Brands</span>
+            </button>
+            <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
+          </div>
+          <select style={styles.sortSelect} value={sortBy} onChange={e => changeSortBy(e.target.value)}>
+            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
         </div>
       )}
       {(searching || lowOnly) && (
@@ -960,6 +1018,9 @@ function InventoryTab({ items }) {
               <><LayoutGrid size={13} style={{ marginRight: 6, verticalAlign: -2 }} />Searching all brands</>
             )}
           </span>
+          <select style={styles.sortSelect} value={sortBy} onChange={e => changeSortBy(e.target.value)}>
+            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
         </div>
       )}
 
@@ -1386,12 +1447,13 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, on
             <OrderTab
               items={activeItems}
               customers={activeCustomers}
+              orders={orders}
               onOrderSubmitted={async () => { await onRefresh(); }}
             />
           </div>
         )}
         {section === 'orders' && <OfficeOrders orders={orders} items={activeItems} customers={activeCustomers} onRefresh={onRefresh} />}
-        {section === 'inventory' && <OfficeInventory items={items} onRefresh={onRefresh} />}
+        {section === 'inventory' && <OfficeInventory items={items} orders={orders} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
     </div>
@@ -1519,7 +1581,7 @@ function OfficeOrders({ orders, items, customers, onRefresh }) {
   );
 }
 
-function OfficeInventory({ items, onRefresh }) {
+function OfficeInventory({ items, orders, onRefresh }) {
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
@@ -1529,19 +1591,22 @@ function OfficeInventory({ items, onRefresh }) {
   const [importResult, setImportResult] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editField, setEditField] = useState('all');
+  const [sortBy, setSortBy] = useState('name');
   const fileInputRef = useRef(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
+  const popularity = useMemo(() => computePopularity(orders), [orders]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return items.filter(i => {
+    const matches = items.filter(i => {
       if (!showInactive && !i.active) return false;
       const brandMatch = brand === 'All' || i.brand === brand;
       const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
       return brandMatch && queryMatch;
     });
-  }, [items, query, brand, showInactive]);
+    return sortItemsBy(matches, sortBy, popularity);
+  }, [items, query, brand, showInactive, sortBy, popularity]);
 
   const brandAllActive = brand !== 'All' && items.filter(i => i.brand === brand).every(i => !!i.active);
 
@@ -1629,6 +1694,11 @@ function OfficeInventory({ items, onRefresh }) {
           <select style={officeStyles.select} value={brand} onChange={e => setBrand(e.target.value)}>
             <option value="All">All brands</option>
             {brandList.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        )}
+        {!renamingBrand && (
+          <select style={officeStyles.select} value={sortBy} onChange={e => setSortBy(e.target.value)}>
+            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>Sort: {o.label}</option>)}
           </select>
         )}
         {renamingBrand && (
@@ -2067,6 +2137,7 @@ const styles = {
   backBtn: { display: 'flex', alignItems: 'center', gap: 2, background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', padding: 0, fontFamily: 'inherit' },
   backBtnBig: { display: 'flex', alignItems: 'center', gap: 4, background: '#EDEBE3', border: 'none', borderRadius: 10, color: '#14181F', fontSize: 15, fontWeight: 700, cursor: 'pointer', padding: '8px 14px 8px 8px', fontFamily: 'inherit' },
   itemsSubHeaderBrand: { fontSize: 13, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  sortSelect: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 8px', fontSize: 12, fontWeight: 600, color: '#5B6058', fontFamily: 'inherit', outline: 'none', maxWidth: 130 },
   list: { flex: 1, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
   itemRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #EAE8DD' },
@@ -2160,7 +2231,7 @@ const officeStyles = {
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
   body: { flex: 1, padding: '20px 24px 40px', background: '#F7F8F4' },
-  orderFormWrap: { maxWidth: 880, margin: '0 auto', height: 'calc(100vh - 140px)', minHeight: 600, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
+  orderFormWrap: { width: '100%', height: 'calc(100vh - 140px)', minHeight: 600, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
