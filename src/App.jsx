@@ -437,6 +437,22 @@ function OrderTab({ items, customers, orders, onOrderSubmitted }) {
 
   const customerName = customers.find(c => c.id === customerId)?.name || '';
 
+  // Orders come back newest-first, so the first match for this customer
+  // is their most recent previous order.
+  const previousOrder = useMemo(() => {
+    if (!customerId) return null;
+    return (orders || []).find(o => o.customerId === customerId) || null;
+  }, [orders, customerId]);
+
+  function addPreviousOrderQuantities() {
+    if (!previousOrder) return;
+    for (const l of previousOrder.lines) {
+      const item = items.find(i => i.id === l.id);
+      if (!item) continue; // item no longer available — skip it
+      setQty(l.id, qtyFor(l.id) + l.qty);
+    }
+  }
+
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))), [items]);
   const brandCounts = useMemo(() => {
     const counts = {};
@@ -560,6 +576,16 @@ function OrderTab({ items, customers, orders, onOrderSubmitted }) {
           </button>
         )}
       </div>
+
+      {previousOrder && (
+        <button style={styles.repeatOrderBanner} onClick={addPreviousOrderQuantities}>
+          <ClipboardList size={15} color="#2B5D50" />
+          <span style={styles.repeatOrderText}>
+            Add their last order — {previousOrder.lines.length} item{previousOrder.lines.length === 1 ? '' : 's'}, {formatDate(previousOrder.deliveryDate)}
+          </span>
+          <span style={styles.repeatOrderCta}>Add</span>
+        </button>
+      )}
 
       <div style={styles.searchWrap}>
         <div style={styles.searchInputWrap}>
@@ -2105,6 +2131,9 @@ const styles = {
   pickersSummary: { width: '100%', display: 'flex', alignItems: 'center', gap: 7, background: '#2A2E23', border: '1px solid #3C4132', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' },
   pickersSummaryText: { fontSize: 12.5, fontWeight: 600, color: '#EDEBE3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   pickersSummaryDot: { color: '#5B6058' },
+  repeatOrderBanner: { display: 'flex', alignItems: 'center', gap: 8, width: 'calc(100% - 32px)', margin: '10px 16px 0', background: '#DCEEE8', border: '1px solid #B7DBCF', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
+  repeatOrderText: { flex: 1, fontSize: 12.5, fontWeight: 600, color: '#1E4238' },
+  repeatOrderCta: { fontSize: 12, fontWeight: 700, color: '#2B5D50', textDecoration: 'underline', flexShrink: 0 },
   lowStockBtn: { width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#2A2E23', border: '1px solid #3C4132', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 },
   lowStockBtnActive: { background: '#B5493B', border: '1px solid #B5493B' },
   orderCountPill: { display: 'inline-block', color: '#EDEBE3', fontSize: 12.5, fontWeight: 600, background: '#2A2E23', borderRadius: 999, padding: '6px 12px' },
