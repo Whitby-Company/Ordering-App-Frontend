@@ -721,7 +721,15 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
             </div>
             <div style={styles.sheetLines}>
               {customers.map(c => (
-                <button key={c.id} style={styles.customerRow} onClick={() => { setCustomerId(c.id); setCustomerOpen(false); }}>
+                <button
+                  key={c.id}
+                  style={styles.customerRow}
+                  onClick={() => {
+                    setCustomerId(c.id);
+                    setCustomerOpen(false);
+                    if (deliveryDate) setPickersExpanded(false);
+                  }}
+                >
                   <User size={15} color="#8A8F87" />
                   <span>{c.name}</span>
                 </button>
@@ -772,7 +780,11 @@ function OrderTab({ items, customers, onOrderSubmitted }) {
                   <button
                     key={idx}
                     style={{ ...styles.calendarDay, ...(isSelected ? styles.calendarDaySelected : {}), ...(isToday && !isSelected ? styles.calendarDayToday : {}) }}
-                    onClick={() => { setDeliveryDate(iso); setDateOpen(false); }}
+                    onClick={() => {
+                      setDeliveryDate(iso);
+                      setDateOpen(false);
+                      if (customerId) setPickersExpanded(false);
+                    }}
                   >
                     {day}
                   </button>
