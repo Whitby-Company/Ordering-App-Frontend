@@ -50,6 +50,49 @@ const SORT_OPTIONS = [
   { id: 'popularity', label: 'Most ordered' },
   { id: 'pack', label: 'Case pack' },
 ];
+
+
+// Column-based sort for the Inventory views (mobile + desktop) — any
+// column, either direction, with a stable name-based tiebreaker.
+const INVENTORY_SORT_COLUMNS = [
+  { id: 'id', label: 'SKU' },
+  { id: 'name', label: 'Item name' },
+  { id: 'brand', label: 'Brand' },
+  { id: 'pack', label: 'Pack' },
+  { id: 'price', label: 'Price/ea' },
+  { id: 'casePrice', label: 'Case price' },
+  { id: 'stock', label: 'Stock' },
+  { id: 'active', label: 'Active' },
+  { id: 'popularity', label: 'Most ordered' },
+];
+function inventorySortValue(item, field, popularity) {
+  switch (field) {
+    case 'id': return item.id.toLowerCase();
+    case 'brand': return (item.brand || '').toLowerCase();
+    case 'pack': return Number(item.pack) || 1;
+    case 'price': return Number(item.price) || 0;
+    case 'casePrice': return casePrice(item);
+    case 'stock': return Number(item.stock) || 0;
+    case 'active': return item.active ? 1 : 0;
+    case 'popularity': return popularity[item.id] || 0;
+    case 'name':
+    default: return (item.name || '').toLowerCase();
+  }
+}
+function sortInventoryItems(items, field, dir, popularity) {
+  const mult = dir === 'desc' ? -1 : 1;
+  const arr = [...items];
+  arr.sort((a, b) => {
+    const va = inventorySortValue(a, field, popularity);
+    const vb = inventorySortValue(b, field, popularity);
+    let cmp;
+    if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb));
+    if (cmp !== 0) return cmp * mult;
+    return a.name.localeCompare(b.name); // stable tiebreaker
+  });
+  return arr;
+}
 // Your live backend, deployed on Render.
 const API_BASE = 'https://ordering-app-ycc9.onrender.com/api';
 
@@ -945,12 +988,22 @@ function InventoryTab({ items, orders }) {
   const lowStockTotal = items.filter(i => i.stock <= 5).length;
   const searching = query.trim().length > 0;
   const popularity = useMemo(() => computePopularity(orders), [orders]);
-  const [sortBy, setSortBy] = useState(() => {
-    try { return localStorage.getItem('inventorySortBy') || 'name'; } catch { return 'name'; }
+  const [sortField, setSortField] = useState(() => {
+    try { return localStorage.getItem('inventorySortField') || 'name'; } catch { return 'name'; }
   });
-  function changeSortBy(next) {
-    setSortBy(next);
-    try { localStorage.setItem('inventorySortBy', next); } catch { /* ignore */ }
+  const [sortDir, setSortDir] = useState(() => {
+    try { return localStorage.getItem('inventorySortDir') || 'asc'; } catch { return 'asc'; }
+  });
+  function changeSortField(next) {
+    setSortField(next);
+    try { localStorage.setItem('inventorySortField', next); } catch { /* ignore */ }
+  }
+  function toggleSortDir() {
+    setSortDir(prev => {
+      const next = prev === 'asc' ? 'desc' : 'asc';
+      try { localStorage.setItem('inventorySortDir', next); } catch { /* ignore */ }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -966,8 +1019,8 @@ function InventoryTab({ items, orders }) {
       const lowMatch = !lowOnly || i.stock <= 5;
       return brandMatch && queryMatch && lowMatch;
     });
-    return sortItemsBy(filtered, sortBy, popularity);
-  }, [items, brand, query, screen, lowOnly, sortBy, popularity]);
+    return sortInventoryItems(filtered, sortField, sortDir, popularity);
+  }, [items, brand, query, screen, lowOnly, sortField, sortDir, popularity]);
 
   return (
     <div style={styles.screenWrap}>
@@ -1035,9 +1088,14 @@ function InventoryTab({ items, orders }) {
             </button>
             <span style={styles.itemsSubHeaderBrand}>{brand === 'All' ? 'All Items' : brand}</span>
           </div>
-          <select style={styles.sortSelect} value={sortBy} onChange={e => changeSortBy(e.target.value)}>
-            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <select style={styles.sortSelect} value={sortField} onChange={e => changeSortField(e.target.value)}>
+              {INVENTORY_SORT_COLUMNS.map(o => <option key={o.id} value={o.id}>Sort: {o.label}</option>)}
+            </select>
+            <button style={styles.sortDirBtn} onClick={toggleSortDir} title={sortDir === 'asc' ? 'Ascending' : 'Descending'}>
+              {sortDir === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
         </div>
       )}
       {(searching || lowOnly) && (
@@ -1047,9 +1105,14 @@ function InventoryTab({ items, orders }) {
               <><LayoutGrid size={13} style={{ marginRight: 6, verticalAlign: -2 }} />Searching all brands</>
             )}
           </span>
-          <select style={styles.sortSelect} value={sortBy} onChange={e => changeSortBy(e.target.value)}>
-            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <select style={styles.sortSelect} value={sortField} onChange={e => changeSortField(e.target.value)}>
+              {INVENTORY_SORT_COLUMNS.map(o => <option key={o.id} value={o.id}>Sort: {o.label}</option>)}
+            </select>
+            <button style={styles.sortDirBtn} onClick={toggleSortDir} title={sortDir === 'asc' ? 'Ascending' : 'Descending'}>
+              {sortDir === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1610,6 +1673,22 @@ function OfficeOrders({ orders, items, customers, onRefresh }) {
   );
 }
 
+function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left' }) {
+  const active = sortField === field;
+  return (
+    <th
+      style={{ ...officeStyles.th, textAlign: align, cursor: 'pointer', userSelect: 'none', color: active ? '#14181F' : undefined }}
+      onClick={() => onClick(field)}
+      title={`Sort by ${label}`}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
+        {label}
+        {active && <span style={{ fontSize: 10 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </span>
+    </th>
+  );
+}
+
 function OfficeInventory({ items, orders, onRefresh }) {
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
@@ -1620,11 +1699,21 @@ function OfficeInventory({ items, orders, onRefresh }) {
   const [importResult, setImportResult] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editField, setEditField] = useState('all');
-  const [sortBy, setSortBy] = useState('name');
+  const [sortField, setSortField] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
   const fileInputRef = useRef(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
   const popularity = useMemo(() => computePopularity(orders), [orders]);
+
+  function handleSortClick(field) {
+    if (field === sortField) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1634,8 +1723,8 @@ function OfficeInventory({ items, orders, onRefresh }) {
       const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
       return brandMatch && queryMatch;
     });
-    return sortItemsBy(matches, sortBy, popularity);
-  }, [items, query, brand, showInactive, sortBy, popularity]);
+    return sortInventoryItems(matches, sortField, sortDir, popularity);
+  }, [items, query, brand, showInactive, sortField, sortDir, popularity]);
 
   const brandAllActive = brand !== 'All' && items.filter(i => i.brand === brand).every(i => !!i.active);
 
@@ -1725,11 +1814,6 @@ function OfficeInventory({ items, orders, onRefresh }) {
             {brandList.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
         )}
-        {!renamingBrand && (
-          <select style={officeStyles.select} value={sortBy} onChange={e => setSortBy(e.target.value)}>
-            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>Sort: {o.label}</option>)}
-          </select>
-        )}
         {renamingBrand && (
           <>
             <input
@@ -1797,14 +1881,14 @@ function OfficeInventory({ items, orders, onRefresh }) {
         <table style={officeStyles.table}>
           <thead>
             <tr>
-              <th style={officeStyles.th}>SKU</th>
-              <th style={officeStyles.th}>Item</th>
-              <th style={officeStyles.th}>Brand</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Pack</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Price/ea</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Case price</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Stock</th>
-              <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
+              <SortableTh field="id" label="SKU" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="name" label="Item" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="brand" label="Brand" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
             </tr>
           </thead>
           <tbody>
@@ -2170,6 +2254,7 @@ const styles = {
   backBtnBig: { display: 'flex', alignItems: 'center', gap: 4, background: '#EDEBE3', border: 'none', borderRadius: 10, color: '#14181F', fontSize: 15, fontWeight: 700, cursor: 'pointer', padding: '8px 14px 8px 8px', fontFamily: 'inherit' },
   itemsSubHeaderBrand: { fontSize: 13, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.04em' },
   sortSelect: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 8px', fontSize: 12, fontWeight: 600, color: '#5B6058', fontFamily: 'inherit', outline: 'none', maxWidth: 130 },
+  sortDirBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#5B6058', cursor: 'pointer' },
   list: { flex: 1, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
   itemRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #EAE8DD' },
