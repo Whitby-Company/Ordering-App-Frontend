@@ -665,6 +665,9 @@ function OrderTab({ items, customers, orders, onOrderSubmitted }) {
             const low = item.stock <= 5;
             return (
               <div key={item.id} style={styles.itemRow}>
+                {item.imageUrl && (
+                  <img src={item.imageUrl} alt="" style={styles.itemThumb} loading="lazy" />
+                )}
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={styles.itemName}>{item.name}</div>
                   <div style={styles.itemMeta}>
@@ -2170,6 +2173,7 @@ const styles = {
   list: { flex: 1, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
   itemRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #EAE8DD' },
+  itemThumb: { width: 48, height: 48, borderRadius: 8, objectFit: 'cover', flexShrink: 0, background: '#F0EEE4' },
   itemName: { fontSize: 14, fontWeight: 600, color: '#14181F', marginBottom: 3 },
   itemMeta: { display: 'flex', alignItems: 'center', gap: 8 },
   sku: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#8A8F87' },
