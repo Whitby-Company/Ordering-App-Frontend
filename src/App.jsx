@@ -98,7 +98,8 @@ const API_BASE = 'https://ordering-app-ycc9.onrender.com/api';
 
 const BRAND_COLORS = { Nike: '#2B5D50', Adidas: '#3E5C76', Puma: '#8A4A3D' };
 const BRAND_FALLBACK_COLORS = ['#2B5D50', '#3E5C76', '#8A4A3D', '#6B5B95', '#457B7A', '#9C6644'];
-function brandColor(brand, index) {
+function brandColor(brand, index, customColors) {
+  if (customColors && customColors[brand]) return customColors[brand];
   return BRAND_COLORS[brand] || BRAND_FALLBACK_COLORS[index % BRAND_FALLBACK_COLORS.length];
 }
 
@@ -150,6 +151,16 @@ async function apiPatch(path, body) {
 }
 async function apiDelete(path) {
   const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+async function apiPut(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
@@ -289,6 +300,7 @@ export default function App() {
   const [itemsAll, setItemsAll] = useState([]);
   const [customersAll, setCustomersAll] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
+  const [brandColors, setBrandColors] = useState({});
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [tab, setTab] = useState('order');
   const isDesktopWidth = useIsDesktop();
@@ -306,18 +318,20 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [itemsData, customersData, itemsAllData, customersAllData, ordersData] = await Promise.all([
+      const [itemsData, customersData, itemsAllData, customersAllData, ordersData, brandColorsData] = await Promise.all([
         apiGet('/items'),
         apiGet('/customers'),
         apiGet('/items?includeInactive=true'),
         apiGet('/customers?includeInactive=true'),
         apiGet('/orders'),
+        apiGet('/brand-colors'),
       ]);
       setItems(itemsData);
       setCustomers(customersData);
       setItemsAll(itemsAllData);
       setCustomersAll(customersAllData);
       setOrderHistory(ordersData);
+      setBrandColors(brandColorsData || {});
       setStatus('ready');
     } catch (err) {
       setStatus('error');
@@ -365,6 +379,7 @@ export default function App() {
           activeItems={items}
           activeCustomers={customers}
           orders={orderHistory}
+          brandColors={brandColors}
           onRefresh={loadAll}
           onSwitchToMobile={() => setOverride('mobile')}
           isManualOverride={!!viewOverride}
@@ -379,9 +394,9 @@ export default function App() {
       <style>{fontImport}</style>
       <div style={styles.tabContent}>
         {tab === 'order' && (
-          <OrderTab items={items} customers={customers} orders={orderHistory} onOrderSubmitted={loadAll} />
+          <OrderTab items={items} customers={customers} orders={orderHistory} brandColors={brandColors} onOrderSubmitted={loadAll} />
         )}
-        {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} />}
+        {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} />}
         {tab === 'orders' && (
           <OrdersTab
             orders={orderHistory}
@@ -422,7 +437,7 @@ function TabBar({ active, onChange }) {
 // ============================================================
 // TAB 1 — NEW ORDER
 // ============================================================
-function OrderTab({ items, customers, orders, onOrderSubmitted }) {
+function OrderTab({ items, customers, orders, brandColors, onOrderSubmitted }) {
   const [customerId, setCustomerId] = useState(null);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -662,7 +677,7 @@ function OrderTab({ items, customers, orders, onOrderSubmitted }) {
           {brandList.map((b, idx) => (
             <button
               key={b}
-              style={{ ...styles.brandTile, background: brandColor(b, idx), ...styles.brandTileVariant[gridSize] }}
+              style={{ ...styles.brandTile, background: brandColor(b, idx, brandColors), ...styles.brandTileVariant[gridSize] }}
               onClick={() => { setBrand(b); setScreen('items'); }}
             >
               <span style={{ ...styles.brandTileName, ...styles.brandTileNameVariant[gridSize] }}>{b}</span>
@@ -973,7 +988,7 @@ function Confirmation({ data, onNewOrder }) {
 // ============================================================
 // TAB 2 — INVENTORY
 // ============================================================
-function InventoryTab({ items, orders }) {
+function InventoryTab({ items, orders, brandColors }) {
   const [brand, setBrand] = useState('All');
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
@@ -1069,7 +1084,7 @@ function InventoryTab({ items, orders }) {
           {brandList.map((b, idx) => (
             <button
               key={b}
-              style={{ ...styles.brandTile, background: brandColor(b, idx) }}
+              style={{ ...styles.brandTile, background: brandColor(b, idx, brandColors) }}
               onClick={() => { setBrand(b); setScreen('items'); }}
             >
               <span style={styles.brandTileName}>{b}</span>
@@ -1476,7 +1491,7 @@ const editStyles = {
 // DESKTOP — OFFICE VIEW (orders table for QuickBooks entry,
 // inventory table with editable stock)
 // ============================================================
-function OfficeView({ items, customers, activeItems, activeCustomers, orders, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
+function OfficeView({ items, customers, activeItems, activeCustomers, orders, brandColors, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
   const [section, setSection] = useState('orders');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -1540,12 +1555,13 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, on
               items={activeItems}
               customers={activeCustomers}
               orders={orders}
+              brandColors={brandColors}
               onOrderSubmitted={async () => { await onRefresh(); }}
             />
           </div>
         )}
         {section === 'orders' && <OfficeOrders orders={orders} items={activeItems} customers={activeCustomers} onRefresh={onRefresh} />}
-        {section === 'inventory' && <OfficeInventory items={items} orders={orders} onRefresh={onRefresh} />}
+        {section === 'inventory' && <OfficeInventory items={items} orders={orders} brandColors={brandColors} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
     </div>
@@ -1689,7 +1705,7 @@ function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left' 
   );
 }
 
-function OfficeInventory({ items, orders, onRefresh }) {
+function OfficeInventory({ items, orders, brandColors, onRefresh }) {
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
@@ -1750,6 +1766,14 @@ function OfficeInventory({ items, orders, onRefresh }) {
       setBrand(newName);
     } catch (err) { /* keep old brand selected on failure */ }
     setRenamingBrand(false);
+  }
+
+  async function saveBrandColor(color) {
+    if (brand === 'All') return;
+    try {
+      await apiPut(`/brand-colors/${encodeURIComponent(brand)}`, { color });
+      await onRefresh();
+    } catch (err) { /* leave current color on failure */ }
   }
 
   function exportCSV() {
@@ -1833,6 +1857,21 @@ function OfficeInventory({ items, orders, onRefresh }) {
               {brandAllActive ? 'Deactivate brand' : 'Activate brand'}
             </button>
             <button style={officeStyles.smallBtn} onClick={startRenameBrand}>Rename brand</button>
+            <label style={officeStyles.colorPickerLabel} title="Set this brand's tile color on the New Order page">
+              <span style={{ ...officeStyles.colorSwatch, background: brandColor(brand, brandList.indexOf(brand), brandColors) }} />
+              Color
+              <input
+                type="color"
+                value={brandColors[brand] || brandColor(brand, brandList.indexOf(brand), brandColors)}
+                onChange={e => saveBrandColor(e.target.value)}
+                style={officeStyles.colorInput}
+              />
+            </label>
+            {brandColors[brand] && (
+              <button style={officeStyles.smallBtn} onClick={() => saveBrandColor('')} title="Reset to the default auto color">
+                Reset color
+              </button>
+            )}
           </>
         )}
         <button style={officeStyles.smallBtn} onClick={exportCSV} title="Download the items currently shown as a CSV">
@@ -2345,6 +2384,9 @@ const officeStyles = {
   refreshBtn: { display: 'flex', alignItems: 'center', gap: 6, background: '#2A2E23', color: '#EDEBE3', border: '1px solid #3C4132', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   autoLink: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', whiteSpace: 'nowrap' },
   editModeBtnActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
+  colorPickerLabel: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 600, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
+  colorSwatch: { width: 14, height: 14, borderRadius: 4, border: '1px solid rgba(0,0,0,0.15)', display: 'inline-block' },
+  colorInput: { position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' },
   importBanner: { display: 'flex', alignItems: 'center', gap: 10, background: '#DCEEE8', color: '#1E4238', border: '1px solid #B7DBCF', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
