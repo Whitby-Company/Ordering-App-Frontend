@@ -1857,20 +1857,24 @@ function OfficeInventory({ items, orders, brandColors, onRefresh }) {
               {brandAllActive ? 'Deactivate brand' : 'Activate brand'}
             </button>
             <button style={officeStyles.smallBtn} onClick={startRenameBrand}>Rename brand</button>
-            <label style={officeStyles.colorPickerLabel} title="Set this brand's tile color on the New Order page">
-              <span style={{ ...officeStyles.colorSwatch, background: brandColor(brand, brandList.indexOf(brand), brandColors) }} />
-              Color
-              <input
-                type="color"
-                value={brandColors[brand] || brandColor(brand, brandList.indexOf(brand), brandColors)}
-                onChange={e => saveBrandColor(e.target.value)}
-                style={officeStyles.colorInput}
-              />
-            </label>
-            {brandColors[brand] && (
-              <button style={officeStyles.smallBtn} onClick={() => saveBrandColor('')} title="Reset to the default auto color">
-                Reset color
-              </button>
+            {editMode && (
+              <>
+                <label style={officeStyles.colorPickerLabel} title="Set this brand's tile color on the New Order page">
+                  <span style={{ ...officeStyles.colorSwatch, background: brandColor(brand, brandList.indexOf(brand), brandColors) }} />
+                  Color
+                  <input
+                    type="color"
+                    value={brandColors[brand] || brandColor(brand, brandList.indexOf(brand), brandColors)}
+                    onChange={e => saveBrandColor(e.target.value)}
+                    style={officeStyles.colorInput}
+                  />
+                </label>
+                {brandColors[brand] && (
+                  <button style={officeStyles.smallBtn} onClick={() => saveBrandColor('')} title="Reset to the default auto color">
+                    Reset color
+                  </button>
+                )}
+              </>
             )}
           </>
         )}
