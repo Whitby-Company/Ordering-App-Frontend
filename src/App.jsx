@@ -34,12 +34,30 @@ function computePopularity(orders) {
   }
   return map;
 }
+// Parse the per-unit oz size out of a packLabel like "12/5.5oz" -> 5.5.
+// Returns null when there's no parseable oz value.
+function parseOzSize(packLabel) {
+  if (!packLabel) return null;
+  // take the number immediately before "oz" (handles "12/5.5oz", "4/27oz")
+  const m = String(packLabel).match(/([\d.]+)\s*oz/i);
+  return m ? parseFloat(m[1]) : null;
+}
 function sortItemsBy(items, sortBy, popularity) {
   const arr = [...items];
   if (sortBy === 'popularity') {
     arr.sort((a, b) => (popularity[b.id] || 0) - (popularity[a.id] || 0) || a.name.localeCompare(b.name));
   } else if (sortBy === 'pack') {
     arr.sort((a, b) => (Number(b.pack) || 1) - (Number(a.pack) || 1) || a.name.localeCompare(b.name));
+  } else if (sortBy === 'size') {
+    arr.sort((a, b) => {
+      const sa = parseOzSize(a.packLabel);
+      const sb = parseOzSize(b.packLabel);
+      // items without a parseable size sort to the end
+      if (sa == null && sb == null) return a.name.localeCompare(b.name);
+      if (sa == null) return 1;
+      if (sb == null) return -1;
+      return sa - sb || a.name.localeCompare(b.name);
+    });
   } else {
     arr.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -49,6 +67,7 @@ const SORT_OPTIONS = [
   { id: 'name', label: 'Name (A–Z)' },
   { id: 'popularity', label: 'Most ordered' },
   { id: 'pack', label: 'Case pack' },
+  { id: 'size', label: 'Size (oz)' },
 ];
 
 
