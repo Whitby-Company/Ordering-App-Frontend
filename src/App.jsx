@@ -42,7 +42,7 @@ function parseOzSize(packLabel) {
   const m = String(packLabel).match(/([\d.]+)\s*oz/i);
   return m ? parseFloat(m[1]) : null;
 }
-function sortItemsBy(items, sortBy, popularity) {
+function sortItemsBy(items, sortBy, popularity, printSequence) {
   const arr = [...items];
   if (sortBy === 'popularity') {
     arr.sort((a, b) => (popularity[b.id] || 0) - (popularity[a.id] || 0) || a.name.localeCompare(b.name));
@@ -58,6 +58,17 @@ function sortItemsBy(items, sortBy, popularity) {
       if (sb == null) return -1;
       return sa - sb || a.name.localeCompare(b.name);
     });
+  } else if (sortBy === 'printOrder') {
+    const pos = new Map();
+    (printSequence || []).forEach((sku, i) => pos.set(sku, i));
+    const BIG = Number.MAX_SAFE_INTEGER;
+    arr.sort((a, b) => {
+      const pa = pos.has(a.id) ? pos.get(a.id) : BIG;
+      const pb = pos.has(b.id) ? pos.get(b.id) : BIG;
+      // items not in the sequence fall to the end, alphabetically
+      if (pa === BIG && pb === BIG) return a.name.localeCompare(b.name);
+      return pa - pb;
+    });
   } else {
     arr.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -68,6 +79,7 @@ const SORT_OPTIONS = [
   { id: 'popularity', label: 'Most ordered' },
   { id: 'pack', label: 'Case pack' },
   { id: 'size', label: 'Size (oz)' },
+  { id: 'printOrder', label: 'Inventory order' },
 ];
 
 
@@ -544,7 +556,7 @@ export default function App() {
       <style>{fontImport}</style>
       <div style={styles.tabContent}>
         {tab === 'order' && (
-          <OrderTab items={items} customers={customers} orders={orderHistory} brandColors={brandColors} onOrderSubmitted={loadAll} />
+          <OrderTab items={items} customers={customers} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} />
         )}
         {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} />}
         {tab === 'orders' && (
@@ -588,7 +600,7 @@ function TabBar({ active, onChange }) {
 // ============================================================
 // TAB 1 — NEW ORDER
 // ============================================================
-function OrderTab({ items, customers, orders, brandColors, onOrderSubmitted }) {
+function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted }) {
   const [customerId, setCustomerId] = useState(null);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -687,8 +699,8 @@ function OrderTab({ items, customers, orders, brandColors, onOrderSubmitted }) {
       const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
       return brandMatch && queryMatch;
     });
-    return sortItemsBy(filtered, sortBy, popularity);
-  }, [items, brand, query, screen, sortBy, popularity]);
+    return sortItemsBy(filtered, sortBy, popularity, printSequence);
+  }, [items, brand, query, screen, sortBy, popularity, printSequence]);
 
   const orderLines = useMemo(() => {
     return order.map(o => {
@@ -1707,6 +1719,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
               customers={activeCustomers}
               orders={orders}
               brandColors={brandColors}
+              printSequence={printSequence}
               onOrderSubmitted={async () => { await onRefresh(); }}
             />
           </div>
