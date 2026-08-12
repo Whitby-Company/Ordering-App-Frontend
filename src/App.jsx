@@ -276,16 +276,21 @@ function printOrder(order, printSequence) {
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
   const orderedLines = sortLinesForPrint(order.lines, printSequence);
-  const rows = orderedLines.map(l => `
+  const rows = orderedLines.map(l => {
+    const cases = Number(l.qty) || 0;
+    const pack = Number(l.pack) || 1;
+    return `
     <tr>
       <td>${displayCode(l.id)}</td>
+      <td style="text-align:right">${cases}</td>
+      <td style="text-align:right">${cases * pack}</td>
       <td>${l.name}</td>
       <td>${l.brand || ''}</td>
       <td style="text-align:right">${l.pack || 1}</td>
-      <td style="text-align:right">${l.qty}</td>
       <td style="text-align:right">${formatMoney(l.price)}</td>
       <td style="text-align:right">${formatMoney(lineTotal(l, l.qty))}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   const win = window.open('', '_blank', 'width=800,height=900');
   if (!win) return;
   win.document.write(`<!doctype html><html><head><title>Order ${order.id}</title>
@@ -306,12 +311,11 @@ function printOrder(order, printSequence) {
     <h1>Order #${order.id} — ${order.customer}</h1>
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
     <table>
-      <thead><tr><th>Item #</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Cases</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
+      <thead><tr><th>Item #</th><th style="text-align:right">Cases</th><th style="text-align:right">Total eaches</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr class="subtotal"><td colspan="4" style="text-align:right">Total cases</td><td style="text-align:right">${totalCases}</td><td></td><td></td></tr>
-        <tr class="subtotal"><td colspan="4" style="text-align:right">Total units</td><td style="text-align:right">${totalUnits}</td><td></td><td></td></tr>
-        <tr><td colspan="6" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr>
+        <tr class="subtotal"><td style="text-align:right">Totals</td><td style="text-align:right">${totalCases}</td><td style="text-align:right">${totalUnits}</td><td colspan="5"></td></tr>
+        <tr><td colspan="7" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr>
       </tfoot>
     </table>
     </body></html>`);
