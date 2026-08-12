@@ -273,10 +273,13 @@ function sortLinesForPrint(lines, printOrder) {
 
 function printOrder(order, printSequence) {
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+  const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
   const orderedLines = sortLinesForPrint(order.lines, printSequence);
+  const bareCode = (sku) => { const i = String(sku).indexOf(':'); return i >= 0 ? String(sku).slice(i + 1) : String(sku); };
   const rows = orderedLines.map(l => `
     <tr>
-      <td>${l.id}</td>
+      <td>${bareCode(l.id)}</td>
       <td>${l.name}</td>
       <td>${l.brand || ''}</td>
       <td style="text-align:right">${l.pack || 1}</td>
@@ -296,6 +299,7 @@ function printOrder(order, printSequence) {
       th, td { padding: 8px 10px; border-bottom: 1px solid #E3E1D6; text-align: left; }
       th { background: #FBFAF6; font-size: 11px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.04em; }
       tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
+      tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
       .printBtn { display: inline-block; margin-bottom: 20px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
       @media print { body { padding: 0; } .no-print { display: none; } }
     </style></head><body>
@@ -303,9 +307,13 @@ function printOrder(order, printSequence) {
     <h1>Order #${order.id} — ${order.customer}</h1>
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
     <table>
-      <thead><tr><th>SKU</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Qty</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
+      <thead><tr><th>Item #</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Cases</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="6" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr></tfoot>
+      <tfoot>
+        <tr class="subtotal"><td colspan="4" style="text-align:right">Total cases</td><td style="text-align:right">${totalCases}</td><td></td><td></td></tr>
+        <tr class="subtotal"><td colspan="4" style="text-align:right">Total units</td><td style="text-align:right">${totalUnits}</td><td></td><td></td></tr>
+        <tr><td colspan="6" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr>
+      </tfoot>
     </table>
     </body></html>`);
   win.document.close();
@@ -1716,9 +1724,9 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
           <thead>
             <tr>
               <th style={officeStyles.th}></th>
+              <th style={officeStyles.th}>Submitted</th>
               <th style={officeStyles.th}>Customer</th>
               <th style={officeStyles.th}>Delivery date</th>
-              <th style={officeStyles.th}>Submitted</th>
               <th style={officeStyles.th}>Items</th>
               <th style={officeStyles.th}>Units</th>
               <th style={{ ...officeStyles.th, textAlign: 'right' }}>Order total</th>
@@ -1738,9 +1746,9 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                     </td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDateTime(o.submittedAt)}</td>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDateTime(o.submittedAt)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
