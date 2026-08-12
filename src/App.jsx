@@ -282,8 +282,8 @@ function printOrder(order, printSequence) {
     return `
     <tr>
       <td>${displayCode(l.id)}</td>
-      <td style="text-align:right">${cases}</td>
-      <td style="text-align:right">${cases * pack}</td>
+      <td style="text-align:center">${cases}</td>
+      <td style="text-align:center">${cases * pack}</td>
       <td>${l.name}</td>
       <td>${l.brand || ''}</td>
       <td style="text-align:right">${l.pack || 1}</td>
@@ -311,10 +311,10 @@ function printOrder(order, printSequence) {
     <h1>Order #${order.id} — ${order.customer}</h1>
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
     <table>
-      <thead><tr><th>Item #</th><th style="text-align:right">Cases</th><th style="text-align:right">Total eaches</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Line total</th></tr></thead>
+      <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr class="subtotal"><td style="text-align:right">Totals</td><td style="text-align:right">${totalCases}</td><td style="text-align:right">${totalUnits}</td><td colspan="5"></td></tr>
+        <tr class="subtotal"><td style="text-align:right">Totals</td><td style="text-align:center">${totalCases}</td><td style="text-align:center">${totalUnits}</td><td colspan="5"></td></tr>
         <tr><td colspan="7" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr>
       </tfoot>
     </table>
