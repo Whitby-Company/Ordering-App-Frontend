@@ -2052,9 +2052,11 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
         <button style={officeStyles.smallBtn} onClick={triggerImport} disabled={importing} title="Upload a CSV to bulk-update stock and/or price">
           {importing ? 'Importing…' : 'Import CSV'}
         </button>
-        <button style={officeStyles.smallBtn} onClick={triggerPrintOrderUpload} disabled={uploadingOrder} title="Upload an .xlsx to set the order items print in. Needs a column headed 'Item #' (or 'SKU'/'Code').">
-          {uploadingOrder ? 'Uploading…' : 'Upload print order'}
-        </button>
+        {editMode && (
+          <button style={officeStyles.smallBtn} onClick={triggerPrintOrderUpload} disabled={uploadingOrder} title="Upload an .xlsx to set the order items print in. Needs a column headed 'Item #' (or 'SKU'/'Code').">
+            {uploadingOrder ? 'Uploading…' : 'Upload print order'}
+          </button>
+        )}
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
