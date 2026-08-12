@@ -276,10 +276,9 @@ function printOrder(order, printSequence) {
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
   const orderedLines = sortLinesForPrint(order.lines, printSequence);
-  const bareCode = (sku) => { const i = String(sku).indexOf(':'); return i >= 0 ? String(sku).slice(i + 1) : String(sku); };
   const rows = orderedLines.map(l => `
     <tr>
-      <td>${bareCode(l.id)}</td>
+      <td>${displayCode(l.id)}</td>
       <td>${l.name}</td>
       <td>${l.brand || ''}</td>
       <td style="text-align:right">${l.pack || 1}</td>
@@ -321,6 +320,15 @@ function printOrder(order, printSequence) {
 }
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
+}
+// Item numbers are stored brand-prefixed (e.g. "Ritter Sport:2146") because
+// that's the real DB key used for API calls, matching, and cart ops. For
+// DISPLAY ONLY, strip the brand prefix so users just see the bare code
+// ("2146"). Never use this where the value is used as a key.
+function displayCode(id) {
+  const s = String(id ?? '');
+  const i = s.indexOf(':');
+  return i >= 0 ? s.slice(i + 1) : s;
 }
 // --- CSV helpers for bulk inventory export/import ---
 function csvEscape(val) {
@@ -849,7 +857,7 @@ function OrderTab({ items, customers, orders, brandColors, onOrderSubmitted }) {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={styles.itemName}>{item.name}</div>
                   <div style={styles.itemMeta}>
-                    <span style={styles.sku}>{item.id}</span>
+                    <span style={styles.sku}>{displayCode(item.id)}</span>
                     {item.packLabel && <span style={styles.brandLabel}>{item.packLabel}</span>}
                     <span style={{ ...styles.stockTag, ...(low ? styles.stockTagLow : {}) }}>
                       {item.stock} in stock
@@ -915,7 +923,7 @@ function OrderTab({ items, customers, orders, brandColors, onOrderSubmitted }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.sheetLineName}>{l.name}</div>
                     <div style={styles.sheetLineSku}>
-                      {l.id}{l.pack > 1 ? ` · ${l.pack}ea` : ''}
+                      {displayCode(l.id)}{l.pack > 1 ? ` · ${l.pack}ea` : ''}
                       {l.price > 0 ? ` · ${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
                     </div>
                   </div>
@@ -1076,7 +1084,7 @@ function Confirmation({ data, onNewOrder }) {
               <div>
                 <div style={styles.receiptItemName}>{l.name}</div>
                 <div style={styles.receiptSku}>
-                  {l.id}{l.price > 0 ? ` · ${formatMoney(lineTotal(l, l.qty))}` : ''}
+                  {displayCode(l.id)}{l.price > 0 ? ` · ${formatMoney(lineTotal(l, l.qty))}` : ''}
                 </div>
               </div>
               <span style={styles.receiptQty}>{l.qty}</span>
@@ -1262,7 +1270,7 @@ function InventoryTab({ items, orders, brandColors }) {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={styles.itemName}>{item.name}</div>
                   <div style={styles.itemMeta}>
-                    <span style={styles.sku}>{item.id}</span>
+                    <span style={styles.sku}>{displayCode(item.id)}</span>
                     <span style={styles.brandLabel}>{item.brand}</span>
                     {item.packLabel && <span style={styles.brandLabel}>{item.packLabel}</span>}
                     {item.price > 0 && (
@@ -1362,7 +1370,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                     <div key={l.id} style={styles.orderCardLine}>
                       <div>
                         <div style={styles.sheetLineName}>{l.name}</div>
-                        <div style={styles.sheetLineSku}>{l.id}</div>
+                        <div style={styles.sheetLineSku}>{displayCode(l.id)}</div>
                       </div>
                       <div style={styles.sheetLineQty}>×{l.qty}</div>
                     </div>
@@ -1519,7 +1527,7 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={styles.sheetLineName}>{item.name}</div>
                   <div style={styles.sheetLineSku}>
-                    {item.id}{item.price > 0 ? ` · ${formatMoney(lineTotal(item, l.qty))}` : ''}
+                    {displayCode(item.id)}{item.price > 0 ? ` · ${formatMoney(lineTotal(item, l.qty))}` : ''}
                   </div>
                 </div>
                 <div style={styles.stepper}>
@@ -1548,7 +1556,7 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
               {searchResults.map(item => (
                 <button key={item.id} style={editStyles.searchResultRow} onClick={() => addItem(item)}>
                   <span style={{ fontWeight: 600 }}>{item.name}</span>
-                  <span style={{ color: '#8A8F87', fontSize: 12 }}>{item.id} · {item.stock} in stock</span>
+                  <span style={{ color: '#8A8F87', fontSize: 12 }}>{displayCode(item.id)} · {item.stock} in stock</span>
                 </button>
               ))}
             </div>
@@ -1763,7 +1771,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                         <table style={officeStyles.subTable}>
                           <thead>
                             <tr>
-                              <th style={officeStyles.subTh}>SKU</th>
+                              <th style={officeStyles.subTh}>Item #</th>
                               <th style={officeStyles.subTh}>Item</th>
                               <th style={officeStyles.subTh}>Brand</th>
                               <th style={{ ...officeStyles.subTh, textAlign: 'right' }}>Pack</th>
@@ -1775,7 +1783,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                           <tbody>
                             {o.lines.map(l => (
                               <tr key={l.id}>
-                                <td style={officeStyles.subTd}>{l.id}</td>
+                                <td style={officeStyles.subTd}>{displayCode(l.id)}</td>
                                 <td style={officeStyles.subTd}>{l.name}</td>
                                 <td style={officeStyles.subTd}>{l.brand}</td>
                                 <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{l.pack || 1}</td>
@@ -2095,7 +2103,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
         <table style={officeStyles.table}>
           <thead>
             <tr>
-              <SortableTh field="id" label="SKU" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="id" label="Item #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="name" label="Item" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="brand" label="Brand" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
@@ -2113,7 +2121,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
               const canEdit = f => editMode && (editField === 'all' || editField === f);
               return (
               <tr key={item.id} style={!item.active ? officeStyles.rowInactive : undefined}>
-                <td style={officeStyles.td}>{item.id}</td>
+                <td style={officeStyles.td}>{displayCode(item.id)}</td>
                 <td style={officeStyles.td}>
                   {canEdit('name') ? <TextFieldEditor item={item} field="name" onSaved={onRefresh} /> : item.name}
                 </td>
