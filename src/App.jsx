@@ -2108,6 +2108,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
             <option value="price">Edit: Price</option>
             <option value="stock">Edit: Stock</option>
             <option value="active">Edit: Active</option>
+            <option value="photo">Edit: Photo</option>
           </select>
         )}
         <div style={officeStyles.countPill}>{filtered.length} item{filtered.length === 1 ? '' : 's'}</div>
@@ -2149,11 +2150,14 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
               <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
+              {editMode && (editField === 'all' || editField === 'photo') && (
+                <th style={{ ...officeStyles.th, textAlign: 'center' }}>Photo</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={8}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode && (editField === 'all' || editField === 'photo') ? 9 : 8}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
@@ -2204,6 +2208,11 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
                     </span>
                   )}
                 </td>
+                {editMode && (editField === 'all' || editField === 'photo') && (
+                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                    <PhotoEditor item={item} onSaved={onRefresh} />
+                  </td>
+                )}
               </tr>
               );
             })}
@@ -2260,6 +2269,120 @@ function TextFieldEditor({ item, field, onSaved, placeholder, small }) {
       />
       {saving && <Loader2 size={12} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
     </span>
+  );
+}
+
+// Resize/compress an image File in the browser to a small thumbnail data URL.
+// Keeps aspect ratio, longest side <= maxDim, JPEG quality ~0.82. Transparent
+// PNGs get a white background so they don't turn black as JPEG.
+function resizeImageFile(file, maxDim = 400) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('That file is not a readable image'));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function PhotoEditor({ item, onSaved }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [showUrl, setShowUrl] = useState(false);
+  const [urlValue, setUrlValue] = useState(item.imageUrl || '');
+  const fileRef = useRef(null);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError('');
+    setBusy(true);
+    try {
+      const dataUrl = await resizeImageFile(file, 400);
+      await apiPost(`/items/${encodeURIComponent(item.id)}/image`, { imageData: dataUrl, ext: 'jpg' });
+      await onSaved();
+    } catch (err) {
+      setError(err.message || 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveUrl() {
+    const trimmed = urlValue.trim();
+    setBusy(true);
+    setError('');
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { imageUrl: trimmed });
+      await onSaved();
+      setShowUrl(false);
+    } catch (err) {
+      setError(err.message || 'Could not save URL');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeImage() {
+    setBusy(true);
+    setError('');
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { imageUrl: '' });
+      await onSaved();
+      setUrlValue('');
+    } catch (err) {
+      setError(err.message || 'Could not remove');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+      {item.imageUrl
+        ? <img src={item.imageUrl} alt="" style={officeStyles.photoThumb} />
+        : <div style={officeStyles.photoPlaceholder}>No photo</div>}
+      {busy ? (
+        <Loader2 size={14} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />
+      ) : (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button style={officeStyles.photoBtn} onClick={() => fileRef.current?.click()} title="Upload a photo file (or take one on mobile)">Upload</button>
+          <button style={officeStyles.photoBtn} onClick={() => { setUrlValue(item.imageUrl || ''); setShowUrl(v => !v); }} title="Paste an image URL">URL</button>
+          {item.imageUrl && <button style={officeStyles.photoBtn} onClick={removeImage} title="Remove the photo">Remove</button>}
+        </div>
+      )}
+      {showUrl && !busy && (
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <input
+            style={officeStyles.photoUrlInput}
+            value={urlValue}
+            onChange={e => setUrlValue(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') saveUrl(); if (e.key === 'Escape') setShowUrl(false); }}
+            placeholder="https://…"
+            autoFocus
+          />
+          <button style={officeStyles.photoBtn} onClick={saveUrl}>Save</button>
+        </div>
+      )}
+      {error && <span style={{ fontSize: 10, color: '#B5493B', maxWidth: 120, textAlign: 'center' }}>{error}</span>}
+    </div>
   );
 }
 
@@ -2636,6 +2759,10 @@ const officeStyles = {
   nameInput: { width: '100%', minWidth: 180, background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 6, padding: '5px 8px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   packLabelEditBtn: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 10.5, fontFamily: 'inherit', textAlign: 'right', cursor: 'text', padding: '1px 3px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 2 },
   packLabelInput: { width: 90, textAlign: 'right', background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 5, padding: '3px 6px', fontSize: 10.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  photoThumb: { width: 44, height: 44, borderRadius: 6, objectFit: 'contain', background: '#F0EEE4', border: '1px solid #E3E1D6' },
+  photoPlaceholder: { width: 44, height: 44, borderRadius: 6, background: '#F0EEE4', border: '1px dashed #C9C6B8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8.5, color: '#A8AC9E', textAlign: 'center' },
+  photoBtn: { background: '#F0EEE4', border: '1px solid #D6D3C6', borderRadius: 5, padding: '2px 7px', fontSize: 10.5, fontWeight: 600, fontFamily: 'inherit', color: '#14181F', cursor: 'pointer' },
+  photoUrlInput: { width: 120, background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 5, padding: '3px 6px', fontSize: 10.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   stockInputLow: { borderColor: '#B5493B', color: '#B5493B' },
   unsavedDot: { width: 6, height: 6, borderRadius: '50%', background: '#C9A227' },
   toggleBtn: { border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', minWidth: 62 },
