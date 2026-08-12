@@ -165,9 +165,116 @@ async function apiPut(path, body) {
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
-function printOrder(order) {
+
+// ---- Print-order upload helpers ----------------------------------------
+// The item code column is found by a labeled header cell. Accept a few
+// common spellings so the sheet layout can vary between uploads.
+const ITEM_CODE_HEADERS = ['item #', 'item#', 'item number', 'item no', 'item no.', 'sku', 'code', 'item code'];
+
+// Return the code-part of a SKU (everything after the first colon), lowercased.
+function skuCodePart(sku) {
+  const i = sku.indexOf(':');
+  return (i >= 0 ? sku.slice(i + 1) : sku).toLowerCase();
+}
+
+// Build a lookup from code-part -> [SKUs]. One code can map to several SKUs
+// (e.g. an "each" and its "c" case variant), and we keep them all so both
+// sort together.
+function buildCodeIndex(items) {
+  const idx = {};
+  for (const it of items) {
+    const code = skuCodePart(it.id);
+    (idx[code] = idx[code] || []).push(it.id);
+  }
+  return idx;
+}
+
+// Given a raw item code from the sheet, find matching SKUs. Tries the code
+// as-is, then with a 'c' case suffix, then with a trailing 'c' stripped.
+function matchCodeToSkus(rawCode, codeIndex) {
+  const n = String(rawCode).trim().toLowerCase();
+  if (!n) return null;
+  if (codeIndex[n]) return codeIndex[n];
+  if (codeIndex[n + 'c']) return codeIndex[n + 'c'];
+  if (n.endsWith('c') && codeIndex[n.slice(0, -1)]) return codeIndex[n.slice(0, -1)];
+  return null;
+}
+
+// Parse an uploaded .xlsx into an ordered SKU list plus a match report.
+// Reads the first sheet, finds the header row containing an item-code column,
+// then reads codes top-to-bottom. Skips blank rows and repeated header rows.
+async function parsePrintOrderFile(file, items) {
+  const XLSX = await import('xlsx');
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' });
+
+  // Find the header row + which column holds the item code.
+  let codeCol = -1;
+  let headerRowIdx = -1;
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').trim().toLowerCase();
+      if (ITEM_CODE_HEADERS.includes(cell)) { codeCol = c; headerRowIdx = r; break; }
+    }
+    if (codeCol >= 0) break;
+  }
+  if (codeCol < 0) {
+    throw new Error('Could not find an item-code column. Add a header cell labeled "Item #" (or "SKU"/"Code") above your item codes.');
+  }
+
+  const headerLabels = new Set(ITEM_CODE_HEADERS);
+  const codeIndex = buildCodeIndex(items);
+  const orderedSkus = [];
+  const seen = new Set();
+  const unmatched = [];
+
+  // Read the identified code column from the TOP of the file. The header row
+  // can appear partway down (and repeat), with real items above it, so we
+  // scan every row and just skip header/blank cells rather than starting
+  // below the first header.
+  for (let r = 0; r < rows.length; r++) {
+    const raw = String((rows[r] || [])[codeCol] || '').trim();
+    if (!raw) continue;
+    if (headerLabels.has(raw.toLowerCase())) continue; // header row (possibly repeated)
+    const cleaned = raw.replace(/\*+$/, '').trim(); // strip trailing * markers
+    if (!cleaned) continue;
+    const skus = matchCodeToSkus(cleaned, codeIndex);
+    if (skus) {
+      for (const s of skus) if (!seen.has(s)) { seen.add(s); orderedSkus.push(s); }
+    } else {
+      unmatched.push(cleaned);
+    }
+  }
+
+  return { orderedSkus, unmatched, matchedCodes: seen.size };
+}
+
+// Sort an order's lines to follow the saved print sequence. Items in the
+// sequence come first (in that order); anything not in it keeps its original
+// relative order and goes at the end. Never drops a line.
+function sortLinesForPrint(lines, printOrder) {
+  if (!printOrder || printOrder.length === 0) return lines;
+  const pos = new Map();
+  printOrder.forEach((sku, i) => pos.set(sku, i));
+  const BIG = Number.MAX_SAFE_INTEGER;
+  return lines
+    .map((l, i) => ({ l, i }))
+    .sort((a, b) => {
+      const pa = pos.has(a.l.id) ? pos.get(a.l.id) : BIG;
+      const pb = pos.has(b.l.id) ? pos.get(b.l.id) : BIG;
+      if (pa !== pb) return pa - pb;
+      return a.i - b.i; // stable for unmatched items
+    })
+    .map(x => x.l);
+}
+
+function printOrder(order, printSequence) {
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
-  const rows = order.lines.map(l => `
+  const orderedLines = sortLinesForPrint(order.lines, printSequence);
+  const rows = orderedLines.map(l => `
     <tr>
       <td>${l.id}</td>
       <td>${l.name}</td>
@@ -301,6 +408,7 @@ export default function App() {
   const [customersAll, setCustomersAll] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
   const [brandColors, setBrandColors] = useState({});
+  const [printSequence, setPrintSequence] = useState([]);
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [tab, setTab] = useState('order');
   const isDesktopWidth = useIsDesktop();
@@ -318,13 +426,14 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [itemsData, customersData, itemsAllData, customersAllData, ordersData, brandColorsData] = await Promise.all([
+      const [itemsData, customersData, itemsAllData, customersAllData, ordersData, brandColorsData, printOrderData] = await Promise.all([
         apiGet('/items'),
         apiGet('/customers'),
         apiGet('/items?includeInactive=true'),
         apiGet('/customers?includeInactive=true'),
         apiGet('/orders'),
         apiGet('/brand-colors'),
+        apiGet('/print-order'),
       ]);
       setItems(itemsData);
       setCustomers(customersData);
@@ -332,6 +441,7 @@ export default function App() {
       setCustomersAll(customersAllData);
       setOrderHistory(ordersData);
       setBrandColors(brandColorsData || {});
+      setPrintSequence(printOrderData || []);
       setStatus('ready');
     } catch (err) {
       setStatus('error');
@@ -380,6 +490,7 @@ export default function App() {
           activeCustomers={customers}
           orders={orderHistory}
           brandColors={brandColors}
+          printSequence={printSequence}
           onRefresh={loadAll}
           onSwitchToMobile={() => setOverride('mobile')}
           isManualOverride={!!viewOverride}
@@ -403,6 +514,7 @@ export default function App() {
             onSwitchToOffice={() => setOverride('desktop')}
             items={items}
             customers={customers}
+            printSequence={printSequence}
             onOrderChanged={loadAll}
           />
         )}
@@ -1169,7 +1281,7 @@ function InventoryTab({ items, orders, brandColors }) {
 // ============================================================
 // TAB 3 — ORDERS
 // ============================================================
-function OrdersTab({ orders, onSwitchToOffice, items, customers, onOrderChanged }) {
+function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, onOrderChanged }) {
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState('');
   const [editingOrder, setEditingOrder] = useState(null);
@@ -1249,7 +1361,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, onOrderChanged 
                   ))}
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o)}>Print / PDF</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence)}>Print / PDF</button>
                   </div>
                 </div>
               )}
@@ -1491,7 +1603,7 @@ const editStyles = {
 // DESKTOP — OFFICE VIEW (orders table for QuickBooks entry,
 // inventory table with editable stock)
 // ============================================================
-function OfficeView({ items, customers, activeItems, activeCustomers, orders, brandColors, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
+function OfficeView({ items, customers, activeItems, activeCustomers, orders, brandColors, printSequence, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
   const [section, setSection] = useState('orders');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -1560,15 +1672,15 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
             />
           </div>
         )}
-        {section === 'orders' && <OfficeOrders orders={orders} items={activeItems} customers={activeCustomers} onRefresh={onRefresh} />}
-        {section === 'inventory' && <OfficeInventory items={items} orders={orders} brandColors={brandColors} onRefresh={onRefresh} />}
+        {section === 'orders' && <OfficeOrders orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'inventory' && <OfficeInventory items={items} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
     </div>
   );
 }
 
-function OfficeOrders({ orders, items, customers, onRefresh }) {
+function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -1634,7 +1746,7 @@ function OfficeOrders({ orders, items, customers, onRefresh }) {
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => printOrder(o)}>Print</button>
+                      <button style={officeStyles.smallBtn} onClick={() => printOrder(o, printSequence)}>Print</button>
                     </td>
                   </tr>
                   {isOpen && (
@@ -1705,7 +1817,7 @@ function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left' 
   );
 }
 
-function OfficeInventory({ items, orders, brandColors, onRefresh }) {
+function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh }) {
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
@@ -1713,11 +1825,14 @@ function OfficeInventory({ items, orders, brandColors, onRefresh }) {
   const [brandNameInput, setBrandNameInput] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [uploadingOrder, setUploadingOrder] = useState(false);
+  const [printOrderResult, setPrintOrderResult] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editField, setEditField] = useState('all');
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const fileInputRef = useRef(null);
+  const printOrderInputRef = useRef(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
   const popularity = useMemo(() => computePopularity(orders), [orders]);
@@ -1815,6 +1930,32 @@ function OfficeInventory({ items, orders, brandColors, onRefresh }) {
     }
   }
 
+  function triggerPrintOrderUpload() {
+    printOrderInputRef.current?.click();
+  }
+
+  async function handlePrintOrderFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadingOrder(true);
+    setPrintOrderResult(null);
+    try {
+      const { orderedSkus, unmatched, matchedCodes } = await parsePrintOrderFile(file, items);
+      if (orderedSkus.length === 0) {
+        setPrintOrderResult({ error: 'No item codes in that file matched any product. Check that the item-code column is labeled (e.g. "Item #") and the codes match your SKUs.' });
+        return;
+      }
+      const result = await apiPut('/print-order', { skus: orderedSkus });
+      setPrintOrderResult({ saved: result.saved, matchedCodes, unmatched, unmatchedCount: unmatched.length });
+      await onRefresh();
+    } catch (err) {
+      setPrintOrderResult({ error: err.message || 'Upload failed' });
+    } finally {
+      setUploadingOrder(false);
+    }
+  }
+
   return (
     <div>
       <input
@@ -1823,6 +1964,13 @@ function OfficeInventory({ items, orders, brandColors, onRefresh }) {
         accept=".csv"
         style={{ display: 'none' }}
         onChange={handleImportFile}
+      />
+      <input
+        ref={printOrderInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        style={{ display: 'none' }}
+        onChange={handlePrintOrderFile}
       />
       <div style={officeStyles.sectionHeader}>
         <div style={officeStyles.sectionTitle}>Inventory</div>
@@ -1884,6 +2032,9 @@ function OfficeInventory({ items, orders, brandColors, onRefresh }) {
         <button style={officeStyles.smallBtn} onClick={triggerImport} disabled={importing} title="Upload a CSV to bulk-update stock and/or price">
           {importing ? 'Importing…' : 'Import CSV'}
         </button>
+        <button style={officeStyles.smallBtn} onClick={triggerPrintOrderUpload} disabled={uploadingOrder} title="Upload an .xlsx to set the order items print in. Needs a column headed 'Item #' (or 'SKU'/'Code').">
+          {uploadingOrder ? 'Uploading…' : 'Upload print order'}
+        </button>
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
@@ -1917,6 +2068,18 @@ function OfficeInventory({ items, orders, brandColors, onRefresh }) {
                 ? ` ${importResult.notFound.length} SKU${importResult.notFound.length === 1 ? '' : 's'} not found: ${importResult.notFound.slice(0, 8).join(', ')}${importResult.notFound.length > 8 ? '…' : ''}`
                 : '')}
           <button style={officeStyles.dismissBtn} onClick={() => setImportResult(null)}>×</button>
+        </div>
+      )}
+
+      {printOrderResult && (
+        <div style={printOrderResult.error ? officeStyles.importBannerError : officeStyles.importBanner}>
+          {printOrderResult.error
+            ? `Print order upload failed: ${printOrderResult.error}`
+            : `Print order saved — ${printOrderResult.saved} item${printOrderResult.saved === 1 ? '' : 's'} sequenced from ${printOrderResult.matchedCodes} matched code${printOrderResult.matchedCodes === 1 ? '' : 's'}.` +
+              (printOrderResult.unmatchedCount > 0
+                ? ` ${printOrderResult.unmatchedCount} code${printOrderResult.unmatchedCount === 1 ? '' : 's'} didn't match and were skipped: ${printOrderResult.unmatched.slice(0, 12).join(', ')}${printOrderResult.unmatchedCount > 12 ? '…' : ''}`
+                : ' Every code matched.')}
+          <button style={officeStyles.dismissBtn} onClick={() => setPrintOrderResult(null)}>×</button>
         </div>
       )}
 
