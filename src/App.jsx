@@ -428,9 +428,11 @@ function downloadTextFile(filename, text) {
   URL.revokeObjectURL(url);
 }
 // Download a QuickBooks IIF file for an order. Fetches from the backend
-// (which formats the file and sets download headers) and saves it.
-async function downloadOrderIIF(orderId) {
-  const res = await fetch(`${API_BASE}/orders/${orderId}/iif`);
+// (which formats the file and sets download headers) and saves it. Pass
+// experimental=true to get the trial version with a U/M column + cases.
+async function downloadOrderIIF(orderId, experimental = false) {
+  const qs = experimental ? '?experimental=1' : '';
+  const res = await fetch(`${API_BASE}/orders/${orderId}/iif${qs}`);
   if (!res.ok) {
     let msg = `Could not generate the IIF file (${res.status})`;
     try { const d = await res.json(); if (d.error) msg = d.error; } catch { /* keep default */ }
@@ -441,7 +443,7 @@ async function downloadOrderIIF(orderId) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `order-${orderId}.iif`;
+  a.download = `order-${orderId}${experimental ? '-experimental' : ''}.iif`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1393,11 +1395,11 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
   const [iifBusyId, setIifBusyId] = useState(null);
   const [iifError, setIifError] = useState('');
 
-  async function handleDownloadIIF(orderId) {
+  async function handleDownloadIIF(orderId, experimental = false) {
     setIifBusyId(orderId);
     setIifError('');
     try {
-      await downloadOrderIIF(orderId);
+      await downloadOrderIIF(orderId, experimental);
     } catch (err) {
       setIifError(err.message || 'Could not download the QuickBooks file.');
     } finally {
@@ -1494,6 +1496,9 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence)}>Print / PDF</button>
                     <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id}>
                       {iifBusyId === o.id ? '…' : 'QuickBooks'}
+                    </button>
+                    <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id, true)} disabled={iifBusyId === o.id}>
+                      {iifBusyId === o.id ? '…' : 'QB test'}
                     </button>
                   </div>
                 </div>
@@ -1835,11 +1840,11 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
   const [iifBusyId, setIifBusyId] = useState(null);
   const [iifError, setIifError] = useState('');
 
-  async function handleDownloadIIF(orderId) {
+  async function handleDownloadIIF(orderId, experimental = false) {
     setIifBusyId(orderId);
     setIifError('');
     try {
-      await downloadOrderIIF(orderId);
+      await downloadOrderIIF(orderId, experimental);
     } catch (err) {
       setIifError(err.message || 'Could not download the QuickBooks file.');
     } finally {
@@ -1918,6 +1923,9 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                       <button style={officeStyles.smallBtn} onClick={() => printOrder(o, printSequence)}>Print</button>{' '}
                       <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
                         {iifBusyId === o.id ? '…' : 'QB'}
+                      </button>{' '}
+                      <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id, true)} disabled={iifBusyId === o.id} title="Experimental: tries to split CS/EACH via a unit-of-measure column. May not work in QuickBooks.">
+                        {iifBusyId === o.id ? '…' : 'QB test'}
                       </button>
                     </td>
                   </tr>
