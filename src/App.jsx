@@ -1497,9 +1497,6 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                     <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id}>
                       {iifBusyId === o.id ? '…' : 'QuickBooks'}
                     </button>
-                    <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id, true)} disabled={iifBusyId === o.id}>
-                      {iifBusyId === o.id ? '…' : 'QB test'}
-                    </button>
                   </div>
                 </div>
               )}
@@ -1923,9 +1920,6 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                       <button style={officeStyles.smallBtn} onClick={() => printOrder(o, printSequence)}>Print</button>{' '}
                       <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
                         {iifBusyId === o.id ? '…' : 'QB'}
-                      </button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id, true)} disabled={iifBusyId === o.id} title="Experimental: tries to split CS/EACH via a unit-of-measure column. May not work in QuickBooks.">
-                        {iifBusyId === o.id ? '…' : 'QB test'}
                       </button>
                     </td>
                   </tr>
