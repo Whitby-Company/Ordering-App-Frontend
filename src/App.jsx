@@ -2817,7 +2817,7 @@ const officeStyles = {
   subTable: { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' },
   subTh: { textAlign: 'left', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6' },
   subTd: { padding: '8px 12px', borderBottom: '1px solid #EAE8DD', color: '#14181F' },
-  orderNotes: { marginBottom: 10, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#14181F', lineHeight: 1.45 },
+  orderNotes: { marginTop: 12, marginBottom: 10, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#14181F', lineHeight: 1.45 },
   orderNotesLabel: { fontWeight: 700, color: '#5B6058' },
   stockInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 8px', fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: '#14181F', outline: 'none' },
   nameEditBtn: { background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontFamily: 'inherit', textAlign: 'left', cursor: 'text', padding: '2px 4px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 3 },
