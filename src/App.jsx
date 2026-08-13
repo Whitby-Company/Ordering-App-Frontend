@@ -601,9 +601,14 @@ function TabBar({ active, onChange }) {
 // TAB 1 — NEW ORDER
 // ============================================================
 function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted }) {
-  const [customerId, setCustomerId] = useState(null);
+  // Restore an in-progress order draft (customer, delivery date, quantities)
+  // so switching tabs or an accidental refresh doesn't lose it.
+  const savedDraft = (() => {
+    try { return JSON.parse(localStorage.getItem('orderDraft') || '{}'); } catch { return {}; }
+  })();
+  const [customerId, setCustomerId] = useState(savedDraft.customerId ?? null);
   const [customerOpen, setCustomerOpen] = useState(false);
-  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState(savedDraft.deliveryDate || '');
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -612,7 +617,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [brand, setBrand] = useState('All');
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
-  const [order, setOrder] = useState([]);
+  const [order, setOrder] = useState(Array.isArray(savedDraft.order) ? savedDraft.order : []);
   const [ticketOpen, setTicketOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -635,6 +640,17 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   useEffect(() => {
     if (bothPicked) setPickersExpanded(false);
   }, [bothPicked]);
+
+  // Persist the in-progress order draft so tab switches / refreshes don't lose it.
+  useEffect(() => {
+    try {
+      if (customerId || deliveryDate || order.length > 0) {
+        localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order }));
+      } else {
+        localStorage.removeItem('orderDraft');
+      }
+    } catch { /* localStorage unavailable — draft just won't persist */ }
+  }, [customerId, deliveryDate, order]);
 
   function goBackToBrands() {
     setScreen('brands');
@@ -750,6 +766,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       setScreen('brands');
       setBrand('All');
       setPickersExpanded(true);
+      try { localStorage.removeItem('orderDraft'); } catch { /* ignore */ }
       await onOrderSubmitted(); // refresh items + order history from server
     } catch (err) {
       setSubmitError(err.message || 'Something went wrong submitting this order.');
