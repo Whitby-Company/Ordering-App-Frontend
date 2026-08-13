@@ -427,6 +427,26 @@ function downloadTextFile(filename, text) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+// Download a QuickBooks IIF file for an order. Fetches from the backend
+// (which formats the file and sets download headers) and saves it.
+async function downloadOrderIIF(orderId) {
+  const res = await fetch(`${API_BASE}/orders/${orderId}/iif`);
+  if (!res.ok) {
+    let msg = `Could not generate the IIF file (${res.status})`;
+    try { const d = await res.json(); if (d.error) msg = d.error; } catch { /* keep default */ }
+    throw new Error(msg);
+  }
+  const text = await res.text();
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `order-${orderId}.iif`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 // Price is stored per single "each"; each case/pack ordered contains
 // item.pack eaches. Line total = price × pack size × cases ordered.
 function lineTotal(item, qty) {
@@ -1370,6 +1390,20 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState('');
   const [editingOrder, setEditingOrder] = useState(null);
+  const [iifBusyId, setIifBusyId] = useState(null);
+  const [iifError, setIifError] = useState('');
+
+  async function handleDownloadIIF(orderId) {
+    setIifBusyId(orderId);
+    setIifError('');
+    try {
+      await downloadOrderIIF(orderId);
+    } catch (err) {
+      setIifError(err.message || 'Could not download the QuickBooks file.');
+    } finally {
+      setIifBusyId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1412,6 +1446,12 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
       </div>
 
       <div style={styles.list}>
+        {iifError && (
+          <div style={styles.mobileIifError}>
+            {iifError}
+            <button style={styles.mobileIifErrorDismiss} onClick={() => setIifError('')}>×</button>
+          </div>
+        )}
         {filtered.length === 0 && <div style={styles.emptyState}>No orders match "{query}"</div>}
         {filtered.map(o => {
           const isOpen = openId === o.id;
@@ -1452,6 +1492,9 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence)}>Print / PDF</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id}>
+                      {iifBusyId === o.id ? '…' : 'QuickBooks'}
+                    </button>
                   </div>
                 </div>
               )}
@@ -1789,6 +1832,20 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [iifBusyId, setIifBusyId] = useState(null);
+  const [iifError, setIifError] = useState('');
+
+  async function handleDownloadIIF(orderId) {
+    setIifBusyId(orderId);
+    setIifError('');
+    try {
+      await downloadOrderIIF(orderId);
+    } catch (err) {
+      setIifError(err.message || 'Could not download the QuickBooks file.');
+    } finally {
+      setIifBusyId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1815,6 +1872,13 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
         />
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
       </div>
+
+      {iifError && (
+        <div style={officeStyles.importBannerError}>
+          {iifError}
+          <button style={officeStyles.dismissBtn} onClick={() => setIifError('')}>×</button>
+        </div>
+      )}
 
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
@@ -1851,7 +1915,10 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => printOrder(o, printSequence)}>Print</button>
+                      <button style={officeStyles.smallBtn} onClick={() => printOrder(o, printSequence)}>Print</button>{' '}
+                      <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
+                        {iifBusyId === o.id ? '…' : 'QB'}
+                      </button>
                     </td>
                   </tr>
                   {isOpen && (
@@ -2698,6 +2765,8 @@ const styles = {
   sortDirBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#5B6058', cursor: 'pointer' },
   list: { flex: 1, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
+  mobileIifError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', margin: '0 16px 12px', fontSize: 13 },
+  mobileIifErrorDismiss: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
   itemRow: { display: 'flex', alignItems: 'center', gap: 14, padding: '8px 0', borderBottom: '1px solid #EAE8DD' },
   itemThumb: { width: 76, height: 76, borderRadius: 10, objectFit: 'contain', flexShrink: 0, background: '#FFFFFF', padding: 4, boxSizing: 'border-box' },
   itemName: { fontSize: 14, fontWeight: 600, color: '#14181F', marginBottom: 3 },
