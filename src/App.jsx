@@ -2658,7 +2658,7 @@ const styles = {
   list: { flex: 1, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
   itemRow: { display: 'flex', alignItems: 'center', gap: 14, padding: '8px 0', borderBottom: '1px solid #EAE8DD' },
-  itemThumb: { width: 76, height: 76, borderRadius: 10, objectFit: 'contain', flexShrink: 0, background: '#F0EEE4', padding: 4, boxSizing: 'border-box' },
+  itemThumb: { width: 76, height: 76, borderRadius: 10, objectFit: 'contain', flexShrink: 0, background: '#FFFFFF', padding: 4, boxSizing: 'border-box' },
   itemName: { fontSize: 14, fontWeight: 600, color: '#14181F', marginBottom: 3 },
   itemMeta: { display: 'flex', alignItems: 'center', gap: 8 },
   sku: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#8A8F87' },
