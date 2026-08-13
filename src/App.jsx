@@ -330,6 +330,7 @@ function printOrder(order, printSequence) {
       body { font-family: Arial, Helvetica, sans-serif; padding: 32px; color: #14181F; }
       h1 { font-size: 20px; margin: 0 0 4px; }
       .meta { color: #5B6058; margin-bottom: 22px; font-size: 13px; }
+      .notes { background: #FBFAF6; border: 1px solid #E3E1D6; border-radius: 8px; padding: 10px 12px; margin: -8px 0 20px; font-size: 13px; color: #14181F; line-height: 1.45; }
       table { width: 100%; border-collapse: collapse; font-size: 13px; }
       th, td { padding: 8px 10px; border-bottom: 1px solid #E3E1D6; text-align: left; }
       th { background: #FBFAF6; font-size: 11px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.04em; }
@@ -341,6 +342,7 @@ function printOrder(order, printSequence) {
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <h1>Order #${order.id} — ${order.customer}</h1>
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
+    ${order.notes ? `<div class="notes"><strong>Notes:</strong> ${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
     <table>
       <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -618,6 +620,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
   const [order, setOrder] = useState(Array.isArray(savedDraft.order) ? savedDraft.order : []);
+  const [notes, setNotes] = useState(savedDraft.notes || '');
   const [ticketOpen, setTicketOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -644,13 +647,13 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // Persist the in-progress order draft so tab switches / refreshes don't lose it.
   useEffect(() => {
     try {
-      if (customerId || deliveryDate || order.length > 0) {
-        localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order }));
+      if (customerId || deliveryDate || order.length > 0 || notes) {
+        localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order, notes }));
       } else {
         localStorage.removeItem('orderDraft');
       }
     } catch { /* localStorage unavailable — draft just won't persist */ }
-  }, [customerId, deliveryDate, order]);
+  }, [customerId, deliveryDate, order, notes]);
 
   function goBackToBrands() {
     setScreen('brands');
@@ -749,16 +752,19 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       const result = await apiPost('/orders', {
         customerId,
         deliveryDate,
+        notes: notes.trim() || undefined,
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty })),
       });
       setConfirmed({
         customer: customerName,
         deliveryDate,
         submittedAt: 'Just now',
+        notes: result.notes || null,
         lines: result.lines,
         totalUnits,
       });
       setOrder([]);
+      setNotes('');
       setTicketOpen(false);
       setCustomerId(null);
       setDeliveryDate('');
@@ -998,6 +1004,17 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 </span>
               </div>
             )}
+            <div style={styles.notesSection}>
+              <label style={styles.notesLabel}>Order notes / special instructions</label>
+              <textarea
+                style={styles.notesTextarea}
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="e.g. deliver before noon, call on arrival…"
+                rows={3}
+                maxLength={1000}
+              />
+            </div>
             {submitError && <div style={styles.sheetWarning}>{submitError}</div>}
             <button
               style={{ ...styles.submitBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.submitBtnDisabled) }}
@@ -1427,6 +1444,11 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                       <div style={styles.sheetLineQty}>×{l.qty}</div>
                     </div>
                   ))}
+                  {o.notes && (
+                    <div style={styles.orderCardNotes}>
+                      <span style={styles.orderCardNotesLabel}>Notes:</span> {o.notes}
+                    </div>
+                  )}
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence)}>Print / PDF</button>
@@ -1460,6 +1482,7 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
   const [customerId, setCustomerId] = useState(order.customerId);
   const [deliveryDate, setDeliveryDate] = useState(order.deliveryDate);
   const [lines, setLines] = useState(() => order.lines.map(l => ({ id: l.id, qty: l.qty })));
+  const [notes, setNotes] = useState(order.notes || '');
   const [addQuery, setAddQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1521,6 +1544,7 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
       await apiPatch(`/orders/${order.id}`, {
         customerId,
         deliveryDate,
+        notes: notes.trim() || undefined,
         lines: lines.map(l => ({ itemId: l.id, qty: l.qty })),
       });
       await onSaved();
@@ -1625,6 +1649,18 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
             <span style={styles.sheetTotalNum}>{formatMoney(totalPrice)}</span>
           </div>
         )}
+
+        <div style={styles.notesSection}>
+          <label style={styles.notesLabel}>Order notes / special instructions</label>
+          <textarea
+            style={styles.notesTextarea}
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="e.g. deliver before noon, call on arrival…"
+            rows={3}
+            maxLength={1000}
+          />
+        </div>
 
         {error && <div style={styles.sheetWarning}>{error}</div>}
 
@@ -1847,6 +1883,11 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                             ))}
                           </tbody>
                         </table>
+                        {o.notes && (
+                          <div style={officeStyles.orderNotes}>
+                            <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
@@ -2693,6 +2734,11 @@ const styles = {
   submitBtn: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 10, padding: '13px', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   submitBtnDisabled: { background: '#C7CBC1', cursor: 'not-allowed' },
   sheetWarning: { textAlign: 'center', fontSize: 12, color: '#B5493B', marginTop: 8 },
+  notesSection: { display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 0 4px' },
+  notesLabel: { fontSize: 12, fontWeight: 600, color: '#5B6058' },
+  notesTextarea: { width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 60, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', color: '#14181F', outline: 'none', lineHeight: 1.4 },
+  orderCardNotes: { background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 8, padding: '8px 10px', margin: '8px 0 2px', fontSize: 12.5, color: '#14181F', lineHeight: 1.4 },
+  orderCardNotesLabel: { fontWeight: 700, color: '#5B6058' },
   customerRow: { width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 4px', background: 'none', border: 'none', borderBottom: '1px solid #EAE8DD', fontSize: 14, fontWeight: 500, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
   calendarNav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 12px' },
   calendarNavBtn: { width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EAE8DD', border: 'none', borderRadius: 8, cursor: 'pointer' },
@@ -2771,6 +2817,8 @@ const officeStyles = {
   subTable: { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' },
   subTh: { textAlign: 'left', padding: '8px 12px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6' },
   subTd: { padding: '8px 12px', borderBottom: '1px solid #EAE8DD', color: '#14181F' },
+  orderNotes: { marginTop: 10, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#14181F', lineHeight: 1.45 },
+  orderNotesLabel: { fontWeight: 700, color: '#5B6058' },
   stockInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 8px', fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: '#14181F', outline: 'none' },
   nameEditBtn: { background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontFamily: 'inherit', textAlign: 'left', cursor: 'text', padding: '2px 4px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 3 },
   nameInput: { width: '100%', minWidth: 180, background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 6, padding: '5px 8px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
