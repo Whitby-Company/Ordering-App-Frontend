@@ -1394,12 +1394,31 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
   const [editingOrder, setEditingOrder] = useState(null);
   const [iifBusyId, setIifBusyId] = useState(null);
   const [iifError, setIifError] = useState('');
+  const [processingId, setProcessingId] = useState(null);
+  const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
+
+  async function setProcessed(orderId, processed) {
+    setProcessingId(orderId);
+    try {
+      await apiPatch(`/orders/${orderId}/processed`, { processed });
+      if (onOrderChanged) await onOrderChanged();
+    } catch (err) {
+      setIifError(err.message || 'Could not update the order status.');
+    } finally {
+      setProcessingId(null);
+    }
+  }
 
   async function handleDownloadIIF(orderId, experimental = false) {
     setIifBusyId(orderId);
     setIifError('');
     try {
       await downloadOrderIIF(orderId, experimental);
+      const order = orders.find(o => o.id === orderId);
+      if (order && !order.processed) {
+        await apiPatch(`/orders/${orderId}/processed`, { processed: true });
+        if (onOrderChanged) await onOrderChanged();
+      }
     } catch (err) {
       setIifError(err.message || 'Could not download the QuickBooks file.');
     } finally {
@@ -1407,14 +1426,17 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
     }
   }
 
+  const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter(o =>
+    let list = showUnprocessedOnly ? orders.filter(o => !o.processed) : orders;
+    if (!q) return list;
+    return list.filter(o =>
       o.customer.toLowerCase().includes(q) ||
       o.lines.some(l => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q))
     );
-  }, [orders, query]);
+  }, [orders, query, showUnprocessedOnly]);
 
   return (
     <div style={styles.screenWrap}>
@@ -1447,6 +1469,16 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
         )}
       </div>
 
+      <div style={styles.mobileFilterRow}>
+        <button
+          style={{ ...styles.mobileFilterChip, ...(showUnprocessedOnly ? styles.mobileFilterChipActive : {}) }}
+          onClick={() => setShowUnprocessedOnly(v => !v)}
+        >
+          {showUnprocessedOnly ? 'Showing unprocessed' : 'Show unprocessed'}
+          {unprocessedCount > 0 && ` (${unprocessedCount})`}
+        </button>
+      </div>
+
       <div style={styles.list}>
         {iifError && (
           <div style={styles.mobileIifError}>
@@ -1459,10 +1491,13 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
           const isOpen = openId === o.id;
           const totalUnits = o.lines.reduce((s, l) => s + l.qty, 0);
           return (
-            <div key={o.id} style={styles.orderCard}>
+            <div key={o.id} style={{ ...styles.orderCard, ...(o.processed ? {} : styles.orderCardUnprocessed) }}>
               <button style={styles.orderCardHeader} onClick={() => setOpenId(isOpen ? null : o.id)}>
                 <div style={{ textAlign: 'left' }}>
-                  <div style={styles.orderCardCustomer}>{o.customer}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <div style={styles.orderCardCustomer}>{o.customer}</div>
+                    {!o.processed && <span style={styles.badgeUnprocessedMobile}>New</span>}
+                  </div>
                   <div style={styles.orderCardMeta}>
                     {formatDateTime(o.submittedAt)} · {totalUnits} units · {o.lines.length} item{o.lines.length === 1 ? '' : 's'}
                   </div>
@@ -1496,6 +1531,13 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence)}>Print / PDF</button>
                     <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id}>
                       {iifBusyId === o.id ? '…' : 'QuickBooks'}
+                    </button>
+                    <button
+                      style={{ ...styles.orderCardActionBtn, ...(o.processed ? {} : styles.orderCardActionBtnPrimary) }}
+                      onClick={() => setProcessed(o.id, !o.processed)}
+                      disabled={processingId === o.id}
+                    >
+                      {processingId === o.id ? '…' : (o.processed ? 'Mark not done' : 'Mark done')}
                     </button>
                   </div>
                 </div>
@@ -1836,12 +1878,32 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
   const [editingOrder, setEditingOrder] = useState(null);
   const [iifBusyId, setIifBusyId] = useState(null);
   const [iifError, setIifError] = useState('');
+  const [processingId, setProcessingId] = useState(null);
+  const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
+
+  async function setProcessed(orderId, processed) {
+    setProcessingId(orderId);
+    try {
+      await apiPatch(`/orders/${orderId}/processed`, { processed });
+      await onRefresh();
+    } catch (err) {
+      setIifError(err.message || 'Could not update the order status.');
+    } finally {
+      setProcessingId(null);
+    }
+  }
 
   async function handleDownloadIIF(orderId, experimental = false) {
     setIifBusyId(orderId);
     setIifError('');
     try {
       await downloadOrderIIF(orderId, experimental);
+      // Auto-mark as processed once the QuickBooks file is downloaded.
+      const order = orders.find(o => o.id === orderId);
+      if (order && !order.processed) {
+        await apiPatch(`/orders/${orderId}/processed`, { processed: true });
+        await onRefresh();
+      }
     } catch (err) {
       setIifError(err.message || 'Could not download the QuickBooks file.');
     } finally {
@@ -1849,14 +1911,18 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
     }
   }
 
+  const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter(o =>
+    let list = orders;
+    if (showUnprocessedOnly) list = list.filter(o => !o.processed);
+    if (!q) return list;
+    return list.filter(o =>
       o.customer.toLowerCase().includes(q) ||
       o.lines.some(l => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q))
     );
-  }, [orders, query]);
+  }, [orders, query, showUnprocessedOnly]);
 
   function orderTotal(o) {
     return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -1872,6 +1938,14 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        <button
+          style={{ ...officeStyles.smallBtn, ...(showUnprocessedOnly ? officeStyles.editModeBtnActive : {}) }}
+          onClick={() => setShowUnprocessedOnly(v => !v)}
+          title="Show only orders not yet entered into QuickBooks"
+        >
+          {showUnprocessedOnly ? 'Showing unprocessed' : 'Show unprocessed'}
+          {unprocessedCount > 0 && ` (${unprocessedCount})`}
+        </button>
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
       </div>
 
@@ -1890,6 +1964,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
               <th style={officeStyles.th}>Submitted</th>
               <th style={officeStyles.th}>Customer</th>
               <th style={officeStyles.th}>Delivery date</th>
+              <th style={officeStyles.th}>Status</th>
               <th style={officeStyles.th}>Items</th>
               <th style={officeStyles.th}>Units</th>
               <th style={{ ...officeStyles.th, textAlign: 'right' }}>Order total</th>
@@ -1898,20 +1973,25 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={8}>No orders match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={9}>No orders match "{query}"</td></tr>
             )}
             {filtered.map(o => {
               const isOpen = openId === o.id;
               const totalUnits = o.lines.reduce((s, l) => s + l.qty, 0);
               return (
                 <React.Fragment key={o.id}>
-                  <tr style={officeStyles.rowClickable}>
+                  <tr style={{ ...officeStyles.rowClickable, ...(o.processed ? {} : officeStyles.rowUnprocessed) }}>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDateTime(o.submittedAt)}</td>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
+                      {o.processed
+                        ? <span style={officeStyles.badgeProcessed}>Processed</span>
+                        : <span style={officeStyles.badgeUnprocessed}>New</span>}
+                    </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
@@ -1920,12 +2000,20 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                       <button style={officeStyles.smallBtn} onClick={() => printOrder(o, printSequence)}>Print</button>{' '}
                       <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
                         {iifBusyId === o.id ? '…' : 'QB'}
+                      </button>{' '}
+                      <button
+                        style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
+                        onClick={() => setProcessed(o.id, !o.processed)}
+                        disabled={processingId === o.id}
+                        title={o.processed ? 'Mark as not yet processed' : 'Mark as entered into QuickBooks'}
+                      >
+                        {processingId === o.id ? '…' : (o.processed ? 'Undo' : 'Mark done')}
                       </button>
                     </td>
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={8}>
+                      <td style={officeStyles.detailCell} colSpan={9}>
                         {o.notes && (
                           <div style={officeStyles.orderNotes}>
                             <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
@@ -2841,6 +2929,12 @@ const styles = {
   stockBarFill: { height: '100%', borderRadius: 999 },
   invStockNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, minWidth: 32, textAlign: 'right' },
   orderCard: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 12, marginTop: 10, overflow: 'hidden' },
+  orderCardUnprocessed: { background: '#FBF3E4', borderColor: '#F0D28F' },
+  badgeUnprocessedMobile: { fontSize: 10, fontWeight: 800, color: '#9A6B12', background: '#FBE7C2', border: '1px solid #F0D28F', borderRadius: 20, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  mobileFilterRow: { padding: '10px 16px 0', display: 'flex', gap: 8 },
+  mobileFilterChip: { background: '#F0EEE4', border: '1px solid #E3E1D6', borderRadius: 20, padding: '6px 14px', fontSize: 12.5, fontWeight: 700, color: '#5B6058', cursor: 'pointer', fontFamily: 'inherit' },
+  mobileFilterChipActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
+  orderCardActionBtnPrimary: { background: '#2B5D50', color: '#F7F8F4' },
   orderCardHeader: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'none', border: 'none', padding: '13px 14px', cursor: 'pointer', fontFamily: 'inherit' },
   orderCardCustomer: { fontSize: 14, fontWeight: 700, color: '#14181F' },
   orderCardMeta: { fontSize: 11.5, color: '#8A8F87', marginTop: 2 },
@@ -2882,6 +2976,10 @@ const officeStyles = {
   th: { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6', background: '#FBFAF6', whiteSpace: 'nowrap' },
   td: { padding: '10px 14px', borderBottom: '1px solid #EAE8DD', color: '#14181F', verticalAlign: 'middle' },
   rowClickable: { cursor: 'pointer' },
+  rowUnprocessed: { background: '#FBF3E4' },
+  badgeProcessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 9px' },
+  badgeUnprocessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#9A6B12', background: '#FBE7C2', border: '1px solid #F0D28F', borderRadius: 20, padding: '2px 9px' },
+  markDoneBtn: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   rowInactive: { opacity: 0.5 },
   emptyCell: { padding: '28px 14px', textAlign: 'center', color: '#8A8F87', fontSize: 13.5 },
   detailCell: { padding: '8px 14px 14px', background: '#FBFAF6' },
