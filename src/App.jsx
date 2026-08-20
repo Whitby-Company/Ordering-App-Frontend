@@ -1426,6 +1426,17 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
     }
   }
 
+  // Print an order, then auto-mark it processed.
+  async function handlePrint(order) {
+    printOrder(order, printSequence);
+    if (!order.processed) {
+      try {
+        await apiPatch(`/orders/${order.id}/processed`, { processed: true });
+        if (onOrderChanged) await onOrderChanged();
+      } catch { /* printing still succeeded; status just won't update */ }
+    }
+  }
+
   const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
 
   const filtered = useMemo(() => {
@@ -1528,7 +1539,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                   )}
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence)}>Print / PDF</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => handlePrint(o)}>Print / PDF</button>
                     <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id}>
                       {iifBusyId === o.id ? '…' : 'QuickBooks'}
                     </button>
@@ -1911,6 +1922,17 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
     }
   }
 
+  // Print an order, then auto-mark it processed.
+  async function handlePrint(order) {
+    printOrder(order, printSequence);
+    if (!order.processed) {
+      try {
+        await apiPatch(`/orders/${order.id}/processed`, { processed: true });
+        await onRefresh();
+      } catch { /* printing still succeeded; status just won't update */ }
+    }
+  }
+
   const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
 
   const filtered = useMemo(() => {
@@ -1997,7 +2019,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => printOrder(o, printSequence)}>Print</button>{' '}
+                      <button style={officeStyles.smallBtn} onClick={() => handlePrint(o)}>Print</button>{' '}
                       <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
                         {iifBusyId === o.id ? '…' : 'QB'}
                       </button>{' '}
