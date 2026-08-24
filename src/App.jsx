@@ -2112,18 +2112,14 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                       <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
                         {iifBusyId === o.id ? '…' : 'QB'}
                       </button>{' '}
-                      <label
-                        style={{ ...officeStyles.processedCheck, opacity: processingId === o.id ? 0.5 : 1 }}
-                        title={o.processed ? 'Entered into QuickBooks — click to unmark' : 'Mark as entered into QuickBooks'}
+                      <button
+                        style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
+                        onClick={() => setProcessed(o.id, !o.processed)}
+                        disabled={processingId === o.id}
+                        title={o.processed ? 'Mark as not yet processed' : 'Mark as entered into QuickBooks'}
                       >
-                        <input
-                          type="checkbox"
-                          checked={!!o.processed}
-                          onChange={() => setProcessed(o.id, !o.processed)}
-                          disabled={processingId === o.id}
-                        />
-                        Processed
-                      </label>
+                        {processingId === o.id ? '…' : (o.processed ? 'Undo' : 'Mark done')}
+                      </button>
                     </td>
                   </tr>
                   {isOpen && (
@@ -3108,7 +3104,6 @@ const styles = {
   mobileFilterChip: { background: '#F0EEE4', border: '1px solid #E3E1D6', borderRadius: 20, padding: '6px 14px', fontSize: 12.5, fontWeight: 700, color: '#5B6058', cursor: 'pointer', fontFamily: 'inherit' },
   mobileFilterChipActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   orderCardActionBtnPrimary: { background: '#2B5D50', color: '#F7F8F4' },
-  processedCheckMobile: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, flex: 1, background: '#F0EEE4', borderRadius: 8, padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: '#2B5D50', cursor: 'pointer', userSelect: 'none' },
   orderCardHeader: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'none', border: 'none', padding: '13px 14px', cursor: 'pointer', fontFamily: 'inherit' },
   orderCardCustomer: { fontSize: 14, fontWeight: 700, color: '#14181F' },
   orderCardMeta: { fontSize: 11.5, color: '#8A8F87', marginTop: 2 },
@@ -3154,7 +3149,6 @@ const officeStyles = {
   badgeProcessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 9px' },
   badgeUnprocessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#9A6B12', background: '#FBE7C2', border: '1px solid #F0D28F', borderRadius: 20, padding: '2px 9px' },
   markDoneBtn: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
-  processedCheck: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#2B5D50', cursor: 'pointer', userSelect: 'none', verticalAlign: 'middle' },
   rowInactive: { opacity: 0.5 },
   emptyCell: { padding: '28px 14px', textAlign: 'center', color: '#8A8F87', fontSize: 13.5 },
   detailCell: { padding: '8px 14px 14px', background: '#FBFAF6' },
