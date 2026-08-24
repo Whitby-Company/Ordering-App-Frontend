@@ -1638,22 +1638,6 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false })}>Print</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: true })}>Print w/UPC</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id}>
-                      {iifBusyId === o.id ? '…' : 'QuickBooks'}
-                    </button>
-                    <label
-                      style={{ ...styles.processedCheckMobile, opacity: processingId === o.id ? 0.5 : 1 }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!o.processed}
-                        onChange={() => setProcessed(o.id, !o.processed)}
-                        disabled={processingId === o.id}
-                        style={{ width: 17, height: 17 }}
-                      />
-                      Processed
-                    </label>
                   </div>
                 </div>
               )}
