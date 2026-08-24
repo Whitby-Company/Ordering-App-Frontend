@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import JsBarcode from 'jsbarcode';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
@@ -354,6 +355,42 @@ function sortLinesForPrint(lines, printOrder) {
     .map(x => x.l);
 }
 
+// Build a scannable barcode as an inline SVG string from a UPC value.
+// Renders UPC-A / EAN-13 / EAN-8 when the digits fit a standard retail
+// symbology, otherwise falls back to Code 128 (which encodes any digits).
+// Returns '' if there's no usable value, so the caller can show text instead.
+function barcodeSVG(rawUpc) {
+  const digits = String(rawUpc == null ? '' : rawUpc).replace(/\D/g, '');
+  if (!digits) return '';
+  const attempts = [];
+  if (digits.length === 12) attempts.push('UPC');
+  else if (digits.length === 13) attempts.push('EAN13');
+  else if (digits.length === 8) attempts.push('EAN8');
+  attempts.push('CODE128'); // universal fallback
+  for (const format of attempts) {
+    try {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      JsBarcode(node, digits, {
+        format,
+        width: 1.5,
+        height: 38,
+        displayValue: true,
+        fontSize: 12,
+        textMargin: 1,
+        margin: 4,
+        background: '#ffffff',
+        lineColor: '#000000',
+      });
+      if (node.childNodes.length > 0) {
+        return new XMLSerializer().serializeToString(node);
+      }
+    } catch (e) {
+      // try the next format
+    }
+  }
+  return '';
+}
+
 function printOrder(order, printSequence) {
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
@@ -362,13 +399,17 @@ function printOrder(order, printSequence) {
   const rows = orderedLines.map(l => {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
+    const bc = barcodeSVG(l.upc);
+    const upcCell = bc
+      ? `<div class="barcode">${bc}</div>`
+      : (l.upc ? String(l.upc) : '');
     return `
     <tr>
       <td>${displayCode(l.id)}</td>
       <td style="text-align:center">${cases}</td>
       <td style="text-align:center">${cases * pack}</td>
       <td>${l.name}</td>
-      <td>${l.upc || ''}</td>
+      <td class="upcCell">${upcCell}</td>
       <td style="text-align:right">${l.pack || 1}</td>
       <td style="text-align:right">${formatMoney(l.price)}</td>
       <td style="text-align:right">${formatMoney(lineTotal(l, l.qty))}</td>
@@ -389,7 +430,14 @@ function printOrder(order, printSequence) {
       tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
       tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
       .printBtn { display: inline-block; margin-bottom: 20px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-      @media print { body { padding: 0; } .no-print { display: none; } }
+      .upcCell { white-space: nowrap; }
+      .barcode svg { display: block; }
+      @media print {
+        body { padding: 0; }
+        .no-print { display: none; }
+        /* keep barcodes sharp and full-contrast when printed */
+        .barcode svg { image-rendering: pixelated; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      }
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <h1>Order #${order.id} — ${order.customer}</h1>
