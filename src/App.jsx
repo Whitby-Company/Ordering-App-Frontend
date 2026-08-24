@@ -100,6 +100,7 @@ function inventorySortValue(item, field, popularity) {
   switch (field) {
     case 'id': return item.id.toLowerCase();
     case 'brand': return (item.brand || '').toLowerCase();
+    case 'upc': return (item.upc || '').toLowerCase();
     case 'pack': return Number(item.pack) || 1;
     case 'price': return Number(item.price) || 0;
     case 'casePrice': return casePrice(item);
@@ -283,6 +284,57 @@ async function parsePrintOrderFile(file, items) {
   return { orderedSkus, unmatched, matchedCodes: seen.size };
 }
 
+// Parse a UPC spreadsheet: needs a column of item codes (Item #/SKU/Code) and
+// a column of UPCs (UPC/Barcode/GTIN). Returns { updates:[{id,upc}], unmatched,
+// matched } with item codes resolved to real SKUs.
+async function parseUpcFile(file, items) {
+  const XLSX = await import('xlsx');
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' });
+
+  const UPC_HEADERS = ['upc', 'upc code', 'barcode', 'bar code', 'gtin', 'upc/ean'];
+  let codeCol = -1, upcCol = -1, headerRowIdx = -1;
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    let foundCode = -1, foundUpc = -1;
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').trim().toLowerCase();
+      if (foundCode < 0 && ITEM_CODE_HEADERS.includes(cell)) foundCode = c;
+      if (foundUpc < 0 && UPC_HEADERS.includes(cell)) foundUpc = c;
+    }
+    if (foundCode >= 0 && foundUpc >= 0) { codeCol = foundCode; upcCol = foundUpc; headerRowIdx = r; break; }
+  }
+  if (codeCol < 0 || upcCol < 0) {
+    throw new Error('Need two labeled columns: an item-code column ("Item #"/"SKU"/"Code") and a "UPC" column.');
+  }
+
+  const headerLabels = new Set([...ITEM_CODE_HEADERS, ...UPC_HEADERS]);
+  const codeIndex = buildCodeIndex(items);
+  const updates = [];
+  const unmatched = [];
+  const seen = new Set();
+
+  for (let r = headerRowIdx + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const rawCode = String(row[codeCol] || '').trim();
+    const rawUpc = String(row[upcCol] || '').trim();
+    if (!rawCode) continue;
+    if (headerLabels.has(rawCode.toLowerCase())) continue;
+    const cleaned = rawCode.replace(/\*+$/, '').trim();
+    if (!cleaned) continue;
+    const skus = matchCodeToSkus(cleaned, codeIndex);
+    if (skus) {
+      for (const s of skus) if (!seen.has(s)) { seen.add(s); updates.push({ id: s, upc: rawUpc }); }
+    } else {
+      unmatched.push(cleaned);
+    }
+  }
+
+  return { updates, unmatched, matched: seen.size };
+}
+
 // Sort an order's lines to follow the saved print sequence. Items in the
 // sequence come first (in that order); anything not in it keeps its original
 // relative order and goes at the end. Never drops a line.
@@ -316,7 +368,7 @@ function printOrder(order, printSequence) {
       <td style="text-align:center">${cases}</td>
       <td style="text-align:center">${cases * pack}</td>
       <td>${l.name}</td>
-      <td>${l.brand || ''}</td>
+      <td>${l.upc || ''}</td>
       <td style="text-align:right">${l.pack || 1}</td>
       <td style="text-align:right">${formatMoney(l.price)}</td>
       <td style="text-align:right">${formatMoney(lineTotal(l, l.qty))}</td>
@@ -344,7 +396,7 @@ function printOrder(order, printSequence) {
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
     ${order.notes ? `<div class="notes"><strong>Notes:</strong> ${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
     <table>
-      <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th><th>Brand</th><th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
+      <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th><th>UPC</th><th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
         <tr class="subtotal"><td style="text-align:right">Totals</td><td style="text-align:center">${totalCases}</td><td style="text-align:center">${totalUnits}</td><td colspan="5"></td></tr>
@@ -2105,12 +2157,15 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
   const [importResult, setImportResult] = useState(null);
   const [uploadingOrder, setUploadingOrder] = useState(false);
   const [printOrderResult, setPrintOrderResult] = useState(null);
+  const [uploadingUpc, setUploadingUpc] = useState(false);
+  const [upcResult, setUpcResult] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editField, setEditField] = useState('all');
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const fileInputRef = useRef(null);
   const printOrderInputRef = useRef(null);
+  const upcInputRef = useRef(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
   const popularity = useMemo(() => computePopularity(orders), [orders]);
@@ -2212,6 +2267,32 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
     printOrderInputRef.current?.click();
   }
 
+  function triggerUpcUpload() {
+    upcInputRef.current?.click();
+  }
+
+  async function handleUpcFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadingUpc(true);
+    setUpcResult(null);
+    try {
+      const { updates, unmatched, matched } = await parseUpcFile(file, items);
+      if (updates.length === 0) {
+        setUpcResult({ error: 'No item codes in that file matched any product. Check the SKU column matches your item codes, and that there is a "UPC" column.' });
+        return;
+      }
+      const result = await apiPost('/items/bulk-upc', { updates });
+      setUpcResult({ updated: result.updated, matched, notFound: result.notFound, unmatched, unmatchedCount: unmatched.length });
+      await onRefresh();
+    } catch (err) {
+      setUpcResult({ error: err.message || 'Upload failed' });
+    } finally {
+      setUploadingUpc(false);
+    }
+  }
+
   async function handlePrintOrderFile(e) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -2249,6 +2330,13 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
         accept=".xlsx,.xls"
         style={{ display: 'none' }}
         onChange={handlePrintOrderFile}
+      />
+      <input
+        ref={upcInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        style={{ display: 'none' }}
+        onChange={handleUpcFile}
       />
       <div style={officeStyles.sectionHeader}>
         <div style={officeStyles.sectionTitle}>Inventory</div>
@@ -2315,6 +2403,11 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
             {uploadingOrder ? 'Uploading…' : 'Upload print order'}
           </button>
         )}
+        {editMode && (
+          <button style={officeStyles.smallBtn} onClick={triggerUpcUpload} disabled={uploadingUpc} title="Upload a spreadsheet with an item-code column ('Item #'/'SKU'/'Code') and a 'UPC' column to set UPCs in bulk.">
+            {uploadingUpc ? 'Uploading…' : 'Import UPCs'}
+          </button>
+        )}
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
@@ -2334,6 +2427,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
             <option value="price">Edit: Price</option>
             <option value="stock">Edit: Stock</option>
             <option value="active">Edit: Active</option>
+            <option value="upc">Edit: UPC</option>
             <option value="photo">Edit: Photo</option>
           </select>
         )}
@@ -2364,6 +2458,18 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
         </div>
       )}
 
+      {upcResult && (
+        <div style={upcResult.error ? officeStyles.importBannerError : officeStyles.importBanner}>
+          {upcResult.error
+            ? `UPC import failed: ${upcResult.error}`
+            : `UPCs set for ${upcResult.updated} item${upcResult.updated === 1 ? '' : 's'}.` +
+              (upcResult.unmatchedCount > 0
+                ? ` ${upcResult.unmatchedCount} code${upcResult.unmatchedCount === 1 ? '' : 's'} didn't match a product and were skipped: ${upcResult.unmatched.slice(0, 12).join(', ')}${upcResult.unmatchedCount > 12 ? '…' : ''}`
+                : ' Every code matched.')}
+          <button style={officeStyles.dismissBtn} onClick={() => setUpcResult(null)}>×</button>
+        </div>
+      )}
+
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
           <thead>
@@ -2371,6 +2477,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
               <SortableTh field="id" label="Item #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="name" label="Item" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="brand" label="Brand" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="upc" label="UPC" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
@@ -2383,7 +2490,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode && (editField === 'all' || editField === 'photo') ? 9 : 8}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode && (editField === 'all' || editField === 'photo') ? 10 : 9}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
@@ -2395,6 +2502,9 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
                 </td>
                 <td style={officeStyles.td}>
                   {canEdit('brand') ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
+                </td>
+                <td style={officeStyles.td}>
+                  {canEdit('upc') ? <TextFieldEditor item={item} field="upc" onSaved={onRefresh} placeholder="add UPC" /> : (item.upc || <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   {canEdit('pack') ? (
@@ -2458,7 +2568,7 @@ function TextFieldEditor({ item, field, onSaved, placeholder, small }) {
   async function save() {
     const trimmed = value.trim();
     if (trimmed === original) { setEditing(false); return; }
-    if (!trimmed && field !== 'packLabel') { setValue(original); setEditing(false); return; }
+    if (!trimmed && field !== 'packLabel' && field !== 'upc') { setValue(original); setEditing(false); return; }
     setSaving(true);
     try {
       await apiPatch(`/items/${encodeURIComponent(item.id)}`, { [field]: trimmed });
