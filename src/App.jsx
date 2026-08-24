@@ -391,7 +391,8 @@ function barcodeSVG(rawUpc) {
   return '';
 }
 
-function printOrder(order, printSequence) {
+function printOrder(order, printSequence, options = {}) {
+  const withUpc = options.withUpc !== false; // default: include the barcode column
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
@@ -399,37 +400,44 @@ function printOrder(order, printSequence) {
   const rows = orderedLines.map(l => {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
-    const bc = barcodeSVG(l.upc);
-    const upcCell = bc
-      ? `<div class="barcode">${bc}</div>`
-      : (l.upc ? String(l.upc) : '');
+    let upcTd = '';
+    if (withUpc) {
+      const bc = barcodeSVG(l.upc);
+      const upcCell = bc
+        ? `<div class="barcode">${bc}</div>`
+        : (l.upc ? String(l.upc) : '');
+      upcTd = `<td class="upcCell">${upcCell}</td>`;
+    }
     return `
     <tr>
       <td class="codeCell">${displayCode(l.id)}</td>
       <td style="text-align:center">${cases}</td>
       <td style="text-align:center">${cases * pack}</td>
       <td class="itemCell">${l.name}</td>
-      <td class="upcCell">${upcCell}</td>
+      ${upcTd}
       <td style="text-align:right">${l.pack || 1}</td>
       <td style="text-align:right">${formatMoney(l.price)}</td>
       <td style="text-align:right">${formatMoney(lineTotal(l, l.qty))}</td>
     </tr>`;
   }).join('');
+  const upcTh = withUpc ? '<th>UPC</th>' : '';
+  const footColspan = withUpc ? 5 : 4;      // columns spanned after the Eaches total cell
+  const totalColspan = withUpc ? 7 : 6;     // columns before the final Order total value
   const win = window.open('', '_blank', 'width=800,height=900');
   if (!win) return;
-  win.document.write(`<!doctype html><html><head><title>Order ${order.id}</title>
+  win.document.write(`<!doctype html><html><head><title>Order ${order.id}${withUpc ? ' (UPC)' : ''}</title>
     <meta charset="utf-8" />
     <style>
-      body { font-family: Arial, Helvetica, sans-serif; padding: 32px; color: #14181F; }
-      h1 { font-size: 20px; margin: 0 0 4px; }
-      .meta { color: #5B6058; margin-bottom: 22px; font-size: 13px; }
-      .notes { background: #FBFAF6; border: 1px solid #E3E1D6; border-radius: 8px; padding: 10px 12px; margin: -8px 0 20px; font-size: 13px; color: #14181F; line-height: 1.45; }
+      body { font-family: Arial, Helvetica, sans-serif; padding: 28px; color: #14181F; }
+      h1 { font-size: 18px; margin: 0 0 3px; }
+      .meta { color: #5B6058; margin-bottom: 14px; font-size: 12px; }
+      .notes { background: #FBFAF6; border: 1px solid #E3E1D6; border-radius: 8px; padding: 8px 10px; margin: -4px 0 12px; font-size: 12px; color: #14181F; line-height: 1.35; }
       table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-      th, td { padding: 3px 4px; border-bottom: 1px solid #E3E1D6; text-align: left; }
+      th, td { padding: ${withUpc ? '2px 4px' : '1px 4px'}; border-bottom: 1px solid #ECEAE1; text-align: left; line-height: 1.15; }
       th { background: #FBFAF6; font-size: 9.5px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.02em; }
       tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
       tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
-      .printBtn { display: inline-block; margin-bottom: 20px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+      .printBtn { display: inline-block; margin-bottom: 16px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
       .itemCell, .codeCell { white-space: nowrap; }
       .upcCell { white-space: nowrap; width: 1px; }
       .barcode svg { display: block; }
@@ -445,11 +453,11 @@ function printOrder(order, printSequence) {
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
     ${order.notes ? `<div class="notes"><strong>Notes:</strong> ${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
     <table>
-      <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th><th>UPC</th><th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
+      <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr class="subtotal"><td style="text-align:right">Totals</td><td style="text-align:center">${totalCases}</td><td style="text-align:center">${totalUnits}</td><td colspan="5"></td></tr>
-        <tr><td colspan="7" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr>
+        <tr class="subtotal"><td style="text-align:right">Totals</td><td style="text-align:center">${totalCases}</td><td style="text-align:center">${totalUnits}</td><td colspan="${footColspan}"></td></tr>
+        <tr><td colspan="${totalColspan}" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr>
       </tfoot>
     </table>
     </body></html>`);
@@ -1629,7 +1637,8 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                   )}
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence)}>Print / PDF</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false })}>Print</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: true })}>Print + UPC</button>
                     <button style={styles.orderCardActionBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id}>
                       {iifBusyId === o.id ? '…' : 'QuickBooks'}
                     </button>
@@ -2012,9 +2021,9 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
     }
   }
 
-  // Print an order, then auto-mark it processed.
-  async function handlePrint(order) {
-    printOrder(order, printSequence);
+  // Print an order, then auto-mark it processed. withUpc toggles the barcode column.
+  async function handlePrint(order, withUpc = false) {
+    printOrder(order, printSequence, { withUpc });
     if (!order.processed) {
       try {
         await apiPatch(`/orders/${order.id}/processed`, { processed: true });
@@ -2109,7 +2118,8 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => handlePrint(o)}>Print</button>{' '}
+                      <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
+                      <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print + UPC</button>{' '}
                       <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
                         {iifBusyId === o.id ? '…' : 'QB'}
                       </button>{' '}
