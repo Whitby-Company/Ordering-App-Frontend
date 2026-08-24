@@ -1638,6 +1638,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false })}>Print</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: true })}>Print w/UPC</button>
                   </div>
                 </div>
               )}
