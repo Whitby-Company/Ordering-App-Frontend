@@ -424,9 +424,9 @@ function printOrder(order, printSequence) {
       h1 { font-size: 20px; margin: 0 0 4px; }
       .meta { color: #5B6058; margin-bottom: 22px; font-size: 13px; }
       .notes { background: #FBFAF6; border: 1px solid #E3E1D6; border-radius: 8px; padding: 10px 12px; margin: -8px 0 20px; font-size: 13px; color: #14181F; line-height: 1.45; }
-      table { width: 100%; border-collapse: collapse; font-size: 12px; }
-      th, td { padding: 5px 7px; border-bottom: 1px solid #E3E1D6; text-align: left; }
-      th { background: #FBFAF6; font-size: 10px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.03em; }
+      table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+      th, td { padding: 3px 4px; border-bottom: 1px solid #E3E1D6; text-align: left; }
+      th { background: #FBFAF6; font-size: 9.5px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.02em; }
       tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
       tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
       .printBtn { display: inline-block; margin-bottom: 20px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
