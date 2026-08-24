@@ -372,12 +372,12 @@ function barcodeSVG(rawUpc) {
       const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       JsBarcode(node, digits, {
         format,
-        width: 1.5,
-        height: 38,
+        width: 1.3,
+        height: 34,
         displayValue: true,
-        fontSize: 12,
+        fontSize: 11,
         textMargin: 1,
-        margin: 4,
+        margin: 2,
         background: '#ffffff',
         lineColor: '#000000',
       });
@@ -405,10 +405,10 @@ function printOrder(order, printSequence) {
       : (l.upc ? String(l.upc) : '');
     return `
     <tr>
-      <td>${displayCode(l.id)}</td>
+      <td class="codeCell">${displayCode(l.id)}</td>
       <td style="text-align:center">${cases}</td>
       <td style="text-align:center">${cases * pack}</td>
-      <td>${l.name}</td>
+      <td class="itemCell">${l.name}</td>
       <td class="upcCell">${upcCell}</td>
       <td style="text-align:right">${l.pack || 1}</td>
       <td style="text-align:right">${formatMoney(l.price)}</td>
@@ -424,13 +424,14 @@ function printOrder(order, printSequence) {
       h1 { font-size: 20px; margin: 0 0 4px; }
       .meta { color: #5B6058; margin-bottom: 22px; font-size: 13px; }
       .notes { background: #FBFAF6; border: 1px solid #E3E1D6; border-radius: 8px; padding: 10px 12px; margin: -8px 0 20px; font-size: 13px; color: #14181F; line-height: 1.45; }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { padding: 8px 10px; border-bottom: 1px solid #E3E1D6; text-align: left; }
-      th { background: #FBFAF6; font-size: 11px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.04em; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { padding: 5px 7px; border-bottom: 1px solid #E3E1D6; text-align: left; }
+      th { background: #FBFAF6; font-size: 10px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.03em; }
       tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
       tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
       .printBtn { display: inline-block; margin-bottom: 20px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-      .upcCell { white-space: nowrap; }
+      .itemCell, .codeCell { white-space: nowrap; }
+      .upcCell { white-space: nowrap; width: 1px; }
       .barcode svg { display: block; }
       @media print {
         body { padding: 0; }
