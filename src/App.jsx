@@ -391,6 +391,28 @@ function barcodeSVG(rawUpc) {
   return '';
 }
 
+// An item's UPC field may hold several UPCs (e.g. a shipper containing
+// multiple units), separated by comma / semicolon / newline. Split into a
+// clean list. A UPC's own digits use only numbers, dashes and spaces, so
+// those separators are safe.
+function parseUpcList(rawUpc) {
+  return String(rawUpc == null ? '' : rawUpc)
+    .split(/[,;\n]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+// Render one barcode per UPC in the cell, stacked. Falls back to the raw
+// text for any value that can't be encoded.
+function barcodesForCell(rawUpc) {
+  const upcs = parseUpcList(rawUpc);
+  if (upcs.length === 0) return '';
+  return upcs.map(u => {
+    const bc = barcodeSVG(u);
+    return bc ? `<div class="barcode">${bc}</div>` : `<div>${u}</div>`;
+  }).join('');
+}
+
 function printOrder(order, printSequence, options = {}) {
   const withUpc = options.withUpc !== false; // default: include the barcode column
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -402,11 +424,8 @@ function printOrder(order, printSequence, options = {}) {
     const pack = Number(l.pack) || 1;
     let upcTd = '';
     if (withUpc) {
-      const bc = barcodeSVG(l.upc);
-      const upcCell = bc
-        ? `<div class="barcode">${bc}</div>`
-        : (l.upc ? String(l.upc) : '');
-      upcTd = `<td class="upcCell">${upcCell}</td>`;
+      const cell = barcodesForCell(l.upc);
+      upcTd = `<td class="upcCell">${cell || (l.upc ? String(l.upc) : '')}</td>`;
     }
     return `
     <tr>
@@ -441,6 +460,7 @@ function printOrder(order, printSequence, options = {}) {
       .itemCell, .codeCell { white-space: nowrap; }
       .upcCell { white-space: nowrap; width: 1px; }
       .barcode svg { display: block; }
+      .barcode + .barcode { margin-top: 3px; }
       @media print {
         body { padding: 0; }
         .no-print { display: none; }
@@ -2651,7 +2671,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
                   {canEdit('brand') ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
                 </td>
                 <td style={officeStyles.td}>
-                  {canEdit('upc') ? <TextFieldEditor item={item} field="upc" onSaved={onRefresh} placeholder="add UPC" /> : (item.upc || <span style={{ color: '#B9BDB2' }}>—</span>)}
+                  {canEdit('upc') ? <TextFieldEditor item={item} field="upc" onSaved={onRefresh} placeholder="UPC(s), comma-separated" /> : (item.upc || <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   {canEdit('pack') ? (
@@ -2983,58 +3003,43 @@ function StockEditor({ item, onSaved }) {
   );
 }
 
-function CustomerNameEditor({ customer, onRefresh }) {
-  const [editing, setEditing] = useState(false);
+function CustomerNameField({ customer, editMode, onRefresh }) {
   const [value, setValue] = useState(customer.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => { setValue(customer.name); }, [customer.name]);
+
+  if (!editMode) return <span>{customer.name}</span>;
+
   async function save() {
     const trimmed = value.trim();
-    if (!trimmed) { setError('Name cannot be empty'); return; }
-    if (trimmed === customer.name) { setEditing(false); setError(''); return; }
+    if (!trimmed) { setValue(customer.name); setError(''); return; }
+    if (trimmed === customer.name) { setError(''); return; }
     setSaving(true);
     setError('');
     try {
       await apiPatch(`/customers/${customer.id}`, { name: trimmed });
       await onRefresh();
-      setEditing(false);
     } catch (err) {
       setError(err.message || 'Could not rename');
+      setValue(customer.name);
     } finally {
       setSaving(false);
     }
   }
 
-  function cancel() {
-    setValue(customer.name);
-    setError('');
-    setEditing(false);
-  }
-
-  if (!editing) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span>{customer.name}</span>
-        <button style={officeStyles.smallBtn} onClick={() => { setValue(customer.name); setEditing(true); }}>Rename</button>
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
       <input
-        autoFocus
         style={officeStyles.inlineInput}
         value={value}
         onChange={e => setValue(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValue(customer.name); e.currentTarget.blur(); } }}
         disabled={saving}
       />
-      <button style={{ ...officeStyles.smallBtn, ...officeStyles.markDoneBtn }} onClick={save} disabled={saving}>
-        {saving ? '…' : 'Save'}
-      </button>
-      <button style={officeStyles.smallBtn} onClick={cancel} disabled={saving}>Cancel</button>
+      {saving && <span style={{ color: '#8A8F87', fontSize: 12 }}>saving…</span>}
       {error && <span style={{ color: '#B5493B', fontSize: 12, fontWeight: 600 }}>{error}</span>}
     </div>
   );
@@ -3043,6 +3048,7 @@ function CustomerNameEditor({ customer, onRefresh }) {
 function OfficeCustomers({ customers, onRefresh }) {
   const [query, setQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return customers.filter(c => {
@@ -3061,12 +3067,22 @@ function OfficeCustomers({ customers, onRefresh }) {
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        <button
+          style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
+          onClick={() => setEditMode(v => !v)}
+          title="Turn on to edit customer names; changes save as you go"
+        >
+          {editMode ? 'Done renaming' : 'Rename customers'}
+        </button>
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
         <div style={officeStyles.countPill}>{filtered.length} customer{filtered.length === 1 ? '' : 's'}</div>
       </div>
+      {editMode && (
+        <div style={officeStyles.editHint}>Editing names — click a name to change it. Changes save automatically.</div>
+      )}
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
           <thead><tr><th style={officeStyles.th}>Customer name</th><th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th></tr></thead>
@@ -3077,7 +3093,7 @@ function OfficeCustomers({ customers, onRefresh }) {
             {filtered.map(c => (
               <tr key={c.id} style={!c.active ? officeStyles.rowInactive : undefined}>
                 <td style={officeStyles.td}>
-                  <CustomerNameEditor customer={c} onRefresh={onRefresh} />
+                  <CustomerNameField customer={c} editMode={editMode} onRefresh={onRefresh} />
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
@@ -3290,6 +3306,7 @@ const officeStyles = {
   refreshBtn: { display: 'flex', alignItems: 'center', gap: 6, background: '#2A2E23', color: '#EDEBE3', border: '1px solid #3C4132', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   autoLink: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', whiteSpace: 'nowrap' },
   editModeBtnActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
+  editHint: { margin: '0 0 10px', padding: '8px 12px', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 8, color: '#2B5D50', fontSize: 12.5, fontWeight: 600 },
   colorPickerLabel: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 600, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
   colorSwatch: { width: 14, height: 14, borderRadius: 4, border: '1px solid rgba(0,0,0,0.15)', display: 'inline-block' },
   colorInput: { position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' },
