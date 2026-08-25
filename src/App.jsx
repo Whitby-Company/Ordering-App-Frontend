@@ -881,6 +881,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   }, [order, items]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
+  const totalPrice = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
 
   function qtyFor(id) { return order.find(o => o.id === id)?.qty || 0; }
   function isOnOrder(id) { return order.some(o => o.id === id); }
@@ -1133,6 +1134,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             <ClipboardList size={18} color="#EDEBE3" />
             <span style={styles.ticketBarText}>
               {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} · {orderLines.length} {orderLines.length === 1 ? 'item' : 'items'}
+              {totalPrice > 0 && <span style={styles.ticketBarTotal}> · {formatMoney(totalPrice)}</span>}
             </span>
             <span style={styles.ticketBarCta}>Review order</span>
           </div>
@@ -3210,6 +3212,7 @@ const styles = {
   ticketStub: { height: 6, background: 'repeating-linear-gradient(90deg, #F7F8F4 0 6px, transparent 6px 12px)', borderTop: '1px dashed #C7CBC1' },
   ticketBarContent: { background: '#14181F', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 },
   ticketBarText: { color: '#EDEBE3', fontSize: 13.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
+  ticketBarTotal: { color: '#9FE3CD', fontWeight: 700 },
   ticketBarCta: { marginLeft: 'auto', color: '#EDEBE3', fontSize: 13, fontWeight: 600, background: '#2B5D50', padding: '6px 12px', borderRadius: 7 },
   sheetOverlay: { position: 'absolute', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 10 },
   sheet: { background: '#F7F8F4', width: '100%', maxHeight: '80%', borderRadius: '18px 18px 0 0', padding: '10px 16px 20px', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 20px rgba(20,24,31,0.15)' },
