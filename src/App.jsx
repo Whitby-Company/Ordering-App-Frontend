@@ -416,8 +416,8 @@ function printOrder(order, printSequence, options = {}) {
       <td class="itemCell">${l.name}</td>
       ${upcTd}
       <td style="text-align:right">${l.pack || 1}</td>
-      <td style="text-align:right">${formatMoney(l.price)}</td>
-      <td style="text-align:right">${formatMoney(lineTotal(l, l.qty))}</td>
+      <td style="text-align:right">${cases > 0 ? formatMoney(l.price) : ''}</td>
+      <td style="text-align:right">${cases > 0 ? formatMoney(lineTotal(l, l.qty)) : ''}</td>
     </tr>`;
   }).join('');
   const upcTh = withUpc ? '<th>UPC</th>' : '';
@@ -855,13 +855,14 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const orderLines = useMemo(() => {
     return order.map(o => {
       const item = items.find(i => i.id === o.id);
-      return item ? { ...item, qty: o.qty } : null;
+      return item ? { ...item, qty: o.qty, checkin: !!o.checkin } : null;
     }).filter(Boolean);
   }, [order, items]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
 
   function qtyFor(id) { return order.find(o => o.id === id)?.qty || 0; }
+  function isOnOrder(id) { return order.some(o => o.id === id); }
 
   function setQty(id, qty) {
     const item = items.find(i => i.id === id);
@@ -869,10 +870,29 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     const clamped = Math.max(0, Math.min(qty, item.stock));
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
-      if (clamped === 0) return prev.filter(o => o.id !== id);
-      if (exists) return prev.map(o => (o.id === id ? { ...o, qty: clamped } : o));
+      // Going to 0 removes a normal line, but a "check-in" line (added on
+      // purpose to print its UPC) stays on the order at 0.
+      if (clamped === 0) {
+        if (exists && exists.checkin) return prev.map(o => (o.id === id ? { ...o, qty: 0 } : o));
+        return prev.filter(o => o.id !== id);
+      }
+      if (exists) return prev.map(o => (o.id === id ? { ...o, qty: clamped, checkin: false } : o));
       return [...prev, { id, qty: clamped }];
     });
+  }
+
+  // Add an item to the order at qty 0 so its UPC/barcode prints for check-in.
+  function addCheckin(id) {
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    setOrder(prev => {
+      if (prev.find(o => o.id === id)) return prev; // already on the order
+      return [...prev, { id, qty: 0, checkin: true }];
+    });
+  }
+
+  function removeLine(id) {
+    setOrder(prev => prev.filter(o => o.id !== id));
   }
 
   async function submitOrder() {
@@ -1068,6 +1088,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                   <button style={styles.stepBtn} onClick={() => setQty(item.id, qty + 1)} disabled={qty >= item.stock}>
                     <Plus size={14} color={qty >= item.stock ? '#C7CBC1' : '#14181F'} />
                   </button>
+                  {item.upc && !isOnOrder(item.id) && (
+                    <button
+                      style={styles.checkinBtn}
+                      onClick={() => addCheckin(item.id)}
+                      title="Add at 0 qty so its UPC barcode prints for check-in"
+                    >
+                      +UPC
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -1113,11 +1142,13 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                     <div style={styles.sheetLineName}>{l.name}</div>
                     <div style={styles.sheetLineSku}>
                       {displayCode(l.id)}{l.pack > 1 ? ` · ${l.pack}ea` : ''}
-                      {l.price > 0 ? ` · ${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
+                      {l.price > 0 && l.qty > 0 ? ` · ${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
                     </div>
                   </div>
-                  <div style={styles.sheetLineQty}>×{l.qty}</div>
-                  <button style={styles.removeBtn} onClick={() => setQty(l.id, 0)} disabled={submitting}>
+                  {l.qty === 0
+                    ? <div style={styles.checkinTag}>check-in</div>
+                    : <div style={styles.sheetLineQty}>×{l.qty}</div>}
+                  <button style={styles.removeBtn} onClick={() => removeLine(l.id)} disabled={submitting}>
                     <X size={14} color="#8A8F87" />
                   </button>
                 </div>
@@ -1668,7 +1699,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
 function OrderEditModal({ order, items, customers, onClose, onSaved }) {
   const [customerId, setCustomerId] = useState(order.customerId);
   const [deliveryDate, setDeliveryDate] = useState(order.deliveryDate);
-  const [lines, setLines] = useState(() => order.lines.map(l => ({ id: l.id, qty: l.qty })));
+  const [lines, setLines] = useState(() => order.lines.map(l => ({ id: l.id, qty: l.qty, checkin: l.qty === 0 })));
   const [notes, setNotes] = useState(order.notes || '');
   const [addQuery, setAddQuery] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1708,16 +1739,31 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
     const maxQty = (item.stock || 0) + (origQtyById[id] || 0);
     const clamped = Math.max(0, Math.min(qty, maxQty));
     setLines(prev => {
-      if (clamped === 0) return prev.filter(l => l.id !== id);
       const exists = prev.find(l => l.id === id);
-      if (exists) return prev.map(l => (l.id === id ? { ...l, qty: clamped } : l));
+      // A "check-in" line (added to print its UPC) stays on the order at 0;
+      // a normal line is removed when it hits 0.
+      if (clamped === 0) {
+        if (exists && exists.checkin) return prev.map(l => (l.id === id ? { ...l, qty: 0 } : l));
+        return prev.filter(l => l.id !== id);
+      }
+      if (exists) return prev.map(l => (l.id === id ? { ...l, qty: clamped, checkin: false } : l));
       return [...prev, { id, qty: clamped }];
     });
   }
 
   function addItem(item) {
-    setQty(item.id, (origQtyById[item.id] || 0) + 1 > 0 ? 1 : 1);
+    setQty(item.id, 1);
     setAddQuery('');
+  }
+
+  // Add an item at qty 0 so its UPC/barcode prints for check-in.
+  function addCheckin(item) {
+    setLines(prev => (prev.find(l => l.id === item.id) ? prev : [...prev, { id: item.id, qty: 0, checkin: true }]));
+    setAddQuery('');
+  }
+
+  function removeLine(id) {
+    setLines(prev => prev.filter(l => l.id !== id));
   }
 
   const totalUnits = lines.reduce((s, l) => s + l.qty, 0);
@@ -1790,18 +1836,22 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={styles.sheetLineName}>{item.name}</div>
                   <div style={styles.sheetLineSku}>
-                    {displayCode(item.id)}{item.price > 0 ? ` · ${formatMoney(lineTotal(item, l.qty))}` : ''}
+                    {displayCode(item.id)}{item.price > 0 && l.qty > 0 ? ` · ${formatMoney(lineTotal(item, l.qty))}` : ''}
+                    {l.qty === 0 ? ' · check-in only' : ''}
                   </div>
                 </div>
                 <div style={styles.stepper}>
-                  <button style={styles.stepBtn} onClick={() => setQty(l.id, l.qty - 1)}>
-                    <Minus size={14} color="#14181F" />
+                  <button style={styles.stepBtn} onClick={() => setQty(l.id, l.qty - 1)} disabled={l.qty === 0}>
+                    <Minus size={14} color={l.qty === 0 ? '#C7CBC1' : '#14181F'} />
                   </button>
                   <span style={styles.stepQty}>{l.qty}</span>
                   <button style={styles.stepBtn} onClick={() => setQty(l.id, l.qty + 1)}>
                     <Plus size={14} color="#14181F" />
                   </button>
                 </div>
+                <button style={styles.removeBtn} onClick={() => removeLine(l.id)} title="Remove from order">
+                  <X size={14} color="#8A8F87" />
+                </button>
               </div>
             );
           })}
@@ -1817,10 +1867,21 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
           {searchResults.length > 0 && (
             <div style={editStyles.searchDropdown}>
               {searchResults.map(item => (
-                <button key={item.id} style={editStyles.searchResultRow} onClick={() => addItem(item)}>
-                  <span style={{ fontWeight: 600 }}>{item.name}</span>
-                  <span style={{ color: '#8A8F87', fontSize: 12 }}>{displayCode(item.id)} · {item.stock} in stock</span>
-                </button>
+                <div key={item.id} style={editStyles.searchResultRow}>
+                  <button style={editStyles.searchResultMain} onClick={() => addItem(item)}>
+                    <span style={{ fontWeight: 600 }}>{item.name}</span>
+                    <span style={{ color: '#8A8F87', fontSize: 12 }}>{displayCode(item.id)} · {item.stock} in stock</span>
+                  </button>
+                  {item.upc && (
+                    <button
+                      style={editStyles.checkinAddBtn}
+                      onClick={() => addCheckin(item)}
+                      title="Add at 0 qty so its UPC barcode prints for check-in"
+                    >
+                      +UPC
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -1883,7 +1944,9 @@ function OrderEditModal({ order, items, customers, onClose, onSaved }) {
 const editStyles = {
   select: { width: '100%', boxSizing: 'border-box', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 8, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   searchDropdown: { position: 'absolute', left: 20, right: 20, top: '100%', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, boxShadow: '0 4px 12px rgba(20,24,31,0.12)', zIndex: 30, maxHeight: 220, overflowY: 'auto' },
-  searchResultRow: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #EAE8DD', padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 },
+  searchResultRow: { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%', borderBottom: '1px solid #EAE8DD', padding: '5px 8px 5px 12px' },
+  searchResultMain: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, flex: 1, textAlign: 'left', background: 'none', border: 'none', padding: '4px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 },
+  checkinAddBtn: { flexShrink: 0, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '6px 10px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
   deleteLink: { display: 'block', margin: '10px auto 4px', background: 'none', border: 'none', color: '#B5493B', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' },
   confirmDeleteRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, margin: '10px 20px 4px', fontSize: 12.5, color: '#7A2E22', flexWrap: 'wrap' },
   confirmDeleteBtn: { background: '#B5493B', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
@@ -3057,6 +3120,8 @@ const styles = {
   sheetLineName: { fontSize: 13.5, fontWeight: 600, color: '#14181F' },
   sheetLineSku: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#8A8F87', marginTop: 2 },
   sheetLineQty: { fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: '#14181F' },
+  checkinBtn: { marginLeft: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '4px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
+  checkinTag: { fontSize: 10, fontWeight: 800, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.03em' },
   removeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4 },
   sheetTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 10px', fontSize: 13, fontWeight: 600, color: '#5B6058' },
   sheetTotalNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: '#14181F' },
