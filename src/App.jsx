@@ -1105,7 +1105,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         </div>
       )}
 
-      {totalUnits > 0 && (
+      {orderLines.length > 0 && (
         <div style={styles.ticketBar} onClick={() => setTicketOpen(true)}>
           <div style={styles.ticketStub} />
           <div style={styles.ticketBarContent}>
@@ -1146,7 +1146,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                     </div>
                   </div>
                   {l.qty === 0
-                    ? <div style={styles.checkinTag}>check-in</div>
+                    ? <><div style={styles.checkinTag}>check-in</div><div style={styles.sheetLineQty}>×0</div></>
                     : <div style={styles.sheetLineQty}>×{l.qty}</div>}
                   <button style={styles.removeBtn} onClick={() => removeLine(l.id)} disabled={submitting}>
                     <X size={14} color="#8A8F87" />
