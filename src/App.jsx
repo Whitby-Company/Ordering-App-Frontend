@@ -594,23 +594,18 @@ export default function App() {
   const [brandColors, setBrandColors] = useState({});
   const [printSequence, setPrintSequence] = useState([]);
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
-  const [tab, setTabRaw] = useState('order');
-  const [tabHistory, setTabHistory] = useState([]);
-  // Change tab, remembering where we came from so the back arrow can return.
+  // Navigation stack: the last element is the current tab. Navigating pushes,
+  // back pops exactly one. Single source of truth so history and current view
+  // can never get out of sync.
+  const [navStack, setNavStack] = useState(['order']);
+  const tab = navStack[navStack.length - 1];
   const setTab = useCallback((next) => {
-    setTabRaw(prev => {
-      if (next !== prev) setTabHistory(h => [...h, prev]);
-      return next;
-    });
+    setNavStack(stack => (next === stack[stack.length - 1] ? stack : [...stack, next]));
   }, []);
   const goBack = useCallback(() => {
-    setTabHistory(h => {
-      if (h.length === 0) return h;
-      const prev = h[h.length - 1];
-      setTabRaw(prev);
-      return h.slice(0, -1);
-    });
+    setNavStack(stack => (stack.length > 1 ? stack.slice(0, -1) : stack));
   }, []);
+  const canGoBack = navStack.length > 1;
   const isDesktopWidth = useIsDesktop();
   const [viewOverride, setViewOverride] = useState(() => {
     try { return localStorage.getItem('viewOverride') || null; } catch { return null; }
@@ -703,12 +698,12 @@ export default function App() {
   return (
     <div style={styles.app}>
       <style>{fontImport}</style>
-      {tabHistory.length > 0 && (
+      {canGoBack && (
         <button style={styles.backArrow} onClick={goBack} aria-label="Back to previous screen" title="Back">
           <ChevronLeft size={18} color="#EDEBE3" />
         </button>
       )}
-      <div style={styles.tabContent} className={tabHistory.length > 0 ? 'has-back' : ''}>
+      <div style={styles.tabContent} className={canGoBack ? 'has-back' : ''}>
         {tab === 'order' && (
           <OrderTab items={items} customers={customers} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} />
         )}
@@ -1981,21 +1976,15 @@ const editStyles = {
 // inventory table with editable stock)
 // ============================================================
 function OfficeView({ items, customers, activeItems, activeCustomers, orders, brandColors, printSequence, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
-  const [section, setSectionRaw] = useState('orders');
-  const [sectionHistory, setSectionHistory] = useState([]);
+  const [navStack, setNavStack] = useState(['orders']);
+  const section = navStack[navStack.length - 1];
   const setSection = useCallback((next) => {
-    setSectionRaw(prev => {
-      if (next !== prev) setSectionHistory(h => [...h, prev]);
-      return next;
-    });
+    setNavStack(stack => (next === stack[stack.length - 1] ? stack : [...stack, next]));
   }, []);
   const goBack = useCallback(() => {
-    setSectionHistory(h => {
-      if (h.length === 0) return h;
-      setSectionRaw(h[h.length - 1]);
-      return h.slice(0, -1);
-    });
+    setNavStack(stack => (stack.length > 1 ? stack.slice(0, -1) : stack));
   }, []);
+  const canGoBack = navStack.length > 1;
   const [refreshing, setRefreshing] = useState(false);
 
   async function handleRefresh() {
@@ -2013,9 +2002,9 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         </div>
         <div style={officeStyles.nav}>
           <button
-            style={{ ...officeStyles.navBtn, ...officeStyles.backNavBtn, ...(sectionHistory.length === 0 ? officeStyles.backNavBtnDisabled : {}) }}
+            style={{ ...officeStyles.navBtn, ...officeStyles.backNavBtn, ...(!canGoBack ? officeStyles.backNavBtnDisabled : {}) }}
             onClick={goBack}
-            disabled={sectionHistory.length === 0}
+            disabled={!canGoBack}
             title="Back to previous screen"
             aria-label="Back to previous screen"
           >
