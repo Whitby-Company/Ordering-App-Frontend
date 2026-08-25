@@ -2948,6 +2948,63 @@ function StockEditor({ item, onSaved }) {
   );
 }
 
+function CustomerNameEditor({ customer, onRefresh }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(customer.name);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    const trimmed = value.trim();
+    if (!trimmed) { setError('Name cannot be empty'); return; }
+    if (trimmed === customer.name) { setEditing(false); setError(''); return; }
+    setSaving(true);
+    setError('');
+    try {
+      await apiPatch(`/customers/${customer.id}`, { name: trimmed });
+      await onRefresh();
+      setEditing(false);
+    } catch (err) {
+      setError(err.message || 'Could not rename');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancel() {
+    setValue(customer.name);
+    setError('');
+    setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span>{customer.name}</span>
+        <button style={officeStyles.smallBtn} onClick={() => { setValue(customer.name); setEditing(true); }}>Rename</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <input
+        autoFocus
+        style={officeStyles.inlineInput}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
+        disabled={saving}
+      />
+      <button style={{ ...officeStyles.smallBtn, ...officeStyles.markDoneBtn }} onClick={save} disabled={saving}>
+        {saving ? '…' : 'Save'}
+      </button>
+      <button style={officeStyles.smallBtn} onClick={cancel} disabled={saving}>Cancel</button>
+      {error && <span style={{ color: '#B5493B', fontSize: 12, fontWeight: 600 }}>{error}</span>}
+    </div>
+  );
+}
+
 function OfficeCustomers({ customers, onRefresh }) {
   const [query, setQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
@@ -2984,7 +3041,9 @@ function OfficeCustomers({ customers, onRefresh }) {
             )}
             {filtered.map(c => (
               <tr key={c.id} style={!c.active ? officeStyles.rowInactive : undefined}>
-                <td style={officeStyles.td}>{c.name}</td>
+                <td style={officeStyles.td}>
+                  <CustomerNameEditor customer={c} onRefresh={onRefresh} />
+                </td>
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
@@ -3204,6 +3263,7 @@ const officeStyles = {
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   select: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   smallBtn: { background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 600, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  inlineInput: { background: '#FFFFFF', border: '1px solid #B7C9C1', borderRadius: 8, padding: '7px 10px', fontSize: 13.5, fontWeight: 600, color: '#14181F', fontFamily: 'inherit', minWidth: 220, outline: 'none' },
   checkboxLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#5B6058', whiteSpace: 'nowrap' },
   countPill: { marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#5B6058', background: '#EAE8DD', borderRadius: 999, padding: '6px 12px', whiteSpace: 'nowrap' },
   tableCard: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 12, overflow: 'hidden' },
