@@ -373,10 +373,10 @@ function barcodeSVG(rawUpc) {
       JsBarcode(node, digits, {
         format,
         width: 1.3,
-        height: 34,
+        height: 22,
         displayValue: true,
-        fontSize: 11,
-        textMargin: 1,
+        fontSize: 10,
+        textMargin: 0,
         margin: 2,
         background: '#ffffff',
         lineColor: '#000000',
