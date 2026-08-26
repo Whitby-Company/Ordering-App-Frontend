@@ -458,8 +458,8 @@ function printOrder(order, printSequence, options = {}) {
     return `
     <tr>
       <td class="codeCell">${displayCode(l.id)}</td>
-      <td style="text-align:center">${cases}</td>
-      <td style="text-align:center">${cases * pack}</td>
+      <td class="casesCol">${cases}</td>
+      <td class="casesCol">${cases * pack}</td>
       <td class="itemCell">${l.name}</td>
       ${upcTd}
       <td style="text-align:right">${l.pack || 1}</td>
@@ -488,6 +488,10 @@ function printOrder(order, printSequence, options = {}) {
       tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
       .printBtn { display: inline-block; margin-bottom: 16px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
       .itemCell, .codeCell { white-space: nowrap; }
+      /* Keep Item # and Cases narrow so they sit right next to each other,
+         letting the Item (name) column absorb the leftover width. */
+      .codeCell, th.codeCol { width: 1px; white-space: nowrap; padding-right: 14px; }
+      .casesCol { width: 1px; white-space: nowrap; text-align: left; padding-right: 18px; }
       .upcCell { white-space: nowrap; width: 1px; }
       .barcode svg { display: block; }
       .barcode + .barcode { margin-top: 3px; }
@@ -503,10 +507,10 @@ function printOrder(order, printSequence, options = {}) {
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}</div>
     ${order.notes ? `<div class="notes"><span class="notesLabel">Order notes / special instructions</span><span class="notesBody">${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></div>` : ''}
     <table>
-      <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
+      <thead><tr><th class="codeCol">Item #</th><th class="casesCol">Cases</th><th class="casesCol">Eaches</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr class="subtotal"><td style="text-align:right">Totals</td><td style="text-align:center">${totalCases}</td><td style="text-align:center">${totalUnits}</td><td colspan="${footColspan}"></td></tr>
+        <tr class="subtotal"><td style="text-align:right">Totals</td><td class="casesCol">${totalCases}</td><td class="casesCol">${totalUnits}</td><td colspan="${footColspan}"></td></tr>
         <tr><td colspan="${totalColspan}" style="text-align:right">Order total</td><td style="text-align:right">${formatMoney(total)}</td></tr>
       </tfoot>
     </table>
