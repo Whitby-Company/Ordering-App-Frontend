@@ -3435,7 +3435,7 @@ function OfficeCustomers({ customers, onRefresh }) {
 const fontImport = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
   @keyframes spin { to { transform: rotate(360deg); } }
-  .has-back > div:first-child > div:first-child { padding-left: 40px; }
+  .has-back > div > div:first-child > div:first-child { padding-left: 42px; }
 `;
 
 const styles = {
