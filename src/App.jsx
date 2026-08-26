@@ -802,16 +802,25 @@ function TabBar({ active, onChange }) {
 // ============================================================
 // TAB 1 — NEW ORDER
 // ============================================================
-function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false }) {
+function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
+  const isEdit = !!editOrder;
   // Restore an in-progress order draft (customer, delivery date, quantities)
-  // so switching tabs or an accidental refresh doesn't lose it.
+  // so switching tabs or an accidental refresh doesn't lose it. In edit mode
+  // we ignore the saved draft and initialize from the order being edited.
   const savedDraft = (() => {
+    if (isEdit) return {};
     try { return JSON.parse(localStorage.getItem('orderDraft') || '{}'); } catch { return {}; }
   })();
-  const [customerId, setCustomerId] = useState(savedDraft.customerId ?? null);
+  const editInitLines = isEdit ? editOrder.lines.map(l => ({ id: l.id, qty: l.qty, checkin: l.qty === 0 })) : [];
+  const origQtyById = useMemo(() => {
+    const map = {};
+    if (isEdit) for (const l of editOrder.lines) map[l.id] = l.qty;
+    return map;
+  }, [isEdit, editOrder]);
+  const [customerId, setCustomerId] = useState(isEdit ? editOrder.customerId : (savedDraft.customerId ?? null));
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
-  const [deliveryDate, setDeliveryDate] = useState(savedDraft.deliveryDate || '');
+  const [deliveryDate, setDeliveryDate] = useState(isEdit ? editOrder.deliveryDate : (savedDraft.deliveryDate || ''));
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -820,12 +829,14 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [brand, setBrand] = useState('All');
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
-  const [order, setOrder] = useState(Array.isArray(savedDraft.order) ? savedDraft.order : []);
-  const [notes, setNotes] = useState(savedDraft.notes || '');
+  const [order, setOrder] = useState(isEdit ? editInitLines : (Array.isArray(savedDraft.order) ? savedDraft.order : []));
+  const [notes, setNotes] = useState(isEdit ? (editOrder.notes || '') : (savedDraft.notes || ''));
   const [ticketOpen, setTicketOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [submitterName, setSubmitterName] = useSubmitterName();
   const [signInOpen, setSignInOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -852,7 +863,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   }, [bothPicked]);
 
   // Persist the in-progress order draft so tab switches / refreshes don't lose it.
+  // (Not in edit mode — we don't want to clobber a new-order draft.)
   useEffect(() => {
+    if (isEdit) return;
     try {
       if (customerId || deliveryDate || order.length > 0 || notes) {
         localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order, notes }));
@@ -860,7 +873,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         localStorage.removeItem('orderDraft');
       }
     } catch { /* localStorage unavailable — draft just won't persist */ }
-  }, [customerId, deliveryDate, order, notes]);
+  }, [customerId, deliveryDate, order, notes, isEdit]);
 
   function goBackToBrands() {
     setScreen('brands');
@@ -882,7 +895,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     if (dx > 60 && dy < 50) goBackToBrands();
   }
 
-  const customerName = customers.find(c => c.id === customerId)?.name || '';
+  const customerName = customers.find(c => c.id === customerId)?.name
+    || (isEdit && editOrder.customerId === customerId ? editOrder.customer : '')
+    || '';
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
     const active = customers.filter(c => c.active !== 0);
@@ -935,11 +950,13 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   }, [items, brand, query, screen, sortBy, popularity, printSequence]);
 
   const orderLines = useMemo(() => {
+    const snap = {};
+    if (isEdit) for (const l of editOrder.lines) snap[l.id] = l;
     return order.map(o => {
-      const item = items.find(i => i.id === o.id);
+      const item = items.find(i => i.id === o.id) || (isEdit ? snap[o.id] : null);
       return item ? { ...item, qty: o.qty, checkin: !!o.checkin } : null;
     }).filter(Boolean);
-  }, [order, items]);
+  }, [order, items, isEdit, editOrder]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
   const totalPrice = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -947,10 +964,22 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   function qtyFor(id) { return order.find(o => o.id === id)?.qty || 0; }
   function isOnOrder(id) { return order.some(o => o.id === id); }
 
+  // Item lookup: active items plus a fallback snapshot for any line whose item
+  // has since gone inactive/renamed (only relevant in edit mode).
+  const itemById = useMemo(() => {
+    const map = {};
+    for (const i of items) map[i.id] = i;
+    if (isEdit) for (const l of editOrder.lines) if (!map[l.id]) map[l.id] = { ...l, stock: 0 };
+    return map;
+  }, [items, isEdit, editOrder]);
+
   function setQty(id, qty) {
-    const item = items.find(i => i.id === id);
+    const item = itemById[id];
     if (!item) return;
-    const clamped = Math.max(0, Math.min(qty, item.stock));
+    // In edit mode the item's current qty was already reserved, so it can go up
+    // to current stock + whatever this order originally held.
+    const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
+    const clamped = Math.max(0, Math.min(qty, maxQty));
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
       // Going to 0 removes a normal line, but a "check-in" line (added on
@@ -994,6 +1023,40 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // Discard the in-progress order (clear the whole draft).
   function discardOrder() {
     resetForm();
+  }
+
+  // Edit mode: save changes to the existing order via PATCH.
+  async function saveEdit() {
+    if (!customerId || !deliveryDate || orderLines.length === 0) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await apiPatch(`/orders/${editOrder.id}`, {
+        customerId,
+        deliveryDate,
+        notes: notes.trim() || undefined,
+        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty })),
+      });
+      await onOrderSubmitted();
+      if (onClose) onClose();
+    } catch (err) {
+      setSubmitError(err.message || 'Could not save changes.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function deleteEditOrder() {
+    setDeleting(true);
+    setSubmitError('');
+    try {
+      await apiDelete(`/orders/${editOrder.id}`);
+      await onOrderSubmitted();
+      if (onClose) onClose();
+    } catch (err) {
+      setSubmitError(err.message || 'Could not delete this order.');
+      setDeleting(false);
+    }
   }
 
   async function submitOrder(pending = false) {
@@ -1090,7 +1153,18 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   return (
     <div style={styles.screenWrap} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div style={desktop ? styles.headerDesktop : styles.header}>
-        {!desktop && (
+        {isEdit && (
+          <div style={styles.headerTop}>
+            <ClipboardCheck size={18} color="#EDEBE3" strokeWidth={2} />
+            <span style={styles.headerTitle}>Edit order #{editOrder.id}</span>
+            {onClose && (
+              <button style={{ ...styles.iconBtn, marginLeft: 'auto' }} onClick={onClose} disabled={submitting || deleting} title="Close">
+                <X size={18} color="#B7BCB2" />
+              </button>
+            )}
+          </div>
+        )}
+        {!desktop && !isEdit && (
           <div style={styles.headerTop}>
             <Package size={18} color="#EDEBE3" strokeWidth={2} />
             <span style={styles.headerTitle}>New Order</span>
@@ -1256,8 +1330,8 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                     <Minus size={14} color={qty === 0 ? '#C7CBC1' : '#14181F'} />
                   </button>
                   <span style={styles.stepQty}>{qty}</span>
-                  <button style={styles.stepBtn} onClick={() => setQty(item.id, qty + 1)} disabled={qty >= item.stock}>
-                    <Plus size={14} color={qty >= item.stock ? '#C7CBC1' : '#14181F'} />
+                  <button style={styles.stepBtn} onClick={() => setQty(item.id, qty + 1)} disabled={qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0)}>
+                    <Plus size={14} color={qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0) ? '#C7CBC1' : '#14181F'} />
                   </button>
                 </div>
               </div>
@@ -1342,46 +1416,78 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               />
             </div>
             {submitError && <div style={styles.sheetWarning}>{submitError}</div>}
-            <div style={styles.orderedByRow}>
-              {submitterName
-                ? <>Ordered by <strong>{submitterName}</strong> · <button style={styles.orderedByLink} onClick={openSignIn}>change</button></>
-                : <button style={styles.orderedByLink} onClick={openSignIn}>Set your name for orders</button>}
-            </div>
-            <button
-              style={{ ...styles.submitBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.submitBtnDisabled) }}
-              disabled={!customerId || !deliveryDate || submitting}
-              onClick={() => submitOrder(false)}
-            >
-              {submitting ? (
-                <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} />
-              ) : (
-                <Check size={16} color="#F7F8F4" />
-              )}
-              {submitting ? 'Submitting…' : 'Submit order'}
-            </button>
-            <div style={styles.ticketSecondaryRow}>
-              <button
-                style={{ ...styles.pendingBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.pendingBtnDisabled) }}
-                disabled={!customerId || !deliveryDate || submitting}
-                onClick={() => submitOrder(true)}
-                title="Save this order as pending — it shows in Orders and can be submitted later"
-              >
-                Save as pending
-              </button>
-              <button
-                style={styles.discardBtn}
-                disabled={submitting}
-                onClick={() => { if (window.confirm('Discard this order? This clears everything you\'ve added.')) discardOrder(); }}
-                title="Clear this order and start over"
-              >
-                Discard
-              </button>
-            </div>
+            {!isEdit && (
+              <div style={styles.orderedByRow}>
+                {submitterName
+                  ? <>Ordered by <strong>{submitterName}</strong> · <button style={styles.orderedByLink} onClick={openSignIn}>change</button></>
+                  : <button style={styles.orderedByLink} onClick={openSignIn}>Set your name for orders</button>}
+              </div>
+            )}
+            {isEdit ? (
+              <>
+                <button
+                  style={{ ...styles.submitBtn, ...((customerId && deliveryDate && orderLines.length > 0 && !submitting) ? {} : styles.submitBtnDisabled) }}
+                  disabled={!customerId || !deliveryDate || orderLines.length === 0 || submitting || deleting}
+                  onClick={saveEdit}
+                >
+                  {submitting ? <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} /> : <Check size={16} color="#F7F8F4" />}
+                  {submitting ? 'Saving…' : 'Save changes'}
+                </button>
+                {!confirmDelete ? (
+                  <button style={editStyles.deleteLink} onClick={() => setConfirmDelete(true)} disabled={submitting || deleting}>
+                    Delete this order
+                  </button>
+                ) : (
+                  <div style={editStyles.confirmDeleteRow}>
+                    <span>Delete this order permanently?</span>
+                    <button style={editStyles.confirmDeleteBtn} onClick={deleteEditOrder} disabled={deleting}>
+                      {deleting ? 'Deleting…' : 'Yes, delete'}
+                    </button>
+                    <button style={editStyles.cancelLink} onClick={() => setConfirmDelete(false)} disabled={deleting}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  style={{ ...styles.submitBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.submitBtnDisabled) }}
+                  disabled={!customerId || !deliveryDate || submitting}
+                  onClick={() => submitOrder(false)}
+                >
+                  {submitting ? (
+                    <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} />
+                  ) : (
+                    <Check size={16} color="#F7F8F4" />
+                  )}
+                  {submitting ? 'Submitting…' : 'Submit order'}
+                </button>
+                <div style={styles.ticketSecondaryRow}>
+                  <button
+                    style={{ ...styles.pendingBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.pendingBtnDisabled) }}
+                    disabled={!customerId || !deliveryDate || submitting}
+                    onClick={() => submitOrder(true)}
+                    title="Save this order as pending — it shows in Orders and can be submitted later"
+                  >
+                    Save as pending
+                  </button>
+                  <button
+                    style={styles.discardBtn}
+                    disabled={submitting}
+                    onClick={() => { if (window.confirm('Discard this order? This clears everything you\'ve added.')) discardOrder(); }}
+                    title="Clear this order and start over"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </>
+            )}
             {!submitting && (!customerId || !deliveryDate) && (
               <div style={styles.sheetWarning}>
-                {!customerId && !deliveryDate ? 'Select a customer and delivery date to submit this order'
-                  : !customerId ? 'Select a customer to submit this order'
-                  : 'Set a delivery date to submit this order'}
+                {!customerId && !deliveryDate ? `Select a customer and delivery date to ${isEdit ? 'save' : 'submit'} this order`
+                  : !customerId ? `Select a customer to ${isEdit ? 'save' : 'submit'} this order`
+                  : `Set a delivery date to ${isEdit ? 'save' : 'submit'} this order`}
               </div>
             )}
           </div>
@@ -1950,6 +2056,8 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
           order={editingOrder}
           items={items}
           customers={customers}
+          orders={orders}
+          printSequence={printSequence}
           onClose={() => setEditingOrder(null)}
           onSaved={async () => { setEditingOrder(null); await onOrderChanged(); }}
         />
@@ -1962,246 +2070,22 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
 // SHARED — ORDER EDIT MODAL (used by both mobile Orders tab and
 // desktop Office Orders table)
 // ============================================================
-function OrderEditModal({ order, items, customers, onClose, onSaved }) {
-  const [customerId, setCustomerId] = useState(order.customerId);
-  const [deliveryDate, setDeliveryDate] = useState(order.deliveryDate);
-  const [lines, setLines] = useState(() => order.lines.map(l => ({ id: l.id, qty: l.qty, checkin: l.qty === 0 })));
-  const [notes, setNotes] = useState(order.notes || '');
-  const [addQuery, setAddQuery] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  // Build a lookup of item details (name/brand/price/pack/stock) for every
-  // line, falling back to the order's own snapshot for items that may have
-  // since gone inactive or been renamed elsewhere.
-  const itemById = useMemo(() => {
-    const map = {};
-    for (const i of items) map[i.id] = i;
-    for (const l of order.lines) if (!map[l.id]) map[l.id] = { ...l, stock: 0 };
-    return map;
-  }, [items, order.lines]);
-
-  const origQtyById = useMemo(() => {
-    const map = {};
-    for (const l of order.lines) map[l.id] = l.qty;
-    return map;
-  }, [order.lines]);
-
-  const searchResults = useMemo(() => {
-    const q = addQuery.trim().toLowerCase();
-    if (!q) return [];
-    return items
-      .filter(i => !lines.some(l => l.id === i.id))
-      .filter(i => i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [addQuery, items, lines]);
-
-  function setQty(id, qty) {
-    const item = itemById[id];
-    if (!item) return;
-    // Max allowed = current stock + whatever this order already had reserved for this item
-    const maxQty = (item.stock || 0) + (origQtyById[id] || 0);
-    const clamped = Math.max(0, Math.min(qty, maxQty));
-    setLines(prev => {
-      const exists = prev.find(l => l.id === id);
-      // A "check-in" line (added to print its UPC) stays on the order at 0;
-      // a normal line is removed when it hits 0.
-      if (clamped === 0) {
-        if (exists && exists.checkin) return prev.map(l => (l.id === id ? { ...l, qty: 0 } : l));
-        return prev.filter(l => l.id !== id);
-      }
-      if (exists) return prev.map(l => (l.id === id ? { ...l, qty: clamped, checkin: false } : l));
-      return [...prev, { id, qty: clamped }];
-    });
-  }
-
-  function addItem(item) {
-    setQty(item.id, 1);
-    setAddQuery('');
-  }
-
-  // Add an item at qty 0 so its UPC/barcode prints for check-in.
-  function addCheckin(item) {
-    setLines(prev => (prev.find(l => l.id === item.id) ? prev : [...prev, { id: item.id, qty: 0, checkin: true }]));
-    setAddQuery('');
-  }
-
-  function removeLine(id) {
-    setLines(prev => prev.filter(l => l.id !== id));
-  }
-
-  const totalUnits = lines.reduce((s, l) => s + l.qty, 0);
-  const totalPrice = lines.reduce((s, l) => s + lineTotal(itemById[l.id] || {}, l.qty), 0);
-
-  async function save() {
-    if (!customerId || !deliveryDate || lines.length === 0) return;
-    setSaving(true);
-    setError('');
-    try {
-      await apiPatch(`/orders/${order.id}`, {
-        customerId,
-        deliveryDate,
-        notes: notes.trim() || undefined,
-        lines: lines.map(l => ({ itemId: l.id, qty: l.qty })),
-      });
-      await onSaved();
-    } catch (err) {
-      setError(err.message || 'Could not save changes.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteOrder() {
-    setDeleting(true);
-    setError('');
-    try {
-      await apiDelete(`/orders/${order.id}`);
-      await onSaved();
-    } catch (err) {
-      setError(err.message || 'Could not delete this order.');
-      setDeleting(false);
-    }
-  }
-
+function OrderEditModal({ order, items, customers, brandColors = {}, orders = [], printSequence = [], onClose, onSaved }) {
+  // Full New-Order-style editor: reuse OrderTab in edit mode inside a modal.
   return (
-    <div style={styles.sheetOverlay} onClick={() => !saving && !deleting && onClose()}>
-      <div style={styles.sheetTall} onClick={e => e.stopPropagation()}>
-        <div style={styles.sheetHandle} />
-        <div style={styles.sheetHeader}>
-          <span style={styles.sheetTitle}>Edit order #{order.id}</span>
-          <button style={styles.iconBtn} onClick={onClose} disabled={saving || deleting}>
-            <X size={18} color="#8A8F87" />
-          </button>
-        </div>
-
-        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <select
-            style={editStyles.select}
-            value={customerId || ''}
-            onChange={e => setCustomerId(Number(e.target.value))}
-          >
-            <option value="" disabled>Select customer</option>
-            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <input
-            type="date"
-            style={editStyles.select}
-            value={deliveryDate}
-            onChange={e => setDeliveryDate(e.target.value)}
-          />
-        </div>
-
-        <div style={styles.sheetLines}>
-          {lines.map(l => {
-            const item = itemById[l.id] || { name: l.id, id: l.id };
-            return (
-              <div key={l.id} style={styles.sheetLine}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={styles.sheetLineName}>{item.name}</div>
-                  <div style={styles.sheetLineSku}>
-                    {displayCode(item.id)}{item.price > 0 && l.qty > 0 ? ` · ${formatMoney(lineTotal(item, l.qty))}` : ''}
-                    {l.qty === 0 ? ' · check-in only' : ''}
-                  </div>
-                </div>
-                <div style={styles.stepper}>
-                  <button style={styles.stepBtn} onClick={() => setQty(l.id, l.qty - 1)} disabled={l.qty === 0}>
-                    <Minus size={14} color={l.qty === 0 ? '#C7CBC1' : '#14181F'} />
-                  </button>
-                  <span style={styles.stepQty}>{l.qty}</span>
-                  <button style={styles.stepBtn} onClick={() => setQty(l.id, l.qty + 1)}>
-                    <Plus size={14} color="#14181F" />
-                  </button>
-                </div>
-                <button style={styles.removeBtn} onClick={() => removeLine(l.id)} title="Remove from order">
-                  <X size={14} color="#8A8F87" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={{ padding: '0 20px', position: 'relative' }}>
-          <input
-            style={editStyles.select}
-            placeholder="Search item or SKU to add…"
-            value={addQuery}
-            onChange={e => setAddQuery(e.target.value)}
-          />
-          {searchResults.length > 0 && (
-            <div style={editStyles.searchDropdown}>
-              {searchResults.map(item => (
-                <div key={item.id} style={editStyles.searchResultRow}>
-                  <button style={editStyles.searchResultMain} onClick={() => addItem(item)}>
-                    <span style={{ fontWeight: 600 }}>{item.name}</span>
-                    <span style={{ color: '#8A8F87', fontSize: 12 }}>{displayCode(item.id)} · {item.stock} in stock</span>
-                  </button>
-                  {item.upc && (
-                    <button
-                      style={editStyles.checkinAddBtn}
-                      onClick={() => addCheckin(item)}
-                      title="Add at 0 qty so its UPC barcode prints for check-in"
-                    >
-                      +UPC
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={styles.sheetTotal}>
-          <span>Total units</span>
-          <span style={styles.sheetTotalNum}>{totalUnits}</span>
-        </div>
-        {totalPrice > 0 && (
-          <div style={styles.sheetTotal}>
-            <span>Order total</span>
-            <span style={styles.sheetTotalNum}>{formatMoney(totalPrice)}</span>
-          </div>
-        )}
-
-        <div style={styles.notesSection}>
-          <label style={styles.notesLabel}>Order notes / special instructions</label>
-          <textarea
-            style={styles.notesTextarea}
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="e.g. deliver before noon, call on arrival…"
-            rows={3}
-            maxLength={1000}
-          />
-        </div>
-
-        {error && <div style={styles.sheetWarning}>{error}</div>}
-
-        <button
-          style={{ ...styles.submitBtn, ...((customerId && deliveryDate && lines.length > 0 && !saving) ? {} : styles.submitBtnDisabled) }}
-          disabled={!customerId || !deliveryDate || lines.length === 0 || saving || deleting}
-          onClick={save}
-        >
-          {saving ? <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} /> : <Check size={16} color="#F7F8F4" />}
-          {saving ? 'Saving…' : 'Save changes'}
-        </button>
-
-        {!confirmDelete ? (
-          <button style={editStyles.deleteLink} onClick={() => setConfirmDelete(true)} disabled={saving || deleting}>
-            Delete this order
-          </button>
-        ) : (
-          <div style={editStyles.confirmDeleteRow}>
-            <span>Delete this order permanently?</span>
-            <button style={editStyles.confirmDeleteBtn} onClick={deleteOrder} disabled={deleting}>
-              {deleting ? 'Deleting…' : 'Yes, delete'}
-            </button>
-            <button style={editStyles.cancelLink} onClick={() => setConfirmDelete(false)} disabled={deleting}>
-              Cancel
-            </button>
-          </div>
-        )}
+    <div style={styles.editOverlay} onClick={onClose}>
+      <div style={styles.editModalWrap} onClick={e => e.stopPropagation()}>
+        <OrderTab
+          desktop
+          editOrder={order}
+          items={items}
+          customers={customers}
+          orders={orders}
+          brandColors={brandColors}
+          printSequence={printSequence}
+          onOrderSubmitted={onSaved}
+          onClose={onClose}
+        />
       </div>
     </div>
   );
@@ -2609,6 +2493,8 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
           order={editingOrder}
           items={items}
           customers={customers}
+          orders={orders}
+          printSequence={printSequence}
           onClose={() => setEditingOrder(null)}
           onSaved={async () => { setEditingOrder(null); await onRefresh(); }}
         />
@@ -3472,6 +3358,8 @@ const styles = {
   centerStateText: { fontSize: 13, color: '#5B6058', fontWeight: 600 },
   retryBtn: { marginTop: 6, background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   tabContent: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
+  editOverlay: { position: 'fixed', inset: 0, background: 'rgba(20,24,31,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 },
+  editModalWrap: { width: '100%', maxWidth: 1100, height: '92vh', maxHeight: 900, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(20,24,31,0.4)' },
   backArrow: { position: 'absolute', top: 16, left: 12, zIndex: 40, width: 30, height: 30, borderRadius: 15, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 },
   screenWrap: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' },
   tabBar: { display: 'flex', borderTop: '1px solid #E3E1D6', background: '#FFFFFF', padding: '10px 0 calc(12px + env(safe-area-inset-bottom, 0px))', flexShrink: 0, position: 'relative', zIndex: 10 },
