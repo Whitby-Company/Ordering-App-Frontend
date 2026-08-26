@@ -1078,7 +1078,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     ? { ...styles.list, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 8, alignContent: 'start' }
     : styles.list;
   const itemRowStyle = desktop
-    ? { ...styles.itemRow, borderBottom: 'none', border: '1px solid #EAE8DD', borderRadius: 10, padding: '8px 12px', background: '#FFFFFF' }
+    ? { ...styles.itemRow, alignItems: 'flex-start', borderBottom: 'none', border: '1px solid #EAE8DD', borderRadius: 10, padding: '10px 12px', background: '#FFFFFF' }
     : styles.itemRow;
 
   return (
@@ -1224,8 +1224,17 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                       </span>
                     </div>
                   )}
+                  {desktop && item.upc && !isOnOrder(item.id) && (
+                    <button
+                      style={styles.checkinBtnDesktop}
+                      onClick={() => addCheckin(item.id)}
+                      title="Add at 0 qty so its UPC barcode prints for check-in"
+                    >
+                      +UPC
+                    </button>
+                  )}
                 </div>
-                {item.upc && !isOnOrder(item.id) && (
+                {!desktop && item.upc && !isOnOrder(item.id) && (
                   <button
                     style={styles.checkinBtn}
                     onClick={() => addCheckin(item.id)}
@@ -2280,7 +2289,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         </button>
       </div>
 
-      <div style={officeStyles.body}>
+      <div style={section === 'neworder' ? officeStyles.bodyNoScroll : officeStyles.body}>
         {section === 'neworder' && (
           <div style={officeStyles.orderFormWrap}>
             <OrderTab
@@ -3418,7 +3427,8 @@ const styles = {
     background: '#F7F8F4',
     width: '100%',
     maxWidth: 1280,
-    minHeight: '100vh',
+    height: '100vh',
+    overflow: 'hidden',
     margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
@@ -3479,7 +3489,7 @@ const styles = {
   itemsSubHeaderBrand: { fontSize: 13, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.04em' },
   sortSelect: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 8px', fontSize: 12, fontWeight: 600, color: '#5B6058', fontFamily: 'inherit', outline: 'none', maxWidth: 130 },
   sortDirBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#5B6058', cursor: 'pointer' },
-  list: { flex: 1, overflowY: 'auto', padding: '4px 16px' },
+  list: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
   mobileIifError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', margin: '0 16px 12px', fontSize: 13 },
   mobileIifErrorDismiss: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
@@ -3515,6 +3525,7 @@ const styles = {
   sheetLineSku: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#8A8F87', marginTop: 2 },
   sheetLineQty: { fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: '#14181F' },
   checkinBtn: { marginRight: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '4px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  checkinBtnDesktop: { marginTop: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   checkinTag: { fontSize: 10, fontWeight: 800, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.03em' },
   removeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4 },
   sheetTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 10px', fontSize: 13, fontWeight: 600, color: '#5B6058' },
@@ -3595,7 +3606,7 @@ const styles = {
 };
 
 const officeStyles = {
-  wrap: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' },
+  wrap: { flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
   topBar: { display: 'flex', alignItems: 'center', gap: 12, rowGap: 8, flexWrap: 'wrap', background: '#14181F', padding: '14px 16px', position: 'sticky', top: 0, zIndex: 5 },
   brand: { display: 'flex', alignItems: 'center', gap: 8 },
   brandText: { color: '#EDEBE3', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap' },
@@ -3614,8 +3625,9 @@ const officeStyles = {
   importBanner: { display: 'flex', alignItems: 'center', gap: 10, background: '#DCEEE8', color: '#1E4238', border: '1px solid #B7DBCF', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
-  body: { flex: 1, padding: '20px 24px 40px', background: '#F7F8F4' },
-  orderFormWrap: { width: '100%', height: 'calc(100vh - 140px)', minHeight: 600, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
+  body: { flex: 1, minHeight: 0, padding: '20px 24px', background: '#F7F8F4', overflowY: 'auto' },
+  bodyNoScroll: { flex: 1, minHeight: 0, padding: '20px 24px', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  orderFormWrap: { width: '100%', flex: 1, minHeight: 0, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
