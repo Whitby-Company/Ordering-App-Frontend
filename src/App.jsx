@@ -807,6 +807,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   })();
   const [customerId, setCustomerId] = useState(savedDraft.customerId ?? null);
   const [customerOpen, setCustomerOpen] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState('');
   const [deliveryDate, setDeliveryDate] = useState(savedDraft.deliveryDate || '');
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -878,6 +879,12 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   }
 
   const customerName = customers.find(c => c.id === customerId)?.name || '';
+  const filteredCustomers = useMemo(() => {
+    const q = customerQuery.trim().toLowerCase();
+    const active = customers.filter(c => c.active !== 0);
+    if (!q) return active;
+    return active.filter(c => c.name.toLowerCase().includes(q));
+  }, [customers, customerQuery]);
 
   // Orders come back newest-first, so the first match for this customer
   // is their most recent previous order.
@@ -1049,7 +1056,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         </div>
         {pickersExpanded ? (
           <>
-            <button style={styles.customerBtn} onClick={() => setCustomerOpen(true)}>
+            <button style={styles.customerBtn} onClick={() => { setCustomerQuery(''); setCustomerOpen(true); }}>
               <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
               <span style={{ ...styles.customerBtnText, color: customerId ? '#14181F' : '#8A8F87' }}>
                 {customerName || 'Select customer'}
@@ -1351,11 +1358,29 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 <X size={18} color="#8A8F87" />
               </button>
             </div>
+            <div style={styles.customerSearchWrap}>
+              <Search size={16} color="#8A8F87" />
+              <input
+                autoFocus
+                style={styles.customerSearchInput}
+                value={customerQuery}
+                onChange={e => setCustomerQuery(e.target.value)}
+                placeholder="Search customers…"
+              />
+              {customerQuery && (
+                <button style={styles.iconBtn} onClick={() => setCustomerQuery('')}>
+                  <X size={15} color="#8A8F87" />
+                </button>
+              )}
+            </div>
             <div style={styles.sheetLines}>
-              {customers.map(c => (
+              {filteredCustomers.length === 0 && (
+                <div style={styles.customerEmpty}>No customers match "{customerQuery}"</div>
+              )}
+              {filteredCustomers.map(c => (
                 <button
                   key={c.id}
-                  style={styles.customerRow}
+                  style={{ ...styles.customerRow, ...(c.id === customerId ? styles.customerRowActive : {}) }}
                   onClick={() => {
                     setCustomerId(c.id);
                     setCustomerOpen(false);
@@ -1364,6 +1389,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 >
                   <User size={15} color="#8A8F87" />
                   <span>{c.name}</span>
+                  {c.id === customerId && <Check size={15} color="#2B5D50" style={{ marginLeft: 'auto' }} />}
                 </button>
               ))}
             </div>
@@ -1381,6 +1407,32 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 <X size={18} color="#8A8F87" />
               </button>
             </div>
+            <div style={styles.dateTypeWrap}>
+              <input
+                type="date"
+                style={styles.dateTypeInput}
+                value={deliveryDate}
+                onChange={e => {
+                  const v = e.target.value;
+                  setDeliveryDate(v);
+                  if (v) {
+                    const [y, m] = v.split('-').map(Number);
+                    setCalendarMonth({ year: y, month: m - 1 });
+                  }
+                }}
+              />
+              <button
+                style={styles.dateDoneBtn}
+                onClick={() => {
+                  setDateOpen(false);
+                  if (customerId && deliveryDate) setPickersExpanded(false);
+                }}
+                disabled={!deliveryDate}
+              >
+                Done
+              </button>
+            </div>
+            <div style={styles.dateOrDivider}>or pick from the calendar</div>
             <div style={styles.calendarNav}>
               <button
                 style={styles.calendarNavBtn}
@@ -3361,6 +3413,14 @@ const styles = {
   orderCardNotes: { background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 8, padding: '8px 10px', margin: '8px 0 2px', fontSize: 12.5, color: '#14181F', lineHeight: 1.4 },
   orderCardNotesLabel: { fontWeight: 700, color: '#5B6058' },
   customerRow: { width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 4px', background: 'none', border: 'none', borderBottom: '1px solid #EAE8DD', fontSize: 14, fontWeight: 500, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
+  customerRowActive: { background: '#EAF1EE' },
+  customerSearchWrap: { display: 'flex', alignItems: 'center', gap: 8, background: '#F0EEE4', borderRadius: 10, padding: '10px 12px', margin: '4px 0 10px' },
+  customerSearchInput: { flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: 15, fontFamily: 'inherit', color: '#14181F' },
+  customerEmpty: { padding: '16px 4px', color: '#8A8F87', fontSize: 13.5 },
+  dateTypeWrap: { display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 10px' },
+  dateTypeInput: { flex: 1, background: '#FFFFFF', border: '1px solid #C7CBC1', borderRadius: 10, padding: '11px 12px', fontSize: 15, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  dateDoneBtn: { background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 10, padding: '11px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  dateOrDivider: { textAlign: 'center', fontSize: 12, color: '#8A8F87', margin: '4px 0 10px', textTransform: 'uppercase', letterSpacing: '0.04em' },
   calendarNav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 4px 12px' },
   calendarNavBtn: { width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EAE8DD', border: 'none', borderRadius: 8, cursor: 'pointer' },
   calendarMonthLabel: { fontSize: 14, fontWeight: 700, color: '#14181F' },
