@@ -2228,8 +2228,9 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
   }, []);
   const canGoBack = navStack.length > 1;
   const [refreshing, setRefreshing] = useState(false);
-  // Orders needing attention: pending drafts + new (unprocessed) orders.
-  const activeOrderCount = useMemo(() => orders.filter(o => o.status === 'pending' || !o.processed).length, [orders]);
+  // Badge counts only submitted-but-new orders (real work to process). Pending
+  // drafts still appear in the Orders tab but don't inflate this "to-do" count.
+  const activeOrderCount = useMemo(() => orders.filter(o => o.status !== 'pending' && !o.processed).length, [orders]);
 
   async function handleRefresh() {
     setRefreshing(true);
