@@ -4,7 +4,7 @@ import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
   AlertTriangle, ChevronRight, Loader2, WifiOff, RefreshCw, Monitor,
-  Grid2x2, Rows,
+  Grid2x2, Rows, Image as ImageIcon,
 } from 'lucide-react';
 
 const GRID_SIZES = [
@@ -2931,6 +2931,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
         <table style={officeStyles.table}>
           <thead>
             <tr>
+              <th style={{ ...officeStyles.th, width: 56 }}></th>
               <SortableTh field="id" label="Item #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="name" label="Item" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="brand" label="Brand" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
@@ -2947,12 +2948,17 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode && (editField === 'all' || editField === 'photo') ? 10 : 9}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode && (editField === 'all' || editField === 'photo') ? 11 : 10}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
               return (
               <tr key={item.id} style={!item.active ? officeStyles.rowInactive : undefined}>
+                <td style={{ ...officeStyles.td, width: 56 }}>
+                  {item.imageUrl
+                    ? <img src={item.imageUrl} alt="" style={officeStyles.invThumb} loading="lazy" />
+                    : <div style={officeStyles.invThumbPlaceholder}><ImageIcon size={16} color="#C7CBC1" /></div>}
+                </td>
                 <td style={officeStyles.td}>{displayCode(item.id)}</td>
                 <td style={officeStyles.td}>
                   {canEdit('name') ? <TextFieldEditor item={item} field="name" onSaved={onRefresh} /> : item.name}
@@ -3660,6 +3666,8 @@ const officeStyles = {
   packLabelEditBtn: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 10.5, fontFamily: 'inherit', textAlign: 'right', cursor: 'text', padding: '1px 3px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 2 },
   packLabelInput: { width: 90, textAlign: 'right', background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 5, padding: '3px 6px', fontSize: 10.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   photoThumb: { width: 44, height: 44, borderRadius: 6, objectFit: 'contain', background: '#F0EEE4', border: '1px solid #E3E1D6' },
+  invThumb: { width: 42, height: 42, borderRadius: 7, objectFit: 'contain', background: '#FFFFFF', border: '1px solid #E3E1D6', padding: 2, boxSizing: 'border-box', display: 'block' },
+  invThumbPlaceholder: { width: 42, height: 42, borderRadius: 7, background: '#F0EEE4', border: '1px solid #E7E4D8', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   photoPlaceholder: { width: 44, height: 44, borderRadius: 6, background: '#F0EEE4', border: '1px dashed #C9C6B8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8.5, color: '#A8AC9E', textAlign: 'center' },
   photoBtn: { background: '#F0EEE4', border: '1px solid #D6D3C6', borderRadius: 5, padding: '2px 7px', fontSize: 10.5, fontWeight: 600, fontFamily: 'inherit', color: '#14181F', cursor: 'pointer' },
   photoUrlInput: { width: 120, background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 5, padding: '3px 6px', fontSize: 10.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
