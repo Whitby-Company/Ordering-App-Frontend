@@ -2267,6 +2267,18 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
     }
   }
 
+  const [sortField, setSortField] = useState('submittedAt');
+  const [sortDir, setSortDir] = useState('desc');
+  function handleSortClick(field) {
+    if (field === sortField) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      // Dates default newest-first; everything else A→Z / low→high.
+      setSortDir(field === 'submittedAt' || field === 'deliveryDate' ? 'desc' : 'asc');
+    }
+  }
+
   async function handleDownloadIIF(orderId, experimental = false) {
     setIifBusyId(orderId);
     setIifError('');
@@ -2302,12 +2314,33 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
     const q = query.trim().toLowerCase();
     let list = orders;
     if (showUnprocessedOnly) list = list.filter(o => !o.processed);
-    if (!q) return list;
-    return list.filter(o =>
-      o.customer.toLowerCase().includes(q) ||
-      o.lines.some(l => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q))
-    );
-  }, [orders, query, showUnprocessedOnly]);
+    if (q) {
+      list = list.filter(o =>
+        o.customer.toLowerCase().includes(q) ||
+        o.lines.some(l => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q))
+      );
+    }
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const val = (o) => {
+      switch (sortField) {
+        case 'submittedAt': return new Date(o.submittedAt).getTime() || 0;
+        case 'customer': return o.customer.toLowerCase();
+        case 'deliveryDate': return o.deliveryDate || '';
+        case 'status': return o.processed ? 1 : 0;
+        case 'items': return o.lines.length;
+        case 'units': return o.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+        case 'total': return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+        case 'submittedBy': return (o.submittedBy || '').toLowerCase();
+        default: return 0;
+      }
+    };
+    return [...list].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return (a.id - b.id) * dir; // stable tiebreak
+    });
+  }, [orders, query, showUnprocessedOnly, sortField, sortDir]);
 
   function orderTotal(o) {
     return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -2346,13 +2379,13 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
           <thead>
             <tr>
               <th style={officeStyles.th}></th>
-              <th style={officeStyles.th}>Submitted</th>
-              <th style={officeStyles.th}>Customer</th>
-              <th style={officeStyles.th}>Delivery date</th>
-              <th style={officeStyles.th}>Status</th>
-              <th style={officeStyles.th}>Items</th>
-              <th style={officeStyles.th}>Units</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Order total</th>
+              <SortableTh field="submittedAt" label="Submitted" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="deliveryDate" label="Delivery date" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="status" label="Status" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="items" label="Items" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="units" label="Units" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="total" label="Order total" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <th style={officeStyles.th}></th>
             </tr>
           </thead>
