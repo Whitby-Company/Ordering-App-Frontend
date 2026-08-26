@@ -1055,6 +1055,14 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const sheetStyle = desktop
     ? { ...styles.sheet, width: 460, maxWidth: '92vw', maxHeight: '88vh', borderRadius: 16, padding: '18px 22px 22px' }
     : styles.sheet;
+  // On desktop, lay item rows out in multiple columns so far more fit on
+  // screen at once, cutting down how much you have to scroll.
+  const listStyle = desktop
+    ? { ...styles.list, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 8, alignContent: 'start' }
+    : styles.list;
+  const itemRowStyle = desktop
+    ? { ...styles.itemRow, borderBottom: 'none', border: '1px solid #EAE8DD', borderRadius: 10, padding: '8px 12px', background: '#FFFFFF' }
+    : styles.itemRow;
 
   return (
     <div style={styles.screenWrap} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
@@ -1171,7 +1179,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       )}
 
       {(screen === 'items' || searching) && (
-        <div style={styles.list}>
+        <div style={listStyle}>
           {filteredItems.length === 0 && (
             <div style={styles.emptyState}>No items match "{query}"</div>
           )}
@@ -1179,7 +1187,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             const qty = qtyFor(item.id);
             const low = item.stock <= 5;
             return (
-              <div key={item.id} style={styles.itemRow}>
+              <div key={item.id} style={itemRowStyle}>
                 {item.imageUrl && (
                   <img src={item.imageUrl} alt="" style={styles.itemThumb} loading="lazy" />
                 )}
