@@ -974,10 +974,29 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     setOrder(prev => prev.filter(o => o.id !== id));
   }
 
-  async function submitOrder() {
+  function resetForm() {
+    setOrder([]);
+    setNotes('');
+    setTicketOpen(false);
+    setCustomerId(null);
+    setDeliveryDate('');
+    setQuery('');
+    setScreen('brands');
+    setBrand('All');
+    setPickersExpanded(true);
+    try { localStorage.removeItem('orderDraft'); } catch { /* ignore */ }
+  }
+
+  // Discard the in-progress order (clear the whole draft).
+  function discardOrder() {
+    resetForm();
+  }
+
+  async function submitOrder(pending = false) {
     if (!customerId || !deliveryDate || orderLines.length === 0) return;
-    // First order on this device: ask who's submitting, then continue.
-    if (!submitterName) {
+    // First submit on this device asks who's submitting (a pending draft can
+    // be saved without a name).
+    if (!pending && !submitterName) {
       submitAfterSignIn.current = true;
       setNameDraft('');
       setSignInOpen(true);
@@ -991,8 +1010,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         deliveryDate,
         notes: notes.trim() || undefined,
         submittedBy: submitterName || undefined,
+        status: pending ? 'pending' : 'submitted',
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty })),
       });
+      if (pending) {
+        // Pending drafts just go to the Orders list; no confirmation screen.
+        resetForm();
+        await onOrderSubmitted();
+        return;
+      }
       setConfirmed({
         customer: customerName,
         deliveryDate,
@@ -1002,19 +1028,10 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         lines: result.lines,
         totalUnits,
       });
-      setOrder([]);
-      setNotes('');
-      setTicketOpen(false);
-      setCustomerId(null);
-      setDeliveryDate('');
-      setQuery('');
-      setScreen('brands');
-      setBrand('All');
-      setPickersExpanded(true);
-      try { localStorage.removeItem('orderDraft'); } catch { /* ignore */ }
+      resetForm();
       await onOrderSubmitted(); // refresh items + order history from server
     } catch (err) {
-      setSubmitError(err.message || 'Something went wrong submitting this order.');
+      setSubmitError(err.message || `Something went wrong ${pending ? 'saving' : 'submitting'} this order.`);
     } finally {
       setSubmitting(false);
     }
@@ -1316,7 +1333,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             <button
               style={{ ...styles.submitBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.submitBtnDisabled) }}
               disabled={!customerId || !deliveryDate || submitting}
-              onClick={submitOrder}
+              onClick={() => submitOrder(false)}
             >
               {submitting ? (
                 <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} />
@@ -1325,6 +1342,24 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               )}
               {submitting ? 'Submitting…' : 'Submit order'}
             </button>
+            <div style={styles.ticketSecondaryRow}>
+              <button
+                style={{ ...styles.pendingBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.pendingBtnDisabled) }}
+                disabled={!customerId || !deliveryDate || submitting}
+                onClick={() => submitOrder(true)}
+                title="Save this order as pending — it shows in Orders and can be submitted later"
+              >
+                Save as pending
+              </button>
+              <button
+                style={styles.discardBtn}
+                disabled={submitting}
+                onClick={() => { if (window.confirm('Discard this order? This clears everything you\'ve added.')) discardOrder(); }}
+                title="Clear this order and start over"
+              >
+                Discard
+              </button>
+            </div>
             {!submitting && (!customerId || !deliveryDate) && (
               <div style={styles.sheetWarning}>
                 {!customerId && !deliveryDate ? 'Select a customer and delivery date to submit this order'
@@ -1847,7 +1882,9 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <div style={styles.orderCardCustomer}>{o.customer}</div>
-                    {!o.processed && <span style={styles.badgeUnprocessedMobile}>New</span>}
+                    {o.status === 'pending'
+                      ? <span style={styles.badgePendingMobile}>Pending</span>
+                      : !o.processed && <span style={styles.badgeUnprocessedMobile}>New</span>}
                   </div>
                   <div style={styles.orderCardMeta}>
                     {formatDateTime(o.submittedAt)} · {totalUnits} units · {o.lines.length} item{o.lines.length === 1 ? '' : 's'}
@@ -2327,6 +2364,20 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
     }
   }
 
+  // Finalize a pending order (reserve stock + move it to submitted).
+  async function submitPending(orderId) {
+    setProcessingId(orderId);
+    setIifError('');
+    try {
+      await apiPatch(`/orders/${orderId}/submit`, {});
+      await onRefresh();
+    } catch (err) {
+      setIifError(err.message || 'Could not submit this pending order.');
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
   const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
 
   const filtered = useMemo(() => {
@@ -2345,7 +2396,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
         case 'submittedAt': return new Date(o.submittedAt).getTime() || 0;
         case 'customer': return o.customer.toLowerCase();
         case 'deliveryDate': return o.deliveryDate || '';
-        case 'status': return o.processed ? 1 : 0;
+        case 'status': return o.status === 'pending' ? 0 : (o.processed ? 2 : 1);
         case 'items': return o.lines.length;
         case 'units': return o.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
         case 'total': return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -2428,28 +2479,47 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
-                      {o.processed
-                        ? <span style={officeStyles.badgeProcessed}>Processed</span>
-                        : <span style={officeStyles.badgeUnprocessed}>New</span>}
+                      {o.status === 'pending'
+                        ? <span style={officeStyles.badgePending}>Pending</span>
+                        : o.processed
+                          ? <span style={officeStyles.badgeProcessed}>Processed</span>
+                          : <span style={officeStyles.badgeUnprocessed}>New</span>}
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print w/UPC</button>{' '}
-                      <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
-                        {iifBusyId === o.id ? '…' : 'QB'}
-                      </button>{' '}
-                      <button
-                        style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
-                        onClick={() => setProcessed(o.id, !o.processed)}
-                        disabled={processingId === o.id}
-                        title={o.processed ? 'Mark as not yet processed' : 'Mark as entered into QuickBooks'}
-                      >
-                        {processingId === o.id ? '…' : (o.processed ? 'Undo' : 'Mark done')}
-                      </button>
+                      {o.status === 'pending' ? (
+                        <>
+                          <button
+                            style={{ ...officeStyles.smallBtn, ...officeStyles.markDoneBtn }}
+                            onClick={() => submitPending(o.id)}
+                            disabled={processingId === o.id}
+                            title="Finalize this pending order and submit it"
+                          >
+                            {processingId === o.id ? '…' : 'Submit'}
+                          </button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>
+                        </>
+                      ) : (
+                        <>
+                          <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print w/UPC</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
+                            {iifBusyId === o.id ? '…' : 'QB'}
+                          </button>{' '}
+                          <button
+                            style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
+                            onClick={() => setProcessed(o.id, !o.processed)}
+                            disabled={processingId === o.id}
+                            title={o.processed ? 'Mark as not yet processed' : 'Mark as entered into QuickBooks'}
+                          >
+                            {processingId === o.id ? '…' : (o.processed ? 'Undo' : 'Mark done')}
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                   {isOpen && (
@@ -3451,6 +3521,10 @@ const styles = {
   sheetTotalNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: '#14181F' },
   submitBtn: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 10, padding: '13px', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   submitBtnDisabled: { background: '#C7CBC1', cursor: 'not-allowed' },
+  ticketSecondaryRow: { display: 'flex', gap: 8, marginTop: 8 },
+  pendingBtn: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#F0EEE4', color: '#2B5D50', border: '1px solid #C4DDD2', borderRadius: 10, padding: '11px 0', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  pendingBtnDisabled: { background: '#F0EEE4', color: '#A9AEA3', borderColor: '#E3E1D6', cursor: 'not-allowed' },
+  discardBtn: { background: 'none', color: '#B5493B', border: '1px solid #E7C6C0', borderRadius: 10, padding: '11px 16px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   orderedByRow: { textAlign: 'center', fontSize: 12.5, color: '#5B6058', margin: '2px 0 10px' },
   orderedByLink: { background: 'none', border: 'none', color: '#2B5D50', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', padding: 0, textDecoration: 'underline' },
   signInCard: { background: '#F7F8F4', borderRadius: 16, padding: 22, width: '86%', maxWidth: 360, boxShadow: '0 12px 40px rgba(20,24,31,0.28)' },
@@ -3505,6 +3579,7 @@ const styles = {
   orderCard: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 12, marginTop: 10, overflow: 'hidden' },
   orderCardUnprocessed: { background: '#FBF3E4', borderColor: '#F0D28F' },
   badgeUnprocessedMobile: { fontSize: 10, fontWeight: 800, color: '#9A6B12', background: '#FBE7C2', border: '1px solid #F0D28F', borderRadius: 20, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  badgePendingMobile: { fontSize: 10, fontWeight: 800, color: '#5B6058', background: '#E8E6DC', border: '1px solid #D2CFC0', borderRadius: 20, padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.03em' },
   mobileFilterRow: { padding: '10px 16px 0', display: 'flex', gap: 8 },
   mobileFilterChip: { background: '#F0EEE4', border: '1px solid #E3E1D6', borderRadius: 20, padding: '6px 14px', fontSize: 12.5, fontWeight: 700, color: '#5B6058', cursor: 'pointer', fontFamily: 'inherit' },
   mobileFilterChipActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
@@ -3557,6 +3632,7 @@ const officeStyles = {
   rowUnprocessed: { background: '#FBF3E4' },
   badgeProcessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 9px' },
   badgeUnprocessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#9A6B12', background: '#FBE7C2', border: '1px solid #F0D28F', borderRadius: 20, padding: '2px 9px' },
+  badgePending: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#5B6058', background: '#E8E6DC', border: '1px solid #D2CFC0', borderRadius: 20, padding: '2px 9px' },
   markDoneBtn: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   rowInactive: { opacity: 0.5 },
   emptyCell: { padding: '28px 14px', textAlign: 'center', color: '#8A8F87', fontSize: 13.5 },
