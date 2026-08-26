@@ -452,9 +452,9 @@ function printOrder(order, printSequence, options = {}) {
       .meta { color: #5B6058; margin-bottom: 14px; font-size: 12px; }
       .notes { background: #FBFAF6; border: 1px solid #E3E1D6; border-radius: 8px; padding: 8px 10px; margin: -4px 0 12px; font-size: 12px; color: #14181F; line-height: 1.35; }
       table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-      th, td { padding: ${withUpc ? '2px 4px' : '1px 4px'}; border-bottom: 1px solid #ECEAE1; text-align: left; line-height: 1.15; }
-      th { background: #FBFAF6; font-size: 9.5px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.02em; }
-      tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; }
+      th { padding: ${withUpc ? '2px 4px' : '2px 4px'}; border-bottom: 1px solid #ECEAE1; text-align: left; background: #FBFAF6; font-size: 9.5px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.02em; }
+      td { padding: ${withUpc ? '2px 4px' : '7px 4px'}; text-align: left; line-height: 1.15; ${withUpc ? 'border-bottom: 1px solid #ECEAE1;' : 'border-bottom: none;'} }
+      tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; padding-top: ${withUpc ? '3px' : '8px'}; }
       tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
       .printBtn { display: inline-block; margin-bottom: 16px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
       .itemCell, .codeCell { white-space: nowrap; }
