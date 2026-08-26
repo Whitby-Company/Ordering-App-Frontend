@@ -799,7 +799,7 @@ function TabBar({ active, onChange }) {
 // ============================================================
 // TAB 1 — NEW ORDER
 // ============================================================
-function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted }) {
+function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false }) {
   // Restore an in-progress order draft (customer, delivery date, quantities)
   // so switching tabs or an accidental refresh doesn't lose it.
   const savedDraft = (() => {
@@ -1047,6 +1047,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     return <Confirmation data={confirmed} onNewOrder={() => setConfirmed(null)} />;
   }
 
+  // On desktop the mobile bottom-sheets are cramped, so present the
+  // customer/date/ticket sheets as centered modals with room to breathe.
+  const overlayStyle = desktop
+    ? { ...styles.sheetOverlay, alignItems: 'center', justifyContent: 'center', position: 'fixed' }
+    : styles.sheetOverlay;
+  const sheetStyle = desktop
+    ? { ...styles.sheet, width: 460, maxWidth: '92vw', maxHeight: '88vh', borderRadius: 16, padding: '18px 22px 22px' }
+    : styles.sheet;
+
   return (
     <div style={styles.screenWrap} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div style={styles.header}>
@@ -1231,9 +1240,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       )}
 
       {ticketOpen && (
-        <div style={styles.sheetOverlay} onClick={() => !submitting && setTicketOpen(false)}>
-          <div style={styles.sheet} onClick={e => e.stopPropagation()}>
-            <div style={styles.sheetHandle} />
+        <div style={overlayStyle} onClick={() => !submitting && setTicketOpen(false)}>
+          <div style={sheetStyle} onClick={e => e.stopPropagation()}>
+            {!desktop && <div style={styles.sheetHandle} />}
             <div style={styles.sheetHeader}>
               <span style={styles.sheetTitle}>Order ticket</span>
               <button style={styles.iconBtn} onClick={() => setTicketOpen(false)} disabled={submitting}>
@@ -1281,11 +1290,12 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             <div style={styles.notesSection}>
               <label style={styles.notesLabel}>Order notes / special instructions</label>
               <textarea
-                style={styles.notesTextarea}
+                style={{ ...styles.notesTextarea, minHeight: 34, height: notes ? undefined : 34, overflow: 'hidden' }}
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
+                onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'; }}
                 placeholder="e.g. deliver before noon, call on arrival…"
-                rows={3}
+                rows={1}
                 maxLength={1000}
               />
             </div>
@@ -1319,7 +1329,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       )}
 
       {signInOpen && (
-        <div style={styles.sheetOverlay} onClick={() => setSignInOpen(false)}>
+        <div style={overlayStyle} onClick={() => setSignInOpen(false)}>
           <div style={styles.signInCard} onClick={e => e.stopPropagation()}>
             <div style={styles.signInTitle}>Who's placing orders?</div>
             <div style={styles.signInSub}>Enter your name once — this device will remember it and tag your orders automatically.</div>
@@ -1349,9 +1359,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       )}
 
       {customerOpen && (
-        <div style={styles.sheetOverlay} onClick={() => setCustomerOpen(false)}>
-          <div style={styles.sheet} onClick={e => e.stopPropagation()}>
-            <div style={styles.sheetHandle} />
+        <div style={overlayStyle} onClick={() => setCustomerOpen(false)}>
+          <div style={sheetStyle} onClick={e => e.stopPropagation()}>
+            {!desktop && <div style={styles.sheetHandle} />}
             <div style={styles.sheetHeader}>
               <span style={styles.sheetTitle}>Select customer</span>
               <button style={styles.iconBtn} onClick={() => setCustomerOpen(false)}>
@@ -1398,9 +1408,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       )}
 
       {dateOpen && (
-        <div style={styles.sheetOverlay} onClick={() => setDateOpen(false)}>
-          <div style={styles.sheet} onClick={e => e.stopPropagation()}>
-            <div style={styles.sheetHandle} />
+        <div style={overlayStyle} onClick={() => setDateOpen(false)}>
+          <div style={sheetStyle} onClick={e => e.stopPropagation()}>
+            {!desktop && <div style={styles.sheetHandle} />}
             <div style={styles.sheetHeader}>
               <span style={styles.sheetTitle}>Delivery date</span>
               <button style={styles.iconBtn} onClick={() => setDateOpen(false)}>
@@ -2235,6 +2245,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
               brandColors={brandColors}
               printSequence={printSequence}
               onOrderSubmitted={async () => { await onRefresh(); }}
+              desktop
             />
           </div>
         )}
