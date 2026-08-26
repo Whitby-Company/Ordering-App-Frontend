@@ -1083,21 +1083,23 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
 
   return (
     <div style={styles.screenWrap} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <div style={styles.header}>
-        <div style={styles.headerTop}>
-          <Package size={18} color="#EDEBE3" strokeWidth={2} />
-          <span style={styles.headerTitle}>New Order</span>
-        </div>
+      <div style={desktop ? styles.headerDesktop : styles.header}>
+        {!desktop && (
+          <div style={styles.headerTop}>
+            <Package size={18} color="#EDEBE3" strokeWidth={2} />
+            <span style={styles.headerTitle}>New Order</span>
+          </div>
+        )}
         {pickersExpanded ? (
           <>
-            <button style={styles.customerBtn} onClick={() => { setCustomerQuery(''); setCustomerOpen(true); }}>
+            <button style={desktop ? { ...styles.customerBtn, flex: 1, marginTop: 0 } : styles.customerBtn} onClick={() => { setCustomerQuery(''); setCustomerOpen(true); }}>
               <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
               <span style={{ ...styles.customerBtnText, color: customerId ? '#14181F' : '#8A8F87' }}>
                 {customerName || 'Select customer'}
               </span>
               <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
             </button>
-            <button style={styles.dateBtn} onClick={() => setDateOpen(true)}>
+            <button style={desktop ? { ...styles.dateBtn, flex: 1, marginTop: 0 } : styles.dateBtn} onClick={() => setDateOpen(true)}>
               <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
               <span style={{ ...styles.customerBtnText, color: deliveryDate ? '#14181F' : '#8A8F87' }}>
                 {deliveryDate ? formatDate(deliveryDate) : 'Delivery date'}
@@ -3449,6 +3451,7 @@ const styles = {
   tabBtn: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0' },
   tabBtnLabel: { fontSize: 11, fontWeight: 700 },
   header: { background: '#14181F', padding: '18px 16px 16px' },
+  headerDesktop: { background: '#14181F', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' },
   headerTop: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 },
   officeLinkBtn: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: '#B7BCB2', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 6px' },
   headerTitle: { color: '#EDEBE3', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em' },
@@ -3632,7 +3635,7 @@ const officeStyles = {
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
   body: { flex: 1, minHeight: 0, padding: '20px 24px', background: '#F7F8F4', overflowY: 'auto' },
-  bodyNoScroll: { flex: 1, minHeight: 0, padding: '20px 24px', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  bodyNoScroll: { flex: 1, minHeight: 0, padding: '12px 24px 16px', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
   orderFormWrap: { width: '100%', flex: 1, minHeight: 0, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
