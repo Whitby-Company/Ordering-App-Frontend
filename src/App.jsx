@@ -8,9 +8,8 @@ import {
 } from 'lucide-react';
 
 const GRID_SIZES = [
-  { id: 'tiny', minWidth: 76 },
-  { id: 'compact', minWidth: 100 },
-  { id: 'cozy', minWidth: 150 },
+  { id: 'small', minWidth: 110 },
+  { id: 'medium', minWidth: 150 },
   { id: 'large', minWidth: 220 },
 ];
 function nextGridSize(current) {
@@ -21,10 +20,9 @@ function gridSizeMinWidth(id) {
   return (GRID_SIZES.find(s => s.id === id) || GRID_SIZES[1]).minWidth;
 }
 function GridSizeIcon({ variant, ...props }) {
-  if (variant === 'tiny') return <Grid2x2 {...props} />;
-  if (variant === 'compact') return <LayoutGrid {...props} />;
-  if (variant === 'cozy') return <Boxes {...props} />;
-  return <Rows {...props} />;
+  if (variant === 'small') return <Grid2x2 {...props} />;
+  if (variant === 'large') return <Rows {...props} />;
+  return <LayoutGrid {...props} />; // medium
 }
 function computePopularity(orders) {
   const map = {};
@@ -831,7 +829,8 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // When set, submit the order automatically right after the name is saved.
   const submitAfterSignIn = useRef(false);
   const [gridSize, setGridSize] = useState(() => {
-    try { return localStorage.getItem('orderGridSize') || 'compact'; } catch { return 'compact'; }
+    let v; try { v = localStorage.getItem('orderGridSize'); } catch { v = null; }
+    return GRID_SIZES.some(s => s.id === v) ? v : 'medium';
   });
   const [pickersExpanded, setPickersExpanded] = useState(true);
   const touchStartRef = useRef(null);
@@ -1077,7 +1076,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // On desktop, lay item rows out in multiple columns so far more fit on
   // screen at once. The card width follows the grid-size toggle (same control
   // used for the brand tiles): smaller size -> narrower cards -> more columns.
-  const itemCardMinWidth = { tiny: 240, compact: 280, cozy: 340, large: 440 }[gridSize] || 340;
+  const itemCardMinWidth = { small: 260, medium: 320, large: 420 }[gridSize] || 320;
   const listStyle = desktop
     ? { ...styles.list, display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${itemCardMinWidth}px, 1fr))`, gap: 6, alignContent: 'start' }
     : styles.list;
@@ -3504,16 +3503,14 @@ const styles = {
   brandGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, padding: '8px 16px 20px', flex: 1, minHeight: 0, overflowY: 'auto', alignContent: 'start' },
   brandTile: { border: 'none', borderRadius: 14, padding: '20px 14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, cursor: 'pointer', minHeight: 78 },
   brandTileVariant: {
-    tiny: { padding: '9px 7px', minHeight: 44, borderRadius: 10, gap: 1 },
-    compact: { padding: '13px 10px', minHeight: 58, borderRadius: 12, gap: 2 },
-    cozy: {},
+    small: { padding: '11px 9px', minHeight: 50, borderRadius: 11, gap: 2 },
+    medium: {},
     large: { padding: '26px 18px', minHeight: 96, borderRadius: 16, gap: 6 },
   },
   brandTileName: { color: '#F7F8F4', fontSize: 15, fontWeight: 700 },
   brandTileNameVariant: {
-    tiny: { fontSize: 11.5, lineHeight: 1.2 },
-    compact: {},
-    cozy: {},
+    small: { fontSize: 12.5, lineHeight: 1.2 },
+    medium: {},
     large: { fontSize: 17 },
   },
   brandTileCount: { color: 'rgba(247,248,244,0.75)', fontSize: 11.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
