@@ -506,7 +506,7 @@ function printOrder(order, printSequence, options = {}) {
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}</div>
     ${order.notes ? `<div class="notes"><span class="notesBody">${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></div>` : ''}
     <table>
-      <thead><tr><th class="codeCol">Item #</th><th class="casesCol">Cases</th><th class="casesCol">Eaches</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
+      <thead><tr><th class="codeCol">Item #</th><th class="casesCol">Cs</th><th class="casesCol">Ea</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
         <tr class="subtotal"><td style="text-align:right">Totals</td><td class="casesCol">${totalCases}</td><td class="casesCol">${totalUnits}</td><td colspan="${footColspan}"></td></tr>
