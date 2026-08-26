@@ -480,7 +480,9 @@ function printOrder(order, printSequence, options = {}) {
       body { font-family: Arial, Helvetica, sans-serif; padding: 28px; color: #14181F; }
       h1 { font-size: 18px; margin: 0 0 3px; }
       .meta { color: #5B6058; margin-bottom: 14px; font-size: 12px; }
-      .notes { background: #FBFAF6; border: 1px solid #E3E1D6; border-radius: 8px; padding: 8px 10px; margin: -4px 0 12px; font-size: 12px; color: #14181F; line-height: 1.35; }
+      .notes { background: #FFF6D9; border: 2px solid #E3B23C; border-left-width: 7px; border-radius: 8px; padding: 12px 14px; margin: 6px 0 16px; color: #14181F; line-height: 1.4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .notes .notesLabel { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #8A6D1B; margin-bottom: 3px; }
+      .notes .notesBody { font-size: 15px; font-weight: 700; white-space: pre-wrap; }
       table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
       th { padding: ${withUpc ? '2px 4px' : '2px 4px'}; border-bottom: 1px solid #ECEAE1; text-align: left; background: #FBFAF6; font-size: 9.5px; text-transform: uppercase; color: #8A8F87; letter-spacing: 0.02em; }
       td { padding: ${withUpc ? '2px 4px' : '7px 4px'}; text-align: left; line-height: 1.15; ${withUpc ? 'border-bottom: 1px solid #ECEAE1;' : 'border-bottom: none;'} }
@@ -501,7 +503,7 @@ function printOrder(order, printSequence, options = {}) {
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <h1>Order #${order.id} — ${order.customer}</h1>
     <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}</div>
-    ${order.notes ? `<div class="notes"><strong>Notes:</strong> ${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+    ${order.notes ? `<div class="notes"><span class="notesLabel">⚠ Order notes / special instructions</span><span class="notesBody">${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></div>` : ''}
     <table>
       <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
