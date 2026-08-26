@@ -1073,12 +1073,14 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     ? { ...styles.sheet, width: 460, maxWidth: '92vw', maxHeight: '88vh', borderRadius: 16, padding: '18px 22px 22px' }
     : styles.sheet;
   // On desktop, lay item rows out in multiple columns so far more fit on
-  // screen at once, cutting down how much you have to scroll.
+  // screen at once. The card width follows the grid-size toggle (same control
+  // used for the brand tiles): smaller size -> narrower cards -> more columns.
+  const itemCardMinWidth = { tiny: 240, compact: 280, cozy: 340, large: 440 }[gridSize] || 340;
   const listStyle = desktop
-    ? { ...styles.list, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 8, alignContent: 'start' }
+    ? { ...styles.list, display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${itemCardMinWidth}px, 1fr))`, gap: 6, alignContent: 'start' }
     : styles.list;
   const itemRowStyle = desktop
-    ? { ...styles.itemRow, alignItems: 'flex-start', borderBottom: 'none', border: '1px solid #EAE8DD', borderRadius: 10, padding: '10px 12px', background: '#FFFFFF' }
+    ? { ...styles.itemRow, alignItems: 'flex-start', gap: 10, borderBottom: 'none', border: '1px solid #EAE8DD', borderRadius: 10, padding: '8px 10px', background: '#FFFFFF' }
     : styles.itemRow;
 
   return (
@@ -1129,7 +1131,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         </button>
       )}
 
-      <div style={styles.searchWrap}>
+      <div style={desktop ? { ...styles.searchWrap, padding: '8px 16px 4px' } : styles.searchWrap}>
         <div style={styles.searchInputWrap}>
           <Search size={16} color="#8A8F87" style={styles.searchIconInner} />
           <input
@@ -1172,7 +1174,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       )}
 
       {screen === 'items' && !searching && (
-        <div style={styles.itemsSubHeader}>
+        <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <button style={styles.backBtnBig} onClick={goBackToBrands}>
               <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
@@ -1186,7 +1188,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         </div>
       )}
       {searching && (
-        <div style={styles.itemsSubHeader}>
+        <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
           <span style={styles.itemsSubHeaderBrand}>
             <LayoutGrid size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
             Searching all brands
@@ -1711,7 +1713,7 @@ function InventoryTab({ items, orders, brandColors }) {
       )}
 
       {screen === 'items' && !searching && !lowOnly && (
-        <div style={styles.itemsSubHeader}>
+        <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <button style={styles.backBtnBig} onClick={() => { setScreen('brands'); setBrand('All'); }}>
               <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
@@ -1730,7 +1732,7 @@ function InventoryTab({ items, orders, brandColors }) {
         </div>
       )}
       {(searching || lowOnly) && (
-        <div style={styles.itemsSubHeader}>
+        <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
           <span style={styles.itemsSubHeaderBrand}>
             {lowOnly ? 'Low stock, all brands' : (
               <><LayoutGrid size={13} style={{ marginRight: 6, verticalAlign: -2 }} />Searching all brands</>
