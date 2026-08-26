@@ -2228,6 +2228,8 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
   }, []);
   const canGoBack = navStack.length > 1;
   const [refreshing, setRefreshing] = useState(false);
+  // Orders needing attention: pending drafts + new (unprocessed) orders.
+  const activeOrderCount = useMemo(() => orders.filter(o => o.status === 'pending' || !o.processed).length, [orders]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -2262,7 +2264,13 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
             style={{ ...officeStyles.navBtn, ...(section === 'orders' ? officeStyles.navBtnActive : {}) }}
             onClick={() => setSection('orders')}
           >
-            Orders
+            Orders{activeOrderCount > 0 && <span style={officeStyles.navBadge}>{activeOrderCount}</span>}
+          </button>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'history' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('history')}
+          >
+            History
           </button>
           <button
             style={{ ...officeStyles.navBtn, ...(section === 'inventory' ? officeStyles.navBtnActive : {}) }}
@@ -2305,7 +2313,8 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
             />
           </div>
         )}
-        {section === 'orders' && <OfficeOrders orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'inventory' && <OfficeInventory items={items} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
@@ -2313,7 +2322,8 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
   );
 }
 
-function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
+function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scope = 'all' }) {
+  const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -2394,6 +2404,8 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = orders;
+    // The active queue shows only orders needing attention: pending + new.
+    if (activeScope) list = list.filter(o => o.status === 'pending' || !o.processed);
     if (showUnprocessedOnly) list = list.filter(o => !o.processed);
     if (q) {
       list = list.filter(o =>
@@ -2421,7 +2433,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
       if (va > vb) return 1 * dir;
       return (a.id - b.id) * dir; // stable tiebreak
     });
-  }, [orders, query, showUnprocessedOnly, sortField, sortDir]);
+  }, [orders, query, showUnprocessedOnly, sortField, sortDir, activeScope]);
 
   function orderTotal(o) {
     return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -2430,23 +2442,31 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
-        <div style={officeStyles.sectionTitle}>Orders</div>
+        <div style={officeStyles.sectionTitle}>{activeScope ? 'New & pending orders' : 'Order history'}</div>
         <input
           style={officeStyles.search}
           placeholder="Search by customer or item…"
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
-        <button
-          style={{ ...officeStyles.smallBtn, ...(showUnprocessedOnly ? officeStyles.editModeBtnActive : {}) }}
-          onClick={() => setShowUnprocessedOnly(v => !v)}
-          title="Show only orders not yet entered into QuickBooks"
-        >
-          {showUnprocessedOnly ? 'Showing unprocessed' : 'Show unprocessed'}
-          {unprocessedCount > 0 && ` (${unprocessedCount})`}
-        </button>
+        {!activeScope && (
+          <button
+            style={{ ...officeStyles.smallBtn, ...(showUnprocessedOnly ? officeStyles.editModeBtnActive : {}) }}
+            onClick={() => setShowUnprocessedOnly(v => !v)}
+            title="Show only orders not yet entered into QuickBooks"
+          >
+            {showUnprocessedOnly ? 'Showing unprocessed' : 'Show unprocessed'}
+            {unprocessedCount > 0 && ` (${unprocessedCount})`}
+          </button>
+        )}
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
       </div>
+
+      {activeScope && filtered.length === 0 && (
+        <div style={officeStyles.allCaughtUp}>
+          <Check size={16} color="#2B5D50" /> All caught up — no new or pending orders.
+        </div>
+      )}
 
       {iifError && (
         <div style={officeStyles.importBannerError}>
@@ -3624,6 +3644,8 @@ const officeStyles = {
   backNavBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', color: '#EDEBE3' },
   backNavBtnDisabled: { color: '#5A5F57', cursor: 'default' },
   navBtnActive: { background: '#2B5D50', color: '#F7F8F4' },
+  navBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', marginLeft: 6, borderRadius: 9, background: '#C98A2B', color: '#14181F', fontSize: 11, fontWeight: 800, verticalAlign: 'middle' },
+  allCaughtUp: { display: 'flex', alignItems: 'center', gap: 8, background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 10, padding: '14px 16px', color: '#2B5D50', fontSize: 13.5, fontWeight: 600 },
   refreshBtn: { display: 'flex', alignItems: 'center', gap: 6, background: '#2A2E23', color: '#EDEBE3', border: '1px solid #3C4132', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   autoLink: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', whiteSpace: 'nowrap' },
   editModeBtnActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
