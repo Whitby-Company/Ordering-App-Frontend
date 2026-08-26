@@ -129,6 +129,36 @@ function sortInventoryItems(items, field, dir, popularity) {
 // Your live backend, deployed on Render.
 const API_BASE = 'https://ordering-app-ycc9.onrender.com/api';
 
+// Device-level submitter name: whoever is placing orders on this device.
+// Stored in localStorage so it's remembered across sessions on that device.
+const SUBMITTER_KEY = 'submitterName';
+function getSubmitterName() {
+  try { return localStorage.getItem(SUBMITTER_KEY) || ''; } catch { return ''; }
+}
+function storeSubmitterName(name) {
+  try {
+    const trimmed = (name || '').trim();
+    if (trimmed) localStorage.setItem(SUBMITTER_KEY, trimmed);
+    else localStorage.removeItem(SUBMITTER_KEY);
+  } catch { /* ignore storage errors */ }
+}
+// Hook that exposes the current device submitter name and a setter that
+// persists it. Multiple components stay in sync via a window event.
+function useSubmitterName() {
+  const [name, setName] = useState(getSubmitterName);
+  useEffect(() => {
+    const handler = () => setName(getSubmitterName());
+    window.addEventListener('submitter-name-changed', handler);
+    return () => window.removeEventListener('submitter-name-changed', handler);
+  }, []);
+  const update = useCallback((next) => {
+    storeSubmitterName(next);
+    setName(getSubmitterName());
+    window.dispatchEvent(new Event('submitter-name-changed'));
+  }, []);
+  return [name, update];
+}
+
 const BRAND_COLORS = { Nike: '#2B5D50', Adidas: '#3E5C76', Puma: '#8A4A3D' };
 const BRAND_FALLBACK_COLORS = ['#2B5D50', '#3E5C76', '#8A4A3D', '#6B5B95', '#457B7A', '#9C6644'];
 function brandColor(brand, index, customColors) {
@@ -470,7 +500,7 @@ function printOrder(order, printSequence, options = {}) {
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <h1>Order #${order.id} — ${order.customer}</h1>
-    <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}</div>
+    <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}</div>
     ${order.notes ? `<div class="notes"><strong>Notes:</strong> ${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
     <table>
       <thead><tr><th>Item #</th><th style="text-align:center">Cases</th><th style="text-align:center">Eaches</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
@@ -792,6 +822,11 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [confirmed, setConfirmed] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [submitterName, setSubmitterName] = useSubmitterName();
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  // When set, submit the order automatically right after the name is saved.
+  const submitAfterSignIn = useRef(false);
   const [gridSize, setGridSize] = useState(() => {
     try { return localStorage.getItem('orderGridSize') || 'compact'; } catch { return 'compact'; }
   });
@@ -934,6 +969,13 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
 
   async function submitOrder() {
     if (!customerId || !deliveryDate || orderLines.length === 0) return;
+    // First order on this device: ask who's submitting, then continue.
+    if (!submitterName) {
+      submitAfterSignIn.current = true;
+      setNameDraft('');
+      setSignInOpen(true);
+      return;
+    }
     setSubmitting(true);
     setSubmitError('');
     try {
@@ -941,12 +983,14 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         customerId,
         deliveryDate,
         notes: notes.trim() || undefined,
+        submittedBy: submitterName || undefined,
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty })),
       });
       setConfirmed({
         customer: customerName,
         deliveryDate,
         submittedAt: 'Just now',
+        submittedBy: result.submittedBy || submitterName || null,
         notes: result.notes || null,
         lines: result.lines,
         totalUnits,
@@ -967,6 +1011,29 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Save the entered name to this device. If the sign-in was triggered by
+  // trying to submit, continue the submission once the name is stored.
+  function saveSignIn() {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) return;
+    setSubmitterName(trimmed);
+    setSignInOpen(false);
+  }
+  // Once the device name is set (and a submit was pending), run the submit.
+  useEffect(() => {
+    if (submitterName && submitAfterSignIn.current) {
+      submitAfterSignIn.current = false;
+      submitOrder();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitterName]);
+
+  function openSignIn() {
+    submitAfterSignIn.current = false;
+    setNameDraft(submitterName || '');
+    setSignInOpen(true);
   }
 
   if (confirmed) {
@@ -1216,6 +1283,11 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               />
             </div>
             {submitError && <div style={styles.sheetWarning}>{submitError}</div>}
+            <div style={styles.orderedByRow}>
+              {submitterName
+                ? <>Ordered by <strong>{submitterName}</strong> · <button style={styles.orderedByLink} onClick={openSignIn}>change</button></>
+                : <button style={styles.orderedByLink} onClick={openSignIn}>Set your name for orders</button>}
+            </div>
             <button
               style={{ ...styles.submitBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.submitBtnDisabled) }}
               disabled={!customerId || !deliveryDate || submitting}
@@ -1234,6 +1306,36 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                   : !customerId ? 'Select a customer to submit this order'
                   : 'Set a delivery date to submit this order'}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {signInOpen && (
+        <div style={styles.sheetOverlay} onClick={() => setSignInOpen(false)}>
+          <div style={styles.signInCard} onClick={e => e.stopPropagation()}>
+            <div style={styles.signInTitle}>Who's placing orders?</div>
+            <div style={styles.signInSub}>Enter your name once — this device will remember it and tag your orders automatically.</div>
+            <input
+              autoFocus
+              style={styles.signInInput}
+              value={nameDraft}
+              onChange={e => setNameDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveSignIn(); }}
+              placeholder="Your name"
+              maxLength={60}
+            />
+            <button
+              style={{ ...styles.submitBtn, ...(nameDraft.trim() ? {} : styles.submitBtnDisabled), marginTop: 12 }}
+              disabled={!nameDraft.trim()}
+              onClick={saveSignIn}
+            >
+              <Check size={16} color="#F7F8F4" /> Save
+            </button>
+            {submitterName && (
+              <button style={styles.signInClear} onClick={() => { setSubmitterName(''); setSignInOpen(false); }}>
+                Sign out of this device
+              </button>
             )}
           </div>
         </div>
@@ -1342,6 +1444,7 @@ function Confirmation({ data, onNewOrder }) {
         </div>
         <div style={styles.confirmTitle}>Order logged</div>
         <div style={styles.confirmSub}>{data.submittedAt} · {data.customer}</div>
+        {data.submittedBy && <div style={styles.confirmSub}>Ordered by {data.submittedBy}</div>}
         <div style={styles.confirmDelivery}>
           <Calendar size={13} color="#5B6058" />
           Delivery {formatDate(data.deliveryDate)}
@@ -1678,6 +1781,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                   </div>
                   <div style={styles.orderCardMeta}>
                     {formatDateTime(o.submittedAt)} · {totalUnits} units · {o.lines.length} item{o.lines.length === 1 ? '' : 's'}
+                    {o.submittedBy ? ` · by ${o.submittedBy}` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2213,7 +2317,10 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh }) {
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                     </td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDateTime(o.submittedAt)}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
+                      {formatDateTime(o.submittedAt)}
+                      {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {o.submittedBy}</div>}
+                    </td>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
@@ -3240,6 +3347,13 @@ const styles = {
   sheetTotalNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: '#14181F' },
   submitBtn: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 10, padding: '13px', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   submitBtnDisabled: { background: '#C7CBC1', cursor: 'not-allowed' },
+  orderedByRow: { textAlign: 'center', fontSize: 12.5, color: '#5B6058', margin: '2px 0 10px' },
+  orderedByLink: { background: 'none', border: 'none', color: '#2B5D50', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', padding: 0, textDecoration: 'underline' },
+  signInCard: { background: '#F7F8F4', borderRadius: 16, padding: 22, width: '86%', maxWidth: 360, boxShadow: '0 12px 40px rgba(20,24,31,0.28)' },
+  signInTitle: { fontSize: 17, fontWeight: 700, color: '#14181F', marginBottom: 6 },
+  signInSub: { fontSize: 13, color: '#5B6058', lineHeight: 1.4, marginBottom: 14 },
+  signInInput: { width: '100%', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #C7CBC1', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  signInClear: { display: 'block', width: '100%', marginTop: 10, background: 'none', border: 'none', color: '#8A8F87', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' },
   sheetWarning: { textAlign: 'center', fontSize: 12, color: '#B5493B', marginTop: 8 },
   notesSection: { display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 0 4px' },
   notesLabel: { fontSize: 12, fontWeight: 600, color: '#5B6058' },
