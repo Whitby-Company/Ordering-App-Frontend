@@ -611,6 +611,25 @@ async function downloadOrderIIF(orderId, experimental = false) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+// Download a Transaction Pro Importer CSV for an order (for QuickBooks Desktop).
+async function downloadOrderTP(orderId) {
+  const res = await fetch(`${API_BASE}/orders/${orderId}/tp`);
+  if (!res.ok) {
+    let msg = `Could not generate the Transaction Pro file (${res.status})`;
+    try { const d = await res.json(); if (d.error) msg = d.error; } catch { /* keep default */ }
+    throw new Error(msg);
+  }
+  const text = await res.text();
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `order-${orderId}-TP.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 // Price is stored per single "each"; each case/pack ordered contains
 // item.pack eaches. Line total = price × pack size × cases ordered.
 function lineTotal(item, qty) {
@@ -2265,6 +2284,23 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
     }
   }
 
+  async function handleDownloadTP(orderId) {
+    setIifBusyId(orderId);
+    setIifError('');
+    try {
+      await downloadOrderTP(orderId);
+      const order = orders.find(o => o.id === orderId);
+      if (order && !order.processed) {
+        await apiPatch(`/orders/${orderId}/processed`, { processed: true });
+        await onRefresh();
+      }
+    } catch (err) {
+      setIifError(err.message || 'Could not download the Transaction Pro file.');
+    } finally {
+      setIifBusyId(null);
+    }
+  }
+
   // Print an order, then auto-mark it processed. withUpc toggles the barcode column.
   async function handlePrint(order, withUpc = false) {
     printOrder(order, printSequence, { withUpc });
@@ -2431,6 +2467,9 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print w/UPC</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
                             {iifBusyId === o.id ? '…' : 'QB'}
+                          </button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
+                            {iifBusyId === o.id ? '…' : 'TP'}
                           </button>{' '}
                           <button
                             style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
