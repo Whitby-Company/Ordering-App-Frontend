@@ -677,6 +677,7 @@ export default function App() {
   const [customersAll, setCustomersAll] = useState([]);
   const [orderHistory, setOrderHistory] = useState([]);
   const [brandColors, setBrandColors] = useState({});
+  const [brandSettings, setBrandSettings] = useState({});
   const [printSequence, setPrintSequence] = useState([]);
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
   // Navigation stack: the last element is the current tab. Navigating pushes,
@@ -706,7 +707,7 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [itemsData, customersData, itemsAllData, customersAllData, ordersData, brandColorsData, printOrderData] = await Promise.all([
+      const [itemsData, customersData, itemsAllData, customersAllData, ordersData, brandColorsData, printOrderData, brandSettingsData] = await Promise.all([
         apiGet('/items'),
         apiGet('/customers'),
         apiGet('/items?includeInactive=true'),
@@ -714,6 +715,7 @@ export default function App() {
         apiGet('/orders'),
         apiGet('/brand-colors'),
         apiGet('/print-order'),
+        apiGet('/brand-settings').catch(() => ({})),
       ]);
       setItems(itemsData);
       setCustomers(customersData);
@@ -722,6 +724,7 @@ export default function App() {
       setOrderHistory(ordersData);
       setBrandColors(brandColorsData || {});
       setPrintSequence(printOrderData || []);
+      setBrandSettings(brandSettingsData || {});
       setStatus('ready');
     } catch (err) {
       setStatus('error');
@@ -770,6 +773,7 @@ export default function App() {
           activeCustomers={customers}
           orders={orderHistory}
           brandColors={brandColors}
+          brandSettings={brandSettings}
           printSequence={printSequence}
           onRefresh={loadAll}
           onSwitchToMobile={() => setOverride('mobile')}
@@ -2279,7 +2283,7 @@ const editStyles = {
 // DESKTOP — OFFICE VIEW (orders table for QuickBooks entry,
 // inventory table with editable stock)
 // ============================================================
-function OfficeView({ items, customers, activeItems, activeCustomers, orders, brandColors, printSequence, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
+function OfficeView({ items, customers, activeItems, activeCustomers, orders, brandColors, brandSettings = {}, printSequence, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
   const [navStack, setNavStack] = useState(['orders']);
   const section = navStack[navStack.length - 1];
   const setSection = useCallback((next) => {
@@ -2384,8 +2388,8 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         )}
         {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
-        {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
-        {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
     </div>
@@ -2718,7 +2722,7 @@ function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left' 
   );
 }
 
-function OfficeInventory({ items, customers = [], orders, brandColors, printSequence, onRefresh, mode = 'items' }) {
+function OfficeInventory({ items, customers = [], orders, brandColors, brandSettings = {}, printSequence, onRefresh, mode = 'items' }) {
   // Two views share this component:
   //  - 'inventory': stock-focused, read-only item details (just view/adjust stock)
   //  - 'items': the full editable catalog (edit names/prices/UPCs/photos, imports)
@@ -2832,6 +2836,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, printSequ
       await apiPut(`/brand-colors/${encodeURIComponent(brand)}`, { color });
       await onRefresh();
     } catch (err) { /* leave current color on failure */ }
+  }
+
+  async function saveBrandAbbrev(abbreviation) {
+    if (brand === 'All') return;
+    try {
+      await apiPut(`/brand-settings/${encodeURIComponent(brand)}`, { abbreviation });
+      await onRefresh();
+    } catch (err) { /* leave current value on failure */ }
   }
 
   function exportCSV() {
@@ -2998,6 +3010,11 @@ function OfficeInventory({ items, customers = [], orders, brandColors, printSequ
                     Reset color
                   </button>
                 )}
+                <BrandAbbrevField
+                  brand={brand}
+                  value={(brandSettings[brand] && brandSettings[brand].abbreviation) || ''}
+                  onSave={saveBrandAbbrev}
+                />
               </>
             )}
           </>
@@ -3586,6 +3603,25 @@ function CustomerNameField({ customer, editMode, onRefresh }) {
       {saving && <span style={{ color: '#8A8F87', fontSize: 12 }}>saving…</span>}
       {error && <span style={{ color: '#B5493B', fontSize: 12, fontWeight: 600 }}>{error}</span>}
     </div>
+  );
+}
+
+// Small inline editor for a brand's memo abbreviation (Items page, edit mode).
+function BrandAbbrevField({ brand, value: initial, onSave }) {
+  const [value, setValue] = useState(initial || '');
+  useEffect(() => { setValue(initial || ''); }, [initial, brand]);
+  return (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#5B6058' }} title="Short code for this brand, used in the invoice memo when an order is only this brand">
+      Memo abbrev.
+      <input
+        style={{ ...officeStyles.inlineInput, width: 90 }}
+        value={value}
+        placeholder="e.g. LOA"
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => { if (value.trim() !== (initial || '')) onSave(value.trim()); }}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValue(initial || ''); e.currentTarget.blur(); } }}
+      />
+    </label>
   );
 }
 
