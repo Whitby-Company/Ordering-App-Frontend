@@ -2246,6 +2246,12 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
             Inventory
           </button>
           <button
+            style={{ ...officeStyles.navBtn, ...(section === 'items' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('items')}
+          >
+            Items
+          </button>
+          <button
             style={{ ...officeStyles.navBtn, ...(section === 'customers' ? officeStyles.navBtnActive : {}) }}
             onClick={() => setSection('customers')}
           >
@@ -2282,7 +2288,8 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         )}
         {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
-        {section === 'inventory' && <OfficeInventory items={items} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'inventory' && <OfficeInventory mode="inventory" items={items} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'items' && <OfficeInventory mode="items" items={items} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
     </div>
@@ -2615,7 +2622,11 @@ function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left' 
   );
 }
 
-function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh }) {
+function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh, mode = 'items' }) {
+  // Two views share this component:
+  //  - 'inventory': stock-focused, read-only item details (just view/adjust stock)
+  //  - 'items': the full editable catalog (edit names/prices/UPCs/photos, imports)
+  const isItems = mode === 'items';
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
@@ -2807,7 +2818,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
         onChange={handleUpcFile}
       />
       <div style={officeStyles.sectionHeader}>
-        <div style={officeStyles.sectionTitle}>Inventory</div>
+        <div style={officeStyles.sectionTitle}>{isItems ? 'Items' : 'Inventory'}</div>
         <input
           style={officeStyles.search}
           placeholder="Search item or SKU…"
@@ -2833,7 +2844,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
             <button style={officeStyles.smallBtn} onClick={() => setRenamingBrand(false)}>Cancel</button>
           </>
         )}
-        {brand !== 'All' && !renamingBrand && (
+        {isItems && brand !== 'All' && !renamingBrand && (
           <>
             <button style={officeStyles.smallBtn} onClick={toggleBrand}>
               {brandAllActive ? 'Deactivate brand' : 'Activate brand'}
@@ -2863,15 +2874,17 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
         <button style={officeStyles.smallBtn} onClick={exportCSV} title="Download the items currently shown as a CSV">
           Export CSV
         </button>
-        <button style={officeStyles.smallBtn} onClick={triggerImport} disabled={importing} title="Upload a CSV to bulk-update stock and/or price">
-          {importing ? 'Importing…' : 'Import CSV'}
-        </button>
-        {editMode && (
+        {isItems && (
+          <button style={officeStyles.smallBtn} onClick={triggerImport} disabled={importing} title="Upload a CSV to bulk-update stock and/or price">
+            {importing ? 'Importing…' : 'Import CSV'}
+          </button>
+        )}
+        {isItems && editMode && (
           <button style={officeStyles.smallBtn} onClick={triggerPrintOrderUpload} disabled={uploadingOrder} title="Upload an .xlsx to set the order items print in. Needs a column headed 'Item #' (or 'SKU'/'Code').">
             {uploadingOrder ? 'Uploading…' : 'Upload print order'}
           </button>
         )}
-        {editMode && (
+        {isItems && editMode && (
           <button style={officeStyles.smallBtn} onClick={triggerUpcUpload} disabled={uploadingUpc} title="Upload a spreadsheet with an item-code column ('Item #'/'SKU'/'Code') and a 'UPC' column to set UPCs in bulk.">
             {uploadingUpc ? 'Uploading…' : 'Import UPCs'}
           </button>
@@ -2880,13 +2893,15 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
-        <button
-          style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
-          onClick={() => setEditMode(v => !v)}
-        >
-          {editMode ? 'Done editing' : 'Edit'}
-        </button>
-        {editMode && (
+        {isItems && (
+          <button
+            style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
+            onClick={() => setEditMode(v => !v)}
+          >
+            {editMode ? 'Done editing' : 'Edit'}
+          </button>
+        )}
+        {isItems && editMode && (
           <select style={officeStyles.select} value={editField} onChange={e => setEditField(e.target.value)}>
             <option value="all">Edit: All fields</option>
             <option value="name">Edit: Item name</option>
@@ -2946,20 +2961,20 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
               <SortableTh field="id" label="Item #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="name" label="Item" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="brand" label="Brand" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              <SortableTh field="upc" label="UPC" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
-              <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
-              <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              {isItems && <SortableTh field="upc" label="UPC" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />}
+              {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
+              {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
+              {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
-              {editMode && (editField === 'all' || editField === 'photo') && (
+              {isItems && editMode && (editField === 'all' || editField === 'photo') && (
                 <th style={{ ...officeStyles.th, textAlign: 'center' }}>Photo</th>
               )}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode && (editField === 'all' || editField === 'photo') ? 11 : 10}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 11 : 10) : 6}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
@@ -2977,9 +2992,12 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
                 <td style={officeStyles.td}>
                   {canEdit('brand') ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
                 </td>
+                {isItems && (
                 <td style={officeStyles.td}>
                   {canEdit('upc') ? <TextFieldEditor item={item} field="upc" onSaved={onRefresh} placeholder="UPC(s), comma-separated" /> : (item.upc || <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
+                )}
+                {isItems && (
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   {canEdit('pack') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
@@ -2993,14 +3011,17 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh 
                     </div>
                   )}
                 </td>
+                )}
+                {isItems && (
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   {canEdit('price') ? (
                     <NumberFieldEditor item={item} field="price" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} />
                   ) : formatMoney(item.price)}
                 </td>
-                <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>
+                )}
+                {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  {canEdit('stock') ? (
+                  {(canEdit('stock') || !isItems) ? (
                     <StockEditor item={item} onSaved={onRefresh} />
                   ) : (
                     <span style={item.stock <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined}>{item.stock}</span>
