@@ -3614,9 +3614,9 @@ function OfficeCustomers({ customers, onRefresh }) {
         <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
           onClick={() => setEditMode(v => !v)}
-          title="Turn on to edit customer names; changes save as you go"
+          title="Turn on to rename customers and set their usual delivery day"
         >
-          {editMode ? 'Done renaming' : 'Rename customers'}
+          {editMode ? 'Done editing' : 'Edit'}
         </button>
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
@@ -3625,35 +3625,41 @@ function OfficeCustomers({ customers, onRefresh }) {
         <div style={officeStyles.countPill}>{filtered.length} customer{filtered.length === 1 ? '' : 's'}</div>
       </div>
       {editMode && (
-        <div style={officeStyles.editHint}>Editing names — click a name to change it. Changes save automatically.</div>
+        <div style={officeStyles.editHint}>Editing — click a name to rename it, and set each customer's usual delivery day. Changes save automatically.</div>
       )}
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
-          <thead><tr><th style={officeStyles.th}>Customer name</th><th style={officeStyles.th}>Usual delivery day</th><th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th></tr></thead>
+          <thead><tr>
+            <th style={officeStyles.th}>Customer name</th>
+            {editMode && <th style={officeStyles.th}>Usual delivery day</th>}
+            <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
+          </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={3}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 3 : 2}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => (
               <tr key={c.id} style={!c.active ? officeStyles.rowInactive : undefined}>
                 <td style={officeStyles.td}>
                   <CustomerNameField customer={c} editMode={editMode} onRefresh={onRefresh} />
                 </td>
-                <td style={officeStyles.td}>
-                  <select
-                    style={officeStyles.daySelect}
-                    value={c.deliveryDay === null || c.deliveryDay === undefined ? '' : String(c.deliveryDay)}
-                    onChange={async e => {
-                      const v = e.target.value === '' ? null : Number(e.target.value);
-                      await apiPatch(`/customers/${c.id}`, { deliveryDay: v });
-                      await onRefresh();
-                    }}
-                    title="Selecting this customer on a new order will auto-fill this day (still changeable)"
-                  >
-                    <option value="">No default</option>
-                    {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                  </select>
-                </td>
+                {editMode && (
+                  <td style={officeStyles.td}>
+                    <select
+                      className="daySelect"
+                      value={c.deliveryDay === null || c.deliveryDay === undefined ? '' : String(c.deliveryDay)}
+                      onChange={async e => {
+                        const v = e.target.value === '' ? null : Number(e.target.value);
+                        await apiPatch(`/customers/${c.id}`, { deliveryDay: v });
+                        await onRefresh();
+                      }}
+                      title="Selecting this customer on a new order will auto-fill this day (still changeable)"
+                    >
+                      <option value="">No default</option>
+                      {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                    </select>
+                  </td>
+                )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
@@ -3673,6 +3679,15 @@ const fontImport = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
   @keyframes spin { to { transform: rotate(360deg); } }
   .has-back > div > div:first-child > div:first-child { padding-left: 42px; }
+  select.daySelect {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background: #F7F8F4 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8F87' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 12px center;
+    border: 1px solid #D6D3C6; border-radius: 8px; padding: 7px 32px 7px 12px;
+    font-size: 13px; font-weight: 600; color: #14181F; font-family: inherit;
+    outline: none; cursor: pointer; min-width: 150px;
+  }
+  select.daySelect:hover { border-color: #B9B6A8; background-color: #FFFFFF; }
+  select.daySelect:focus { border-color: #2B5D50; box-shadow: 0 0 0 2px rgba(43,93,80,0.12); }
 `;
 
 const styles = {
@@ -3758,7 +3773,7 @@ const styles = {
   backBtnBig: { display: 'flex', alignItems: 'center', gap: 4, background: '#EDEBE3', border: 'none', borderRadius: 10, color: '#14181F', fontSize: 15, fontWeight: 700, cursor: 'pointer', padding: '8px 14px 8px 8px', fontFamily: 'inherit' },
   itemsSubHeaderBrand: { fontSize: 13, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.04em' },
   sortSelect: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 8px', fontSize: 12, fontWeight: 600, color: '#5B6058', fontFamily: 'inherit', outline: 'none', maxWidth: 130 },
-  daySelect: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '5px 8px', fontSize: 13, fontWeight: 600, color: '#14181F', fontFamily: 'inherit', outline: 'none', cursor: 'pointer' },
+  daySelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', background: "#F7F8F4 url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8F87' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\") no-repeat right 12px center", border: '1px solid #D6D3C6', borderRadius: 8, padding: '7px 32px 7px 12px', fontSize: 13, fontWeight: 600, color: '#14181F', fontFamily: 'inherit', outline: 'none', cursor: 'pointer', minWidth: 150 },
   sortDirBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#5B6058', cursor: 'pointer' },
   list: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
