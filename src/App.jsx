@@ -2203,6 +2203,7 @@ function OrderViewModal({ order, onClose, onEdit }) {
     <div style={styles.editOverlay} onClick={onClose}>
       <div style={viewStyles.card} onClick={e => e.stopPropagation()}>
         <div style={viewStyles.header}>
+          <button style={{ ...styles.iconBtn, marginRight: 4 }} onClick={onClose} title="Close"><X size={18} color="#8A8F87" /></button>
           <div>
             <div style={viewStyles.title}>Order #{order.id} — {order.customer}</div>
             <div style={viewStyles.meta}>
@@ -2210,7 +2211,6 @@ function OrderViewModal({ order, onClose, onEdit }) {
               {order.submittedBy ? ` · by ${order.submittedBy}` : ''}
             </div>
           </div>
-          <button style={styles.iconBtn} onClick={onClose} title="Close"><X size={18} color="#8A8F87" /></button>
         </div>
         <div style={viewStyles.badgeRow}>
           {order.status === 'pending'
@@ -2273,7 +2273,7 @@ function OrderViewModal({ order, onClose, onEdit }) {
 
 const viewStyles = {
   card: { width: '100%', maxWidth: 720, maxHeight: '88vh', overflowY: 'auto', background: '#F7F8F4', borderRadius: 16, boxShadow: '0 20px 60px rgba(20,24,31,0.4)', padding: 20 },
-  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', gap: 10 },
   title: { fontSize: 17, fontWeight: 800, color: '#14181F' },
   meta: { fontSize: 12.5, color: '#5B6058', marginTop: 3 },
   badgeRow: { margin: '10px 0 4px' },
