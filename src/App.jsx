@@ -1577,7 +1577,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             <div style={styles.customerSearchWrap}>
               <Search size={16} color="#8A8F87" />
               <input
-                autoFocus
+                autoFocus={desktop}
                 style={styles.customerSearchInput}
                 value={customerQuery}
                 onChange={e => setCustomerQuery(e.target.value)}
