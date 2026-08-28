@@ -3716,6 +3716,23 @@ function OfficeCustomers({ customers, onRefresh }) {
   const [showInactive, setShowInactive] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [shipToOpenId, setShipToOpenId] = useState(null);
+  const [shipToSeedMsg, setShipToSeedMsg] = useState('');
+  const [seeding, setSeeding] = useState(false);
+
+  async function handleReseedShipTo() {
+    setSeeding(true);
+    setShipToSeedMsg('');
+    try {
+      const r = await apiPost('/customers/reseed-shipto', {});
+      await onRefresh();
+      const unmatchedNote = r.unmatched && r.unmatched.length ? ` (${r.unmatched.length} not matched: ${r.unmatched.join(', ')})` : '';
+      setShipToSeedMsg(`Loaded ship-to for ${r.matchedCount} store${r.matchedCount === 1 ? '' : 's'}${unmatchedNote}.`);
+    } catch (err) {
+      setShipToSeedMsg(err.message || 'Could not load ship-to addresses.');
+    } finally {
+      setSeeding(false);
+    }
+  }
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return customers.filter(c => {
@@ -3749,6 +3766,14 @@ function OfficeCustomers({ customers, onRefresh }) {
       </div>
       {editMode && (
         <div style={officeStyles.editHint}>Editing — click a name to rename it, set each customer's usual delivery day, and their abbreviation (used in the PO number, e.g. T2) and short name (used in the invoice memo, e.g. Kahala). Changes save automatically.</div>
+      )}
+      {editMode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 12px', flexWrap: 'wrap' }}>
+          <button style={officeStyles.smallBtn} onClick={handleReseedShipTo} disabled={seeding} title="Fill in the built-in store ship-to addresses for any matching customers that don't have one yet">
+            {seeding ? 'Loading…' : 'Load store ship-to addresses'}
+          </button>
+          {shipToSeedMsg && <span style={{ fontSize: 12.5, color: '#5B6058' }}>{shipToSeedMsg}</span>}
+        </div>
       )}
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
