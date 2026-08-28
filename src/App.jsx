@@ -643,8 +643,26 @@ async function downloadOrderTP(orderId) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-// Price is stored per single "each"; each case/pack ordered contains
-// item.pack eaches. Line total = price × pack size × cases ordered.
+// Download a single Transaction Pro CSV containing several orders at once.
+async function downloadOrdersTP(orderIds) {
+  const ids = orderIds.join(',');
+  const res = await fetch(`${API_BASE}/orders/tp?ids=${encodeURIComponent(ids)}`);
+  if (!res.ok) {
+    let msg = `Could not generate the Transaction Pro file (${res.status})`;
+    try { const d = await res.json(); if (d.error) msg = d.error; } catch { /* keep default */ }
+    throw new Error(msg);
+  }
+  const text = await res.text();
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `orders-${orderIds.length}-TP.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 function lineTotal(item, qty) {
   return (Number(item.price) || 0) * (Number(item.pack) || 1) * (Number(qty) || 0);
 }
@@ -2402,6 +2420,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
   const [openId, setOpenId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [iifBusyId, setIifBusyId] = useState(null);
+  const [batchBusy, setBatchBusy] = useState(false);
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
@@ -2462,6 +2481,26 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
       setIifError(err.message || 'Could not download the Transaction Pro file.');
     } finally {
       setIifBusyId(null);
+    }
+  }
+
+  // Export every submitted-unprocessed order (skipping pending) as one TP file,
+  // then mark them all processed so they drop off the queue.
+  async function handleBatchTP() {
+    const batch = orders.filter(o => o.status !== 'pending' && !o.processed);
+    if (batch.length === 0) return;
+    setBatchBusy(true);
+    setIifError('');
+    try {
+      await downloadOrdersTP(batch.map(o => o.id));
+      for (const o of batch) {
+        await apiPatch(`/orders/${o.id}/processed`, { processed: true });
+      }
+      await onRefresh();
+    } catch (err) {
+      setIifError(err.message || 'Could not export the batch Transaction Pro file.');
+    } finally {
+      setBatchBusy(false);
     }
   }
 
@@ -2530,6 +2569,9 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
     return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   }
 
+  // Submitted (non-pending) orders not yet processed — what the batch exports.
+  const batchExportable = orders.filter(o => o.status !== 'pending' && !o.processed);
+
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
@@ -2540,6 +2582,16 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        {activeScope && (
+          <button
+            style={{ ...officeStyles.primarySmallBtn, ...(batchExportable.length === 0 || batchBusy ? officeStyles.smallBtnDisabled : {}) }}
+            onClick={handleBatchTP}
+            disabled={batchExportable.length === 0 || batchBusy}
+            title="Download one Transaction Pro file with every new order (excludes pending), and mark them processed"
+          >
+            {batchBusy ? 'Exporting…' : `Export all to TP${batchExportable.length ? ` (${batchExportable.length})` : ''}`}
+          </button>
+        )}
         {!activeScope && (
           <button
             style={{ ...officeStyles.smallBtn, ...(showUnprocessedOnly ? officeStyles.editModeBtnActive : {}) }}
@@ -4007,6 +4059,8 @@ const officeStyles = {
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   select: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   smallBtn: { background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 600, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  primarySmallBtn: { background: '#2B5D50', border: '1px solid #2B5D50', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, color: '#F7F8F4', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  smallBtnDisabled: { opacity: 0.5, cursor: 'not-allowed' },
   inlineInput: { background: '#FFFFFF', border: '1px solid #B7C9C1', borderRadius: 8, padding: '7px 10px', fontSize: 13.5, fontWeight: 600, color: '#14181F', fontFamily: 'inherit', minWidth: 220, outline: 'none' },
   checkboxLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#5B6058', whiteSpace: 'nowrap' },
   countPill: { marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#5B6058', background: '#EAE8DD', borderRadius: 999, padding: '6px 12px', whiteSpace: 'nowrap' },
