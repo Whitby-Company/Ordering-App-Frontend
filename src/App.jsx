@@ -3589,6 +3589,40 @@ function CustomerNameField({ customer, editMode, onRefresh }) {
   );
 }
 
+// Small inline text editor for an optional customer field (abbreviation, short
+// name). Saves on blur; empty clears the value. Used only in edit mode.
+function CustomerTextField({ customer, field, value: initial, placeholder, width, onRefresh }) {
+  const [value, setValue] = useState(initial || '');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setValue(initial || ''); }, [initial]);
+
+  async function save() {
+    const trimmed = value.trim();
+    if (trimmed === (initial || '')) return;
+    setSaving(true);
+    try {
+      await apiPatch(`/customers/${customer.id}`, { [field]: trimmed });
+      await onRefresh();
+    } catch (err) {
+      setValue(initial || '');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <input
+      style={{ ...officeStyles.inlineInput, width: width || 120 }}
+      value={value}
+      placeholder={placeholder}
+      onChange={e => setValue(e.target.value)}
+      onBlur={save}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValue(initial || ''); e.currentTarget.blur(); } }}
+      disabled={saving}
+    />
+  );
+}
+
 function OfficeCustomers({ customers, onRefresh }) {
   const [query, setQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
@@ -3625,18 +3659,20 @@ function OfficeCustomers({ customers, onRefresh }) {
         <div style={officeStyles.countPill}>{filtered.length} customer{filtered.length === 1 ? '' : 's'}</div>
       </div>
       {editMode && (
-        <div style={officeStyles.editHint}>Editing — click a name to rename it, and set each customer's usual delivery day. Changes save automatically.</div>
+        <div style={officeStyles.editHint}>Editing — click a name to rename it, set each customer's usual delivery day, and their abbreviation (used in the PO number, e.g. T2) and short name (used in the invoice memo, e.g. Kahala). Changes save automatically.</div>
       )}
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
           <thead><tr>
             <th style={officeStyles.th}>Customer name</th>
             {editMode && <th style={officeStyles.th}>Usual delivery day</th>}
+            {editMode && <th style={officeStyles.th}>Abbrev. (PO)</th>}
+            {editMode && <th style={officeStyles.th}>Short name (memo)</th>}
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 3 : 2}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 5 : 2}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => (
               <tr key={c.id} style={!c.active ? officeStyles.rowInactive : undefined}>
@@ -3658,6 +3694,16 @@ function OfficeCustomers({ customers, onRefresh }) {
                       <option value="">No default</option>
                       {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
                     </select>
+                  </td>
+                )}
+                {editMode && (
+                  <td style={officeStyles.td}>
+                    <CustomerTextField customer={c} field="abbreviation" value={c.abbreviation} placeholder="e.g. T2" width={90} onRefresh={onRefresh} />
+                  </td>
+                )}
+                {editMode && (
+                  <td style={officeStyles.td}>
+                    <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="e.g. Kahala" width={140} onRefresh={onRefresh} />
                   </td>
                 )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
