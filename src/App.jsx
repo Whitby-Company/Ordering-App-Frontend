@@ -176,6 +176,19 @@ function formatDateTime(iso) {
 function toISO(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
+// Day-of-week labels; index 0 = Sunday, matching JS getDay() and the backend.
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Next calendar date (today or later) that falls on the given weekday (0-6),
+// returned as an ISO yyyy-mm-dd string. E.g. today Wed, weekday=Fri -> this Fri.
+function nextDateForWeekday(weekday) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const delta = (weekday - today.getDay() + 7) % 7; // 0..6 days ahead
+  const target = new Date(today);
+  target.setDate(today.getDate() + delta);
+  return toISO(target.getFullYear(), target.getMonth(), target.getDate());
+}
 function buildCalendarGrid(year, month) {
   const startWeekday = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1579,11 +1592,22 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                   onClick={() => {
                     setCustomerId(c.id);
                     setCustomerOpen(false);
-                    if (deliveryDate) setPickersExpanded(false);
+                    // If this customer has a usual delivery day, jump the date to
+                    // the next occurrence of it. Still fully changeable afterward.
+                    // (Not in edit mode — keep the order's existing date.)
+                    let nextDate = deliveryDate;
+                    if (!isEdit && c.deliveryDay !== null && c.deliveryDay !== undefined) {
+                      nextDate = nextDateForWeekday(c.deliveryDay);
+                      setDeliveryDate(nextDate);
+                    }
+                    if (nextDate) setPickersExpanded(false);
                   }}
                 >
                   <User size={15} color="#8A8F87" />
                   <span>{c.name}</span>
+                  {c.deliveryDay !== null && c.deliveryDay !== undefined && (
+                    <span style={styles.custDayTag}>{DAY_ABBR[c.deliveryDay]}s</span>
+                  )}
                   {c.id === customerId && <Check size={15} color="#2B5D50" style={{ marginLeft: 'auto' }} />}
                 </button>
               ))}
@@ -3335,15 +3359,30 @@ function OfficeCustomers({ customers, onRefresh }) {
       )}
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
-          <thead><tr><th style={officeStyles.th}>Customer name</th><th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th></tr></thead>
+          <thead><tr><th style={officeStyles.th}>Customer name</th><th style={officeStyles.th}>Usual delivery day</th><th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th></tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={2}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={3}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => (
               <tr key={c.id} style={!c.active ? officeStyles.rowInactive : undefined}>
                 <td style={officeStyles.td}>
                   <CustomerNameField customer={c} editMode={editMode} onRefresh={onRefresh} />
+                </td>
+                <td style={officeStyles.td}>
+                  <select
+                    style={officeStyles.daySelect}
+                    value={c.deliveryDay === null || c.deliveryDay === undefined ? '' : String(c.deliveryDay)}
+                    onChange={async e => {
+                      const v = e.target.value === '' ? null : Number(e.target.value);
+                      await apiPatch(`/customers/${c.id}`, { deliveryDay: v });
+                      await onRefresh();
+                    }}
+                    title="Selecting this customer on a new order will auto-fill this day (still changeable)"
+                  >
+                    <option value="">No default</option>
+                    {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                  </select>
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
@@ -3449,6 +3488,7 @@ const styles = {
   backBtnBig: { display: 'flex', alignItems: 'center', gap: 4, background: '#EDEBE3', border: 'none', borderRadius: 10, color: '#14181F', fontSize: 15, fontWeight: 700, cursor: 'pointer', padding: '8px 14px 8px 8px', fontFamily: 'inherit' },
   itemsSubHeaderBrand: { fontSize: 13, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.04em' },
   sortSelect: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 8px', fontSize: 12, fontWeight: 600, color: '#5B6058', fontFamily: 'inherit', outline: 'none', maxWidth: 130 },
+  daySelect: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '5px 8px', fontSize: 13, fontWeight: 600, color: '#14181F', fontFamily: 'inherit', outline: 'none', cursor: 'pointer' },
   sortDirBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#5B6058', cursor: 'pointer' },
   list: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
@@ -3512,6 +3552,7 @@ const styles = {
   orderCardNotesLabel: { fontWeight: 700, color: '#5B6058' },
   customerRow: { width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 4px', background: 'none', border: 'none', borderBottom: '1px solid #EAE8DD', fontSize: 14, fontWeight: 500, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
   customerRowActive: { background: '#EAF1EE' },
+  custDayTag: { marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 8px' },
   customerSearchWrap: { display: 'flex', alignItems: 'center', gap: 8, background: '#F0EEE4', borderRadius: 10, padding: '10px 12px', margin: '4px 0 10px' },
   customerSearchInput: { flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: 15, fontFamily: 'inherit', color: '#14181F' },
   customerEmpty: { padding: '16px 4px', color: '#8A8F87', fontSize: 13.5 },
