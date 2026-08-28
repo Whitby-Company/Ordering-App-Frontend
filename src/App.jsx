@@ -2893,14 +2893,13 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
-        {isItems && (
-          <button
-            style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
-            onClick={() => setEditMode(v => !v)}
-          >
-            {editMode ? 'Done editing' : 'Edit'}
-          </button>
-        )}
+        <button
+          style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
+          onClick={() => setEditMode(v => !v)}
+          title={isItems ? 'Turn on to edit item details' : 'Turn on to adjust stock counts'}
+        >
+          {editMode ? 'Done editing' : 'Edit'}
+        </button>
         {isItems && editMode && (
           <select style={officeStyles.select} value={editField} onChange={e => setEditField(e.target.value)}>
             <option value="all">Edit: All fields</option>
@@ -2987,10 +2986,10 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
                 </td>
                 <td style={officeStyles.td}>{displayCode(item.id)}</td>
                 <td style={officeStyles.td}>
-                  {canEdit('name') ? <TextFieldEditor item={item} field="name" onSaved={onRefresh} /> : item.name}
+                  {(isItems && canEdit('name')) ? <TextFieldEditor item={item} field="name" onSaved={onRefresh} /> : item.name}
                 </td>
                 <td style={officeStyles.td}>
-                  {canEdit('brand') ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
+                  {(isItems && canEdit('brand')) ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
                 </td>
                 {isItems && (
                 <td style={officeStyles.td}>
@@ -3021,14 +3020,14 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
                 )}
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  {(canEdit('stock') || !isItems) ? (
+                  {canEdit('stock') ? (
                     <StockEditor item={item} onSaved={onRefresh} />
                   ) : (
                     <span style={item.stock <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined}>{item.stock}</span>
                   )}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
-                  {canEdit('active') ? (
+                  {(isItems && canEdit('active')) ? (
                     <ActiveToggle
                       active={!!item.active}
                       onToggle={async next => { await apiPatch(`/items/${encodeURIComponent(item.id)}`, { active: next }); await onRefresh(); }}
@@ -3039,7 +3038,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
                     </span>
                   )}
                 </td>
-                {editMode && (editField === 'all' || editField === 'photo') && (
+                {isItems && editMode && (editField === 'all' || editField === 'photo') && (
                   <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                     <PhotoEditor item={item} onSaved={onRefresh} />
                   </td>
