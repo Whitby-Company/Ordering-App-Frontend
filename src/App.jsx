@@ -2642,12 +2642,42 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
   const [editField, setEditField] = useState('all');
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
+  const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
   const fileInputRef = useRef(null);
   const printOrderInputRef = useRef(null);
   const upcInputRef = useRef(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))).sort(), [items]);
   const popularity = useMemo(() => computePopularity(orders), [orders]);
+
+  // Build the list of orders that include a given item, newest first, with the
+  // quantity (cases + eaches) and status for each — used by the expandable
+  // per-item order history on the Inventory page to help confirm stock.
+  function orderHistoryFor(itemId) {
+    const rows = [];
+    for (const o of orders) {
+      const line = (o.lines || []).find(l => l.id === itemId);
+      if (!line) continue;
+      const cases = Number(line.qty) || 0;
+      const pack = Number(line.pack) || 1;
+      rows.push({
+        orderId: o.id,
+        customer: o.customer,
+        deliveryDate: o.deliveryDate,
+        submittedAt: o.submittedAt,
+        cases,
+        eaches: cases * pack,
+        status: o.status,
+        processed: o.processed,
+      });
+    }
+    rows.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    const submitted = rows.filter(r => r.status !== 'pending');
+    const consumedEaches = submitted.reduce((s, r) => s + r.eaches, 0);
+    const consumedCases = submitted.reduce((s, r) => s + r.cases, 0);
+    const pendingEaches = rows.filter(r => r.status === 'pending').reduce((s, r) => s + r.eaches, 0);
+    return { rows, consumedEaches, consumedCases, pendingEaches };
+  }
 
   function handleSortClick(field) {
     if (field === sortField) {
@@ -2977,15 +3007,23 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
+              const isOpen = openItemId === item.id;
+              const toggleHistory = () => setOpenItemId(isOpen ? null : item.id);
               return (
-              <tr key={item.id} style={!item.active ? officeStyles.rowInactive : undefined}>
-                <td style={{ ...officeStyles.td, width: 56 }}>
+              <React.Fragment key={item.id}>
+              <tr style={!item.active ? officeStyles.rowInactive : undefined}>
+                <td style={{ ...officeStyles.td, width: 56, cursor: 'pointer' }} onClick={toggleHistory}>
                   {item.imageUrl
                     ? <img src={item.imageUrl} alt="" style={officeStyles.invThumb} loading="lazy" />
                     : <div style={officeStyles.invThumbPlaceholder}><ImageIcon size={16} color="#C7CBC1" /></div>}
                 </td>
-                <td style={officeStyles.td}>{displayCode(item.id)}</td>
-                <td style={officeStyles.td}>
+                <td style={{ ...officeStyles.td, cursor: 'pointer' }} onClick={toggleHistory}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <ChevronRight size={13} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                    {displayCode(item.id)}
+                  </span>
+                </td>
+                <td style={{ ...officeStyles.td, cursor: (isItems && canEdit('name')) ? 'default' : 'pointer' }} onClick={(isItems && canEdit('name')) ? undefined : toggleHistory}>
                   {(isItems && canEdit('name')) ? <TextFieldEditor item={item} field="name" onSaved={onRefresh} /> : item.name}
                 </td>
                 <td style={officeStyles.td}>
@@ -3044,6 +3082,58 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
                   </td>
                 )}
               </tr>
+              {isOpen && (() => {
+                const hist = orderHistoryFor(item.id);
+                const colSpan = isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 11 : 10) : 6;
+                return (
+                  <tr>
+                    <td colSpan={colSpan} style={officeStyles.itemHistoryCell}>
+                      {hist.rows.length === 0 ? (
+                        <div style={officeStyles.itemHistoryEmpty}>This item hasn't been on any orders yet.</div>
+                      ) : (
+                        <div style={officeStyles.itemHistoryWrap}>
+                          <div style={officeStyles.itemHistorySummary}>
+                            <span><strong>{hist.consumedEaches}</strong> eaches ({hist.consumedCases} cs) out on submitted orders</span>
+                            {hist.pendingEaches > 0 && <span style={{ color: '#8A6D1B' }}>· {hist.pendingEaches} eaches pending</span>}
+                            <span style={{ color: '#8A8F87' }}>· in stock now: {item.stock}</span>
+                          </div>
+                          <table style={officeStyles.itemHistoryTable}>
+                            <thead>
+                              <tr>
+                                <th style={officeStyles.itemHistoryTh}>Order</th>
+                                <th style={officeStyles.itemHistoryTh}>Delivery</th>
+                                <th style={officeStyles.itemHistoryTh}>Customer</th>
+                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Cases</th>
+                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Eaches</th>
+                                <th style={officeStyles.itemHistoryTh}>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {hist.rows.map(r => (
+                                <tr key={r.orderId}>
+                                  <td style={officeStyles.itemHistoryTd}>#{r.orderId}</td>
+                                  <td style={officeStyles.itemHistoryTd}>{formatDate(r.deliveryDate)}</td>
+                                  <td style={officeStyles.itemHistoryTd}>{r.customer}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.cases}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.eaches}</td>
+                                  <td style={officeStyles.itemHistoryTd}>
+                                    {r.status === 'pending'
+                                      ? <span style={officeStyles.badgePending}>Pending</span>
+                                      : r.processed
+                                        ? <span style={officeStyles.badgeProcessed}>Processed</span>
+                                        : <span style={officeStyles.badgeUnprocessed}>New</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })()}
+              </React.Fragment>
               );
             })}
           </tbody>
@@ -3705,6 +3795,13 @@ const officeStyles = {
   badgeProcessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 9px' },
   badgeUnprocessed: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#9A6B12', background: '#FBE7C2', border: '1px solid #F0D28F', borderRadius: 20, padding: '2px 9px' },
   badgePending: { display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#5B6058', background: '#E8E6DC', border: '1px solid #D2CFC0', borderRadius: 20, padding: '2px 9px' },
+  itemHistoryCell: { background: '#F2F4EF', borderBottom: '1px solid #E3E1D6', padding: '12px 16px 16px 56px' },
+  itemHistoryEmpty: { fontSize: 13, color: '#8A8F87', fontStyle: 'italic' },
+  itemHistoryWrap: { display: 'flex', flexDirection: 'column', gap: 8 },
+  itemHistorySummary: { display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 13, color: '#14181F' },
+  itemHistoryTable: { width: '100%', maxWidth: 760, borderCollapse: 'collapse', background: '#FFFFFF', borderRadius: 8, overflow: 'hidden', border: '1px solid #E3E1D6' },
+  itemHistoryTh: { textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '7px 10px', borderBottom: '1px solid #ECEAE1', background: '#FBFAF6' },
+  itemHistoryTd: { fontSize: 13, color: '#14181F', padding: '7px 10px', borderBottom: '1px solid #F0EEE6' },
   markDoneBtn: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   rowInactive: { opacity: 0.5 },
   emptyCell: { padding: '28px 14px', textAlign: 'center', color: '#8A8F87', fontSize: 13.5 },
