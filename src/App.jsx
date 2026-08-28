@@ -3715,6 +3715,7 @@ function OfficeCustomers({ customers, onRefresh }) {
   const [query, setQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [shipToOpenId, setShipToOpenId] = useState(null);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return customers.filter(c => {
@@ -3756,14 +3757,19 @@ function OfficeCustomers({ customers, onRefresh }) {
             {editMode && <th style={officeStyles.th}>Usual delivery day</th>}
             {editMode && <th style={officeStyles.th}>Abbrev. (PO)</th>}
             {editMode && <th style={officeStyles.th}>Short name (memo)</th>}
+            {editMode && <th style={officeStyles.th}>Ship-to</th>}
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 5 : 2}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 6 : 2}>No customers match "{query}"</td></tr>
             )}
-            {filtered.map(c => (
-              <tr key={c.id} style={!c.active ? officeStyles.rowInactive : undefined}>
+            {filtered.map(c => {
+              const shipOpen = shipToOpenId === c.id;
+              const hasShipTo = !!(c.shipToLine1 || c.shipToLine2 || c.shipToCity);
+              return (
+              <React.Fragment key={c.id}>
+              <tr style={!c.active ? officeStyles.rowInactive : undefined}>
                 <td style={officeStyles.td}>
                   <CustomerNameField customer={c} editMode={editMode} onRefresh={onRefresh} />
                 </td>
@@ -3794,6 +3800,16 @@ function OfficeCustomers({ customers, onRefresh }) {
                     <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="e.g. Kahala" width={140} onRefresh={onRefresh} />
                   </td>
                 )}
+                {editMode && (
+                  <td style={officeStyles.td}>
+                    <button
+                      style={{ ...officeStyles.smallBtn, ...(shipOpen ? officeStyles.editModeBtnActive : {}) }}
+                      onClick={() => setShipToOpenId(shipOpen ? null : c.id)}
+                    >
+                      {hasShipTo ? 'Ship-to ✓' : 'Add ship-to'}
+                    </button>
+                  </td>
+                )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
@@ -3801,7 +3817,23 @@ function OfficeCustomers({ customers, onRefresh }) {
                   />
                 </td>
               </tr>
-            ))}
+              {editMode && shipOpen && (
+                <tr>
+                  <td colSpan={6} style={officeStyles.shipToCell}>
+                    <div style={officeStyles.shipToTitle}>Ship-to address for {c.name}</div>
+                    <div style={officeStyles.shipToGrid}>
+                      <CustomerTextField customer={c} field="shipToLine1" value={c.shipToLine1} placeholder="Line 1 (store name)" width={220} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="shipToLine2" value={c.shipToLine2} placeholder="Line 2 (street)" width={220} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="shipToCity" value={c.shipToCity} placeholder="City" width={140} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="shipToState" value={c.shipToState} placeholder="State" width={70} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="shipToZip" value={c.shipToZip} placeholder="Zip" width={90} onRefresh={onRefresh} />
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -3908,6 +3940,9 @@ const styles = {
   itemsSubHeaderBrand: { fontSize: 13, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.04em' },
   sortSelect: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 8px', fontSize: 12, fontWeight: 600, color: '#5B6058', fontFamily: 'inherit', outline: 'none', maxWidth: 130 },
   daySelect: { appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', background: "#F7F8F4 url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8F87' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\") no-repeat right 12px center", border: '1px solid #D6D3C6', borderRadius: 8, padding: '7px 32px 7px 12px', fontSize: 13, fontWeight: 600, color: '#14181F', fontFamily: 'inherit', outline: 'none', cursor: 'pointer', minWidth: 150 },
+  shipToCell: { background: '#F2F4EF', borderBottom: '1px solid #E3E1D6', padding: '12px 16px' },
+  shipToTitle: { fontSize: 12.5, fontWeight: 700, color: '#5B6058', marginBottom: 8 },
+  shipToGrid: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   sortDirBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#5B6058', cursor: 'pointer' },
   list: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
