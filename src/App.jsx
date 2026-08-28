@@ -2681,9 +2681,6 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                           <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print w/UPC</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => handleDownloadIIF(o.id)} disabled={iifBusyId === o.id} title="Download a QuickBooks Desktop invoice file (.IIF)">
-                            {iifBusyId === o.id ? '…' : 'QB'}
-                          </button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
                           </button>{' '}
