@@ -2167,6 +2167,102 @@ function OrderEditModal({ order, items, customers, brandColors = {}, orders = []
   );
 }
 
+// Read-only order details popup. Shows the order's customer, date, status, and
+// line items (with cases + eaches and totals) without any editing controls.
+function OrderViewModal({ order, onClose, onEdit }) {
+  const lines = order.lines || [];
+  const totalCases = lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  const totalEaches = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+  const total = lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.pack) || 1) * (Number(l.qty) || 0), 0);
+  return (
+    <div style={styles.editOverlay} onClick={onClose}>
+      <div style={viewStyles.card} onClick={e => e.stopPropagation()}>
+        <div style={viewStyles.header}>
+          <div>
+            <div style={viewStyles.title}>Order #{order.id} — {order.customer}</div>
+            <div style={viewStyles.meta}>
+              Delivery {formatDate(order.deliveryDate)} · Submitted {formatDateTime(order.submittedAt)}
+              {order.submittedBy ? ` · by ${order.submittedBy}` : ''}
+            </div>
+          </div>
+          <button style={styles.iconBtn} onClick={onClose} title="Close"><X size={18} color="#8A8F87" /></button>
+        </div>
+        <div style={viewStyles.badgeRow}>
+          {order.status === 'pending'
+            ? <span style={officeStyles.badgePending}>Pending</span>
+            : order.processed
+              ? <span style={officeStyles.badgeProcessed}>Processed</span>
+              : <span style={officeStyles.badgeUnprocessed}>New</span>}
+        </div>
+        <div style={viewStyles.tableWrap}>
+          <table style={viewStyles.table}>
+            <thead>
+              <tr>
+                <th style={viewStyles.th}>Item #</th>
+                <th style={viewStyles.th}>Item</th>
+                <th style={{ ...viewStyles.th, textAlign: 'right' }}>Cases</th>
+                <th style={{ ...viewStyles.th, textAlign: 'right' }}>Eaches</th>
+                <th style={{ ...viewStyles.th, textAlign: 'right' }}>Price/ea</th>
+                <th style={{ ...viewStyles.th, textAlign: 'right' }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map(l => {
+                const cases = Number(l.qty) || 0;
+                const pack = Number(l.pack) || 1;
+                return (
+                  <tr key={l.id}>
+                    <td style={viewStyles.td}>{displayCode(l.id)}</td>
+                    <td style={viewStyles.td}>{l.name}</td>
+                    <td style={{ ...viewStyles.td, textAlign: 'right' }}>{cases}</td>
+                    <td style={{ ...viewStyles.td, textAlign: 'right' }}>{cases * pack}</td>
+                    <td style={{ ...viewStyles.td, textAlign: 'right' }}>{formatMoney(l.price)}</td>
+                    <td style={{ ...viewStyles.td, textAlign: 'right' }}>{formatMoney((Number(l.price) || 0) * pack * cases)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td style={viewStyles.tfootTd}>Totals</td>
+                <td style={viewStyles.tfootTd}></td>
+                <td style={{ ...viewStyles.tfootTd, textAlign: 'right' }}>{totalCases}</td>
+                <td style={{ ...viewStyles.tfootTd, textAlign: 'right' }}>{totalEaches}</td>
+                <td style={viewStyles.tfootTd}></td>
+                <td style={{ ...viewStyles.tfootTd, textAlign: 'right' }}>{formatMoney(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        {order.notes && (
+          <div style={viewStyles.notes}><strong>Notes:</strong> {order.notes}</div>
+        )}
+        <div style={viewStyles.footer}>
+          <button style={viewStyles.editBtn} onClick={onEdit}>Edit this order</button>
+          <button style={viewStyles.closeBtn} onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const viewStyles = {
+  card: { width: '100%', maxWidth: 720, maxHeight: '88vh', overflowY: 'auto', background: '#F7F8F4', borderRadius: 16, boxShadow: '0 20px 60px rgba(20,24,31,0.4)', padding: 20 },
+  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  title: { fontSize: 17, fontWeight: 800, color: '#14181F' },
+  meta: { fontSize: 12.5, color: '#5B6058', marginTop: 3 },
+  badgeRow: { margin: '10px 0 4px' },
+  tableWrap: { marginTop: 8, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, overflow: 'hidden' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
+  th: { textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '8px 10px', borderBottom: '1px solid #ECEAE1', background: '#FBFAF6' },
+  td: { padding: '8px 10px', color: '#14181F', borderBottom: '1px solid #F0EEE6' },
+  tfootTd: { padding: '9px 10px', fontWeight: 800, color: '#14181F', borderTop: '2px solid #14181F' },
+  notes: { marginTop: 12, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#14181F' },
+  footer: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 },
+  editBtn: { background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  closeBtn: { background: '#EDEBE3', color: '#14181F', border: '1px solid #E3E1D6', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+};
+
 const editStyles = {
   select: { width: '100%', boxSizing: 'border-box', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 8, padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   searchDropdown: { position: 'absolute', left: 20, right: 20, top: '100%', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, boxShadow: '0 4px 12px rgba(20,24,31,0.12)', zIndex: 30, maxHeight: 220, overflowY: 'auto' },
@@ -2288,8 +2384,8 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         )}
         {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
-        {section === 'inventory' && <OfficeInventory mode="inventory" items={items} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
-        {section === 'items' && <OfficeInventory mode="items" items={items} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
       </div>
     </div>
@@ -2622,7 +2718,7 @@ function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left' 
   );
 }
 
-function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh, mode = 'items' }) {
+function OfficeInventory({ items, customers = [], orders, brandColors, printSequence, onRefresh, mode = 'items' }) {
   // Two views share this component:
   //  - 'inventory': stock-focused, read-only item details (just view/adjust stock)
   //  - 'items': the full editable catalog (edit names/prices/UPCs/photos, imports)
@@ -2643,6 +2739,8 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
+  const [editingOrder, setEditingOrder] = useState(null); // order opened for editing from history
+  const [viewingOrder, setViewingOrder] = useState(null); // order opened read-only from history
   const fileInputRef = useRef(null);
   const printOrderInputRef = useRef(null);
   const upcInputRef = useRef(null);
@@ -2678,6 +2776,9 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
     const pendingEaches = rows.filter(r => r.status === 'pending').reduce((s, r) => s + r.eaches, 0);
     return { rows, consumedEaches, consumedCases, pendingEaches };
   }
+  // Active items only, for the edit modal's brand grid / item cards.
+  const activeItemsForEdit = useMemo(() => items.filter(i => i.active), [items]);
+  const orderById = id => orders.find(o => o.id === id) || null;
 
   function handleSortClick(field) {
     if (field === sortField) {
@@ -3106,6 +3207,7 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Cases</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Eaches</th>
                                 <th style={officeStyles.itemHistoryTh}>Status</th>
+                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}></th>
                               </tr>
                             </thead>
                             <tbody>
@@ -3123,6 +3225,11 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
                                         ? <span style={officeStyles.badgeProcessed}>Processed</span>
                                         : <span style={officeStyles.badgeUnprocessed}>New</span>}
                                   </td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                    <button style={officeStyles.historyLinkBtn} onClick={() => { const o = orderById(r.orderId); if (o) setViewingOrder(o); }}>View</button>
+                                    {' '}
+                                    <button style={officeStyles.historyLinkBtn} onClick={() => { const o = orderById(r.orderId); if (o) setEditingOrder(o); }}>Edit</button>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3139,6 +3246,26 @@ function OfficeInventory({ items, orders, brandColors, printSequence, onRefresh,
           </tbody>
         </table>
       </div>
+
+      {editingOrder && (
+        <OrderEditModal
+          order={editingOrder}
+          items={activeItemsForEdit}
+          customers={customers}
+          orders={orders}
+          brandColors={brandColors}
+          printSequence={printSequence}
+          onClose={() => setEditingOrder(null)}
+          onSaved={async () => { setEditingOrder(null); await onRefresh(); }}
+        />
+      )}
+      {viewingOrder && (
+        <OrderViewModal
+          order={viewingOrder}
+          onClose={() => setViewingOrder(null)}
+          onEdit={() => { setEditingOrder(viewingOrder); setViewingOrder(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -3802,6 +3929,7 @@ const officeStyles = {
   itemHistoryTable: { width: '100%', maxWidth: 760, borderCollapse: 'collapse', background: '#FFFFFF', borderRadius: 8, overflow: 'hidden', border: '1px solid #E3E1D6' },
   itemHistoryTh: { textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '7px 10px', borderBottom: '1px solid #ECEAE1', background: '#FBFAF6' },
   itemHistoryTd: { fontSize: 13, color: '#14181F', padding: '7px 10px', borderBottom: '1px solid #F0EEE6' },
+  historyLinkBtn: { background: '#FFFFFF', border: '1px solid #D6D3C6', color: '#2B5D50', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   markDoneBtn: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   rowInactive: { opacity: 0.5 },
   emptyCell: { padding: '28px 14px', textAlign: 'center', color: '#8A8F87', fontSize: 13.5 },
