@@ -852,6 +852,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [customerId, setCustomerId] = useState(isEdit ? editOrder.customerId : (savedDraft.customerId ?? null));
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
+  const [customerDayFilter, setCustomerDayFilter] = useState(null); // 0-6, or null for all
   const [deliveryDate, setDeliveryDate] = useState(isEdit ? editOrder.deliveryDate : (savedDraft.deliveryDate || ''));
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -932,10 +933,17 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     || '';
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
-    const active = customers.filter(c => c.active !== 0);
-    if (!q) return active;
-    return active.filter(c => c.name.toLowerCase().includes(q));
-  }, [customers, customerQuery]);
+    let active = customers.filter(c => c.active !== 0);
+    if (customerDayFilter !== null) active = active.filter(c => c.deliveryDay === customerDayFilter);
+    if (q) active = active.filter(c => c.name.toLowerCase().includes(q));
+    return active;
+  }, [customers, customerQuery, customerDayFilter]);
+  // Which weekdays actually have customers assigned (to only show useful chips).
+  const daysInUse = useMemo(() => {
+    const s = new Set();
+    for (const c of customers) if (c.active !== 0 && c.deliveryDay !== null && c.deliveryDay !== undefined) s.add(c.deliveryDay);
+    return s;
+  }, [customers]);
 
   // Orders come back newest-first, so the first match for this customer
   // is their most recent previous order.
@@ -1204,7 +1212,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         )}
         {pickersExpanded ? (
           <>
-            <button style={desktop ? { ...styles.customerBtn, flex: 1, marginTop: 0 } : styles.customerBtn} onClick={() => { setCustomerQuery(''); setCustomerOpen(true); }}>
+            <button style={desktop ? { ...styles.customerBtn, flex: 1, marginTop: 0 } : styles.customerBtn} onClick={() => { setCustomerQuery(''); setCustomerDayFilter(null); setCustomerOpen(true); }}>
               <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
               <span style={{ ...styles.customerBtnText, color: customerId ? '#14181F' : '#8A8F87' }}>
                 {customerName || 'Select customer'}
@@ -1581,9 +1589,34 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 </button>
               )}
             </div>
+            {daysInUse.size > 0 && (
+              <div style={styles.dayChipRow}>
+                <button
+                  style={{ ...styles.dayChip, ...(customerDayFilter === null ? styles.dayChipActive : {}) }}
+                  onClick={() => setCustomerDayFilter(null)}
+                >
+                  All
+                </button>
+                {DAY_ABBR.map((label, i) => (
+                  daysInUse.has(i) ? (
+                    <button
+                      key={i}
+                      style={{ ...styles.dayChip, ...(customerDayFilter === i ? styles.dayChipActive : {}) }}
+                      onClick={() => setCustomerDayFilter(customerDayFilter === i ? null : i)}
+                    >
+                      {label}
+                    </button>
+                  ) : null
+                ))}
+              </div>
+            )}
             <div style={styles.sheetLines}>
               {filteredCustomers.length === 0 && (
-                <div style={styles.customerEmpty}>No customers match "{customerQuery}"</div>
+                <div style={styles.customerEmpty}>
+                  {customerDayFilter !== null
+                    ? `No ${DAY_NAMES[customerDayFilter]} customers${customerQuery ? ` match "${customerQuery}"` : ''}`
+                    : `No customers match "${customerQuery}"`}
+                </div>
               )}
               {filteredCustomers.map(c => (
                 <button
@@ -3553,6 +3586,9 @@ const styles = {
   customerRow: { width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 4px', background: 'none', border: 'none', borderBottom: '1px solid #EAE8DD', fontSize: 14, fontWeight: 500, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
   customerRowActive: { background: '#EAF1EE' },
   custDayTag: { marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 8px' },
+  dayChipRow: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 0 10px' },
+  dayChip: { background: '#F0EEE4', border: '1px solid #E3E1D6', color: '#5B6058', borderRadius: 20, padding: '5px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  dayChipActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   customerSearchWrap: { display: 'flex', alignItems: 'center', gap: 8, background: '#F0EEE4', borderRadius: 10, padding: '10px 12px', margin: '4px 0 10px' },
   customerSearchInput: { flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: 15, fontFamily: 'inherit', color: '#14181F' },
   customerEmpty: { padding: '16px 4px', color: '#8A8F87', fontSize: 13.5 },
