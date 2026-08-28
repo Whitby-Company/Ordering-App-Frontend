@@ -2156,6 +2156,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
           customers={customers}
           orders={orders}
           printSequence={printSequence}
+          desktop={false}
           onClose={() => setEditingOrder(null)}
           onSaved={async () => { setEditingOrder(null); await onOrderChanged(); }}
         />
@@ -2168,13 +2169,15 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
 // SHARED — ORDER EDIT MODAL (used by both mobile Orders tab and
 // desktop Office Orders table)
 // ============================================================
-function OrderEditModal({ order, items, customers, brandColors = {}, orders = [], printSequence = [], onClose, onSaved }) {
+function OrderEditModal({ order, items, customers, brandColors = {}, orders = [], printSequence = [], onClose, onSaved, desktop = true }) {
   // Full New-Order-style editor: reuse OrderTab in edit mode inside a modal.
+  // On mobile we drop the desktop layout (and the boxed modal chrome) so the
+  // editor fills the screen and the header isn't cramped.
   return (
-    <div style={styles.editOverlay} onClick={onClose}>
-      <div style={styles.editModalWrap} onClick={e => e.stopPropagation()}>
+    <div style={desktop ? styles.editOverlay : styles.editOverlayMobile} onClick={desktop ? onClose : undefined}>
+      <div style={desktop ? styles.editModalWrap : styles.editModalWrapMobile} onClick={e => e.stopPropagation()}>
         <OrderTab
-          desktop
+          desktop={desktop}
           editOrder={order}
           items={items}
           customers={customers}
@@ -3911,6 +3914,8 @@ const styles = {
   tabContent: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
   editOverlay: { position: 'fixed', inset: 0, background: 'rgba(20,24,31,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 },
   editModalWrap: { width: '100%', maxWidth: 1100, height: '92vh', maxHeight: 900, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(20,24,31,0.4)' },
+  editOverlayMobile: { position: 'fixed', inset: 0, background: '#F7F8F4', zIndex: 60 },
+  editModalWrapMobile: { width: '100%', height: '100%', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
   backArrow: { position: 'absolute', top: 16, left: 12, zIndex: 40, width: 30, height: 30, borderRadius: 15, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 },
   screenWrap: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' },
   tabBar: { display: 'flex', borderTop: '1px solid #E3E1D6', background: '#FFFFFF', padding: '10px 0 calc(12px + env(safe-area-inset-bottom, 0px))', flexShrink: 0, position: 'relative', zIndex: 10 },
@@ -3984,9 +3989,9 @@ const styles = {
   ticketBar: { position: 'sticky', bottom: 0, cursor: 'pointer' },
   ticketStub: { height: 6, background: 'repeating-linear-gradient(90deg, #F7F8F4 0 6px, transparent 6px 12px)', borderTop: '1px dashed #C7CBC1' },
   ticketBarContent: { background: '#14181F', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 },
-  ticketBarText: { color: '#EDEBE3', fontSize: 13.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" },
+  ticketBarText: { color: '#EDEBE3', fontSize: 13.5, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 },
   ticketBarTotal: { color: '#9FE3CD', fontWeight: 700 },
-  ticketBarCta: { marginLeft: 'auto', color: '#EDEBE3', fontSize: 13, fontWeight: 600, background: '#2B5D50', padding: '6px 12px', borderRadius: 7 },
+  ticketBarCta: { flexShrink: 0, whiteSpace: 'nowrap', color: '#FFFFFF', fontSize: 13, fontWeight: 700, background: '#2B5D50', padding: '9px 16px', borderRadius: 8 },
   sheetOverlay: { position: 'absolute', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'flex-end', zIndex: 10 },
   sheet: { background: '#F7F8F4', width: '100%', maxHeight: '80%', borderRadius: '18px 18px 0 0', padding: '10px 16px 20px', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 20px rgba(20,24,31,0.15)' },
   sheetTall: { background: '#F7F8F4', width: '100%', height: '92dvh', maxHeight: '92dvh', borderRadius: '18px 18px 0 0', padding: '10px 16px 20px', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 20px rgba(20,24,31,0.15)' },
