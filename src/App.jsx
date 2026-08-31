@@ -2797,6 +2797,62 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
   const [editingOrder, setEditingOrder] = useState(null); // order opened for editing from history
   const [viewingOrder, setViewingOrder] = useState(null); // order opened read-only from history
+  // Stock changes are held here while editing and committed together on "Done
+  // editing" (after a confirmation), so nothing changes by accident.
+  const [pendingStock, setPendingStock] = useState({}); // { itemId: newValue }
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [savingStock, setSavingStock] = useState(false);
+
+  function setPending(itemId, value) {
+    setPendingStock(prev => {
+      const next = { ...prev };
+      next[itemId] = value;
+      return next;
+    });
+  }
+
+  // Only the entries that actually differ from the item's current stock.
+  function realStockChanges() {
+    const changes = [];
+    for (const [id, val] of Object.entries(pendingStock)) {
+      const item = items.find(i => i.id === id);
+      if (!item) continue;
+      const num = Number(val);
+      if (val === '' || Number.isNaN(num) || num < 0) continue;
+      if (num !== item.stock) changes.push({ id, name: item.name, from: item.stock, to: num });
+    }
+    return changes;
+  }
+
+  function handleToggleEdit() {
+    if (editMode) {
+      // Leaving edit mode — if there are pending stock changes, confirm them.
+      if (realStockChanges().length > 0) { setConfirmOpen(true); return; }
+      setPendingStock({});
+      setEditMode(false);
+    } else {
+      setPendingStock({});
+      setEditMode(true);
+    }
+  }
+
+  async function commitStockChanges() {
+    const changes = realStockChanges();
+    setSavingStock(true);
+    try {
+      for (const ch of changes) {
+        await apiPatch(`/items/${encodeURIComponent(ch.id)}`, { stock: ch.to });
+      }
+      await onRefresh();
+      setPendingStock({});
+      setConfirmOpen(false);
+      setEditMode(false);
+    } catch (err) {
+      // leave the dialog open so they can retry
+    } finally {
+      setSavingStock(false);
+    }
+  }
   const fileInputRef = useRef(null);
   const printOrderInputRef = useRef(null);
   const upcInputRef = useRef(null);
@@ -3095,7 +3151,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         </label>
         <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
-          onClick={() => setEditMode(v => !v)}
+          onClick={handleToggleEdit}
           title={isItems ? 'Turn on to edit item details' : 'Turn on to adjust stock counts'}
         >
           {editMode ? 'Done editing' : 'Edit'}
@@ -3229,7 +3285,11 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   {canEdit('stock') ? (
-                    <StockEditor item={item} onSaved={onRefresh} />
+                    <StockEditor
+                      item={item}
+                      pendingValue={pendingStock[item.id]}
+                      onPendingChange={v => setPending(item.id, v)}
+                    />
                   ) : (
                     <span style={item.stock <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined}>{item.stock}</span>
                   )}
@@ -3334,6 +3394,40 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           onClose={() => setViewingOrder(null)}
           onEdit={() => { setEditingOrder(viewingOrder); setViewingOrder(null); }}
         />
+      )}
+      {confirmOpen && (
+        <div style={styles.editOverlay} onClick={() => !savingStock && setConfirmOpen(false)}>
+          <div style={officeStyles.confirmCard} onClick={e => e.stopPropagation()}>
+            <div style={officeStyles.confirmTitle}>Save stock changes?</div>
+            <div style={officeStyles.confirmSub}>
+              You changed stock for {realStockChanges().length} item{realStockChanges().length === 1 ? '' : 's'}:
+            </div>
+            <div style={officeStyles.confirmList}>
+              {realStockChanges().map(ch => (
+                <div key={ch.id} style={officeStyles.confirmRow}>
+                  <span style={officeStyles.confirmItem}>{ch.name}</span>
+                  <span style={officeStyles.confirmDelta}>{ch.from} → <strong>{ch.to}</strong></span>
+                </div>
+              ))}
+            </div>
+            <div style={officeStyles.confirmActions}>
+              <button
+                style={officeStyles.confirmCancel}
+                onClick={() => { setConfirmOpen(false); }}
+                disabled={savingStock}
+              >
+                Keep editing
+              </button>
+              <button
+                style={officeStyles.confirmSave}
+                onClick={commitStockChanges}
+                disabled={savingStock}
+              >
+                {savingStock ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -3569,49 +3663,25 @@ function ActiveToggle({ active, onToggle }) {
   );
 }
 
-function StockEditor({ item, onSaved }) {
-  const [value, setValue] = useState(String(item.stock));
-  const [saving, setSaving] = useState(false);
-  const [savedFlash, setSavedFlash] = useState(false);
+function StockEditor({ item, pendingValue, onPendingChange }) {
+  // In edit mode the value is held in the parent's pending map and only saved
+  // when the user confirms on "Done editing" — so nothing changes by accident.
   const [focused, setFocused] = useState(false);
-  const dirty = Number(value) !== item.stock;
-
-  useEffect(() => {
-    if (!focused) setValue(String(item.stock));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.stock]);
-
-  async function save() {
-    const num = Number(value);
-    if (Number.isNaN(num) || num < 0) { setValue(String(item.stock)); return; }
-    if (num === item.stock) return;
-    setSaving(true);
-    try {
-      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { stock: num });
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 1200);
-      await onSaved();
-    } catch (err) {
-      setValue(String(item.stock));
-    } finally {
-      setSaving(false);
-    }
-  }
+  const value = pendingValue !== undefined ? pendingValue : String(item.stock);
+  const dirty = value !== '' && Number(value) !== item.stock;
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <input
-        style={{ ...officeStyles.stockInput, ...(item.stock <= 5 ? officeStyles.stockInputLow : {}) }}
+        style={{ ...officeStyles.stockInput, ...(item.stock <= 5 ? officeStyles.stockInputLow : {}), ...(dirty ? officeStyles.stockInputDirty : {}) }}
         value={value}
-        onChange={e => setValue(e.target.value)}
+        onChange={e => onPendingChange(e.target.value)}
         onFocus={() => setFocused(true)}
-        onBlur={() => { setFocused(false); save(); }}
+        onBlur={() => setFocused(false)}
         onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
         inputMode="numeric"
       />
-      {saving && <Loader2 size={13} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
-      {!saving && savedFlash && <Check size={14} color="#2B5D50" />}
-      {!saving && !savedFlash && dirty && <span style={officeStyles.unsavedDot} />}
+      {dirty && <span style={officeStyles.unsavedDot} title="Unsaved — confirm on Done editing" />}
     </span>
   );
 }
@@ -4153,6 +4223,17 @@ const officeStyles = {
   orderNotes: { marginTop: 0, marginBottom: 8, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: '#14181F', lineHeight: 1.45 },
   orderNotesLabel: { fontWeight: 700, color: '#5B6058' },
   stockInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 8px', fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: '#14181F', outline: 'none' },
+  stockInputDirty: { border: '1px solid #C9A227', background: '#FFFDF5' },
+  confirmCard: { width: '100%', maxWidth: 460, maxHeight: '80vh', overflowY: 'auto', background: '#F7F8F4', borderRadius: 16, boxShadow: '0 20px 60px rgba(20,24,31,0.4)', padding: 22 },
+  confirmTitle: { fontSize: 17, fontWeight: 800, color: '#14181F' },
+  confirmSub: { fontSize: 13.5, color: '#5B6058', marginTop: 4 },
+  confirmList: { marginTop: 12, border: '1px solid #E3E1D6', borderRadius: 10, overflow: 'hidden', background: '#FFFFFF' },
+  confirmRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '9px 12px', borderBottom: '1px solid #F0EEE6' },
+  confirmItem: { fontSize: 13, color: '#14181F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  confirmDelta: { fontSize: 13, color: '#5B6058', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap', flexShrink: 0 },
+  confirmActions: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 },
+  confirmCancel: { background: '#EDEBE3', color: '#14181F', border: '1px solid #E3E1D6', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  confirmSave: { background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   nameEditBtn: { background: 'none', border: 'none', color: '#14181F', fontSize: 13.5, fontFamily: 'inherit', textAlign: 'left', cursor: 'text', padding: '2px 4px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 3 },
   nameInput: { width: '100%', minWidth: 180, background: '#F7F8F4', border: '1px solid #2B5D50', borderRadius: 6, padding: '5px 8px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   packLabelEditBtn: { background: 'none', border: 'none', color: '#8A8F87', fontSize: 10.5, fontFamily: 'inherit', textAlign: 'right', cursor: 'text', padding: '1px 3px', borderRadius: 4, textDecoration: 'underline dotted', textUnderlineOffset: 2 },
