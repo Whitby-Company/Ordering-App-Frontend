@@ -1377,6 +1377,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                       +UPC
                     </button>
                   )}
+                  {desktop && item.stock <= 0 && !isOnOrder(item.id) && (
+                    <button
+                      style={styles.backorderBtnDesktop}
+                      onClick={() => addCheckin(item.id)}
+                      title="Out of stock — add to the order at 0 qty (backorder); it shows as a $0 line at the bottom of the invoice"
+                    >
+                      + Add (out of stock)
+                    </button>
+                  )}
                 </div>
                 {!desktop && item.upc && !isOnOrder(item.id) && (
                   <button
@@ -1385,6 +1394,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                     title="Add at 0 qty so its UPC barcode prints for check-in"
                   >
                     +UPC
+                  </button>
+                )}
+                {!desktop && item.stock <= 0 && !isOnOrder(item.id) && (
+                  <button
+                    style={styles.backorderBtn}
+                    onClick={() => addCheckin(item.id)}
+                    title="Out of stock — add to the order at 0 qty (backorder)"
+                  >
+                    + Add (out of stock)
                   </button>
                 )}
                 <div style={styles.stepper}>
@@ -4079,6 +4097,8 @@ const styles = {
   sheetLineQty: { fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: '#14181F' },
   checkinBtn: { marginRight: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '4px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   checkinBtnDesktop: { marginTop: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  backorderBtn: { marginRight: 6, background: '#FBEEE7', border: '1px solid #E6C6B4', color: '#B5493B', borderRadius: 7, padding: '4px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  backorderBtnDesktop: { marginTop: 6, background: '#FBEEE7', border: '1px solid #E6C6B4', color: '#B5493B', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   checkinTag: { fontSize: 10, fontWeight: 800, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.03em' },
   removeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4 },
   sheetTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 10px', fontSize: 13, fontWeight: 600, color: '#5B6058' },
