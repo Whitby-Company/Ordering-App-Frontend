@@ -1368,15 +1368,6 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                       </span>
                     </div>
                   )}
-                  {desktop && item.upc && !isOnOrder(item.id) && (
-                    <button
-                      style={styles.checkinBtnDesktop}
-                      onClick={() => addCheckin(item.id)}
-                      title="Add at 0 qty so its UPC barcode prints for check-in"
-                    >
-                      +UPC
-                    </button>
-                  )}
                   {desktop && item.stock <= 0 && !isOnOrder(item.id) && (
                     <button
                       style={styles.backorderBtnDesktop}
@@ -1387,15 +1378,6 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                     </button>
                   )}
                 </div>
-                {!desktop && item.upc && !isOnOrder(item.id) && (
-                  <button
-                    style={styles.checkinBtn}
-                    onClick={() => addCheckin(item.id)}
-                    title="Add at 0 qty so its UPC barcode prints for check-in"
-                  >
-                    +UPC
-                  </button>
-                )}
                 {!desktop && item.stock <= 0 && !isOnOrder(item.id) && (
                   <button
                     style={styles.backorderBtn}
