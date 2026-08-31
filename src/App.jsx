@@ -3922,6 +3922,7 @@ function OfficeCustomers({ customers, onRefresh }) {
                       <CustomerTextField customer={c} field="shipToCity" value={c.shipToCity} placeholder="City" width={140} onRefresh={onRefresh} />
                       <CustomerTextField customer={c} field="shipToState" value={c.shipToState} placeholder="State" width={70} onRefresh={onRefresh} />
                       <CustomerTextField customer={c} field="shipToZip" value={c.shipToZip} placeholder="Zip" width={90} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="shipToPhone" value={c.shipToPhone} placeholder="Phone" width={150} onRefresh={onRefresh} />
                     </div>
                   </td>
                 </tr>
