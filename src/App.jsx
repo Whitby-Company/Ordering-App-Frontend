@@ -3127,10 +3127,12 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
             )}
           </>
         )}
-        <button style={officeStyles.smallBtn} onClick={exportCSV} title="Download the items currently shown as a CSV">
-          Export CSV
-        </button>
-        {isItems && (
+        {!isItems && (
+          <button style={officeStyles.smallBtn} onClick={exportCSV} title="Download the items currently shown as a CSV">
+            Export CSV
+          </button>
+        )}
+        {!isItems && (
           <button style={officeStyles.smallBtn} onClick={triggerImport} disabled={importing} title="Upload a CSV to bulk-update stock and/or price">
             {importing ? 'Importing…' : 'Import CSV'}
           </button>
