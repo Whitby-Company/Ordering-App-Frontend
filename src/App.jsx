@@ -570,14 +570,14 @@ function printInvoice(order, customer, printSequence) {
     const pack = Number(l.pack) || 1;
     const each = cases * pack;
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
-    // UPC shown as its number(s), matching the template (not a barcode).
-    const upcText = parseUpcList(l.upc).map(esc).join('<br>');
+    // UPC as scannable barcode(s); falls back to the raw text if unencodable.
+    const upcCell = barcodesForCell(l.upc) || parseUpcList(l.upc).map(esc).join('<br>');
     return `<tr>
       <td class="c-item">${esc(displayCode(l.id))}</td>
       <td class="c-cs">${cases}</td>
       <td class="c-each">${each}</td>
       <td class="c-desc">${desc}</td>
-      <td class="c-upc">${upcText}</td>
+      <td class="c-upc">${upcCell}</td>
       <td class="c-price">${money(l.price)}</td>
       <td class="c-total">${money(lineTotal(l, l.qty))}</td>
     </tr>`;
@@ -613,10 +613,12 @@ function printInvoice(order, customer, printSequence) {
       thead .colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }
       thead .colhdr th.r { text-align: right; }
       thead .colhdr th.ctr { text-align: center; }
-      tbody td { padding: 1.5px 4px; font-size: 12.5px; vertical-align: top; line-height: 1.25; }
+      tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }
       td.c-item { white-space: nowrap; }
       td.c-cs, td.c-each { text-align: center; }
-      td.c-upc { text-align: left; font-size: 11px; }
+      td.c-upc { text-align: center; font-size: 11px; }
+      td.c-upc .barcode svg { display: block; margin: 0 auto; height: 30px; width: auto; max-width: 100%; }
+      td.c-upc .barcode + .barcode { margin-top: 2px; }
       td.c-price, td.c-total { text-align: right; white-space: nowrap; }
       .totals { width: 100%; margin-top: 30px; }
       .totals td { vertical-align: bottom; }
@@ -628,7 +630,7 @@ function printInvoice(order, customer, printSequence) {
       .totals .right tr.grand td { font-weight: bold; }
       .sigrow { width: 100%; margin-top: 40px; }
       .sigrow td { text-align: center; font-size: 11px; color: #000; border-top: 1px solid #000; padding-top: 3px; }
-      @media print { body { padding: 16px 22px; } .no-print { display: none; } thead { display: table-header-group; } }
+      @media print { body { padding: 16px 22px; } .no-print { display: none; } thead { display: table-header-group; } .barcode svg { image-rendering: pixelated; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <table class="sheet">
