@@ -611,9 +611,9 @@ function printInvoice(order, customer, printSequence) {
       .pobox td.val { border: 1px solid #000; padding: 4px 30px 4px 24px; font-size: 15px; font-weight: bold; }
       thead .colhdr th { border-bottom: 1.5px solid #000; border-top: 1px solid #000; text-align: left; font-size: 11px; font-family: Arial, sans-serif; padding: 3px 4px; }
       th.c-num, td.c-num, th.c-price, td.c-price, th.c-total, td.c-total { text-align: right; }
-      td.c-item { white-space: nowrap; }
-      td.c-num { text-align: center; width: 34px; }
-      th.c-num { text-align: center; }
+      td.c-item, th.c-item { white-space: nowrap; width: 1px; padding-right: 10px; }
+      td.c-num, th.c-num { text-align: center; width: 30px; white-space: nowrap; }
+      td.c-desc, th.c-desc { width: 100%; }
       td.c-upc, th.c-upc { font-size: 10px; text-align: center; white-space: nowrap; }
       td.c-price, td.c-total { white-space: nowrap; }
       tbody td { padding: 7px 4px; font-size: 12.5px; vertical-align: middle; border-bottom: 1px solid #ECEAE1; }
@@ -654,7 +654,7 @@ function printInvoice(order, customer, printSequence) {
         </td></tr>
         <tr class="colhdr">
           <th class="c-item">ITEM #</th><th class="c-num">CS</th><th class="c-num">EACH</th>
-          <th>DESCRIPTION</th><th class="c-upc">UPC</th><th class="c-price">PRICE</th><th class="c-total">TOTAL($)</th>
+          <th class="c-desc">DESCRIPTION</th><th class="c-upc">UPC</th><th class="c-price">PRICE</th><th class="c-total">TOTAL($)</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
