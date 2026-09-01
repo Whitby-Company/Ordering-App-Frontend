@@ -577,6 +577,7 @@ function printInvoice(order, customer, printSequence) {
       <td class="c-num">${cases}</td>
       <td class="c-num">${each}</td>
       <td class="c-desc">${desc}</td>
+      <td class="c-spacer"></td>
       <td class="c-upc">${bc}</td>
       <td class="c-price">${formatMoney(l.price)}</td>
       <td class="c-total">${formatMoney(lineTotal(l, l.qty))}</td>
@@ -595,9 +596,9 @@ function printInvoice(order, customer, printSequence) {
       /* The whole header sits in thead so it repeats on every printed page. */
       .hdr-top { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
       .hdr-top td { vertical-align: top; padding: 0; }
-      .company { font-size: 24px; font-weight: bold; line-height: 1.05; }
-      .company small { display: block; font-size: 11px; font-weight: normal; }
-      .invoice-word { text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 1px; padding-top: 22px; }
+      .company { font-size: 22px; font-weight: bold; line-height: 1.1; white-space: nowrap; }
+      .company small { display: block; font-size: 11px; font-weight: normal; white-space: nowrap; }
+      .invoice-word { text-align: center; font-size: 26px; font-weight: bold; letter-spacing: 1px; padding-top: 18px; }
       .metabox { border-collapse: collapse; margin-left: auto; }
       .metabox td { border: 1px solid #000; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
       .metabox td.lbl { border: none; text-align: right; font-weight: bold; padding-right: 8px; white-space: nowrap; }
@@ -611,9 +612,11 @@ function printInvoice(order, customer, printSequence) {
       .pobox td.val { border: 1px solid #000; padding: 4px 30px 4px 24px; font-size: 15px; font-weight: bold; }
       thead .colhdr th { border-bottom: 1.5px solid #000; border-top: 1px solid #000; text-align: left; font-size: 11px; font-family: Arial, sans-serif; padding: 3px 4px; }
       th.c-price, td.c-price, th.c-total, td.c-total { text-align: right; }
-      td.c-item, th.c-item { white-space: nowrap; width: 1px; padding-right: 6px; text-align: left; }
+      td.c-item, th.c-item { white-space: nowrap; width: 1px; padding-right: 16px; text-align: left; }
       td.c-num, th.c-num { text-align: left; width: 1px; white-space: nowrap; padding-right: 14px; }
-      td.c-desc, th.c-desc { width: 100%; padding-left: 6px; }
+      td.c-desc, th.c-desc { white-space: nowrap; padding-right: 20px; }
+      td.c-spacer, th.c-spacer { width: 100%; }
+      td.c-upc, th.c-upc { width: 1px; }
       td.c-upc, th.c-upc { font-size: 10px; text-align: center; white-space: nowrap; }
       td.c-price, td.c-total { white-space: nowrap; }
       tbody td { padding: 7px 4px; font-size: 12.5px; vertical-align: middle; border-bottom: 1px solid #ECEAE1; }
@@ -636,8 +639,8 @@ function printInvoice(order, customer, printSequence) {
       <thead>
         <tr><td>
           <table class="hdr-top"><tr>
-            <td style="width:42%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>
-            <td style="width:22%"><div class="invoice-word">INVOICE</div></td>
+            <td style="width:36%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>
+            <td style="width:28%"><div class="invoice-word">INVOICE</div></td>
             <td style="width:36%">
               <table class="metabox">
                 <tr><td class="lbl">DATE:</td><td>${esc(dateStr)}</td></tr>
@@ -654,7 +657,7 @@ function printInvoice(order, customer, printSequence) {
         </td></tr>
         <tr class="colhdr">
           <th class="c-item">ITEM #</th><th class="c-num">CS</th><th class="c-num">EACH</th>
-          <th class="c-desc">DESCRIPTION</th><th class="c-upc">UPC</th><th class="c-price">PRICE</th><th class="c-total">TOTAL($)</th>
+          <th class="c-desc">DESCRIPTION</th><th class="c-spacer"></th><th class="c-upc">UPC</th><th class="c-price">PRICE</th><th class="c-total">TOTAL($)</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
