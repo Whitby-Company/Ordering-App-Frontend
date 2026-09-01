@@ -559,7 +559,14 @@ function printInvoice(order, customer, printSequence) {
   const poDate = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getFullYear()).slice(2)}`;
   const abbr = (c.abbreviation || '').trim();
   const poNumber = abbr ? `${poDate}-${abbr}` : '';
-  const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+  // Invoice DATE = the order's delivery date (fall back to today if missing).
+  let dateStr;
+  if (order.deliveryDate) {
+    const [dy, dm, dd] = String(order.deliveryDate).split('-').map(Number);
+    dateStr = `${dm}/${dd}/${dy}`;
+  } else {
+    dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+  }
 
   const cityLine = (l1, st, z) => [[l1, st].filter(Boolean).join(', '), z].filter(Boolean).join(' ').trim();
   const billBlock = [c.billToLine1, c.billToLine2, cityLine(c.billToCity, c.billToState, c.billToZip)].filter(Boolean).map(esc).join('<br>');
