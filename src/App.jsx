@@ -596,7 +596,7 @@ function printInvoice(order, customer, printSequence) {
     <title>Invoice ${invoiceNumberFor(order)}</title>
     <style>
       * { box-sizing: border-box; }
-      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 26px 30px; font-size: 12px; }
+      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 26px 30px 170px; font-size: 12px; }
       .printBtn { display: inline-block; margin-bottom: 14px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }
       table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
       .hdr-top { width: 100%; border-collapse: collapse; }
@@ -604,7 +604,6 @@ function printInvoice(order, customer, printSequence) {
       .company { font-size: 27px; font-weight: bold; line-height: 1.08; white-space: nowrap; }
       .company small { display: block; font-size: 12px; font-weight: normal; white-space: nowrap; }
       .invoice-word { font-size: 30px; font-weight: bold; text-align: center; padding-top: 20px; }
-      /* Date / Invoice # each in their own box; terms below, unboxed. */
       .metabox { border-collapse: collapse; margin-left: auto; }
       .metabox td { padding: 3px 6px; font-size: 14px; }
       .metabox td.lbl { text-align: right; font-weight: bold; padding-right: 10px; white-space: nowrap; }
@@ -621,23 +620,35 @@ function printInvoice(order, customer, printSequence) {
       thead .colhdr th.r { text-align: right; }
       thead .colhdr th.ctr { text-align: center; }
       tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }
+      tr { page-break-inside: avoid; }
       td.c-item { white-space: nowrap; }
       td.c-cs, td.c-each { text-align: center; }
       td.c-upc { text-align: center; font-size: 11px; }
       td.c-upc .barcode svg { display: block; margin: 0 auto; height: 30px; width: auto; max-width: 100%; }
       td.c-upc .barcode + .barcode { margin-top: 2px; }
       td.c-price, td.c-total { text-align: right; white-space: nowrap; }
-      .totals { width: 100%; margin-top: 30px; }
+      /* Totals footer, pinned to the bottom of every printed page. */
+      .footer { position: fixed; left: 30px; right: 30px; bottom: 24px; }
+      .totals { width: 100%; }
       .totals td { vertical-align: bottom; }
-      .totals .left { font-size: 14px; line-height: 2.0; }
+      .totals .left { font-size: 14px; line-height: 1.9; }
       .totals .right table { border-collapse: collapse; margin-left: auto; }
-      .totals .right td { padding: 6px 12px; font-size: 15px; }
+      .totals .right td { padding: 4px 12px; font-size: 15px; }
       .totals .right td.lbl { text-align: center; }
       .totals .right td.amt { text-align: right; white-space: nowrap; }
       .totals .right tr.grand td { font-weight: bold; }
-      .sigrow { width: 100%; margin-top: 40px; }
+      .pnum { text-align: right; font-size: 10px; color: #444; font-family: Arial, sans-serif; margin-top: 4px; }
+      /* Signature only at the very end (last page). */
+      .sigrow { width: 100%; margin-top: 30px; }
       .sigrow td { text-align: center; font-size: 11px; color: #000; border-top: 1px solid #000; padding-top: 3px; }
-      @media print { body { padding: 16px 22px; } .no-print { display: none; } thead { display: table-header-group; } .barcode svg { image-rendering: pixelated; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      @media print {
+        body { padding: 16px 22px 160px; }
+        .no-print { display: none; }
+        thead { display: table-header-group; }
+        .footer { left: 22px; right: 22px; bottom: 14px; }
+        .barcode svg { image-rendering: pixelated; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      }
+      @page { size: letter; margin: 0.35in; counter-increment: page; }
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <table class="sheet">
@@ -672,20 +683,35 @@ function printInvoice(order, customer, printSequence) {
       </thead>
       <tbody>${rows}</tbody>
     </table>
-    <table class="totals"><tr>
-      <td class="left">Total Case: ${totalCases}<br>Total Each: ${totalEach}</td>
-      <td class="right">
-        <table>
-          <tr><td class="lbl">Subtotal</td><td class="amt">${money(subtotal)}</td></tr>
-          <tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">${money(tax)}</td></tr>
-          <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">${money(grand)}</td></tr>
-        </table>
-      </td>
-    </tr></table>
     <table class="sigrow"><tr>
       <td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>
       <td style="width:30%">Signature</td><td style="width:20%">Date</td>
     </tr></table>
+    <div class="footer">
+      <table class="totals"><tr>
+        <td class="left">Total Case: ${totalCases}<br>Total Each: ${totalEach}</td>
+        <td class="right"><table>
+          <tr><td class="lbl">Subtotal</td><td class="amt">${money(subtotal)}</td></tr>
+          <tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">${money(tax)}</td></tr>
+          <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">${money(grand)}</td></tr>
+        </table></td>
+      </tr></table>
+      <div class="pnum" id="pnum"></div>
+    </div>
+    <script>
+      (function(){
+        // Estimate page count from content height vs. a Letter page's printable height.
+        function updatePages(){
+          var el = document.getElementById('pnum');
+          if(!el) return;
+          var PRINTABLE = 9.3 * 96; // ~9.3in usable height at 96dpi (Letter minus margins)
+          var pages = Math.max(1, Math.ceil(document.body.scrollHeight / PRINTABLE));
+          el.textContent = 'Page 1 of ' + pages;
+        }
+        updatePages();
+        window.addEventListener('beforeprint', updatePages);
+      })();
+    <\/script>
     </body></html>`);
   win.document.close();
   win.focus();
