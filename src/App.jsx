@@ -592,7 +592,7 @@ function printInvoice(order, customer, printSequence) {
       * { box-sizing: border-box; }
       body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 22px 26px; font-size: 12px; }
       .printBtn { display: inline-block; margin-bottom: 14px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }
-      table.sheet { width: 100%; border-collapse: collapse; }
+      table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
       /* The whole header sits in thead so it repeats on every printed page. */
       .hdr-top { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
       .hdr-top td { vertical-align: top; padding: 0; }
@@ -612,11 +612,11 @@ function printInvoice(order, customer, printSequence) {
       .pobox td.val { border: 1px solid #000; padding: 4px 30px 4px 24px; font-size: 15px; font-weight: bold; }
       thead .colhdr th { border-bottom: 1.5px solid #000; border-top: 1px solid #000; text-align: left; font-size: 11px; font-family: Arial, sans-serif; padding: 3px 4px; }
       th.c-price, td.c-price, th.c-total, td.c-total { text-align: right; }
-      td.c-item, th.c-item { white-space: nowrap; width: 1px; padding-right: 16px; text-align: left; }
-      td.c-num, th.c-num { text-align: left; width: 1px; white-space: nowrap; padding-right: 14px; }
-      td.c-desc, th.c-desc { white-space: nowrap; padding-right: 20px; }
-      td.c-spacer, th.c-spacer { width: 100%; }
-      td.c-upc, th.c-upc { width: 1px; }
+      td.c-item, th.c-item { white-space: nowrap; text-align: left; }
+      td.c-num, th.c-num { text-align: left; white-space: nowrap; }
+      td.c-desc, th.c-desc { padding-right: 12px; overflow: hidden; }
+      td.c-upc, th.c-upc { text-align: center; overflow: hidden; }
+      td.c-spacer, th.c-spacer { padding: 0; }
       td.c-upc, th.c-upc { font-size: 10px; text-align: center; white-space: nowrap; }
       td.c-price, td.c-total { white-space: nowrap; }
       tbody td { padding: 7px 4px; font-size: 12.5px; vertical-align: middle; border-bottom: 1px solid #ECEAE1; }
@@ -636,8 +636,13 @@ function printInvoice(order, customer, printSequence) {
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <table class="sheet">
+      <colgroup>
+        <col style="width:9%" /><col style="width:5%" /><col style="width:5%" />
+        <col style="width:40%" /><col style="width:0" /><col style="width:16%" />
+        <col style="width:8%" /><col style="width:11%" />
+      </colgroup>
       <thead>
-        <tr><td>
+        <tr><td colspan="8">
           <table class="hdr-top"><tr>
             <td style="width:36%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>
             <td style="width:28%"><div class="invoice-word">INVOICE</div></td>
