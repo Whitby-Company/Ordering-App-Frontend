@@ -542,9 +542,9 @@ function printInvoice(order, customer, printSequence) {
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const c = customer || {};
   const SALES_TAX_RATE = 0.005; // 0.5%
+  const money = n => (Number(n) || 0).toFixed(2); // no leading "$" — matches template
 
   const ordered = sortLinesForPrint(order.lines, printSequence);
-  // Positive lines first; backorder (qty 0) lines fall to the bottom as $0 rows.
   const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
   const zeros = ordered.filter(l => (Number(l.qty) || 0) === 0);
   const lines = [...positive, ...zeros];
@@ -555,7 +555,6 @@ function printInvoice(order, customer, printSequence) {
   const tax = Math.round(subtotal * SALES_TAX_RATE * 100) / 100;
   const grand = Math.round((subtotal + tax) * 100) / 100;
 
-  // PO # = MMDDYY(today) - abbreviation (same as the TP export).
   const now = new Date();
   const poDate = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getFullYear()).slice(2)}`;
   const abbr = (c.abbreviation || '').trim();
@@ -571,16 +570,16 @@ function printInvoice(order, customer, printSequence) {
     const pack = Number(l.pack) || 1;
     const each = cases * pack;
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
-    const bc = barcodesForCell(l.upc) || esc(l.upc || '');
+    // UPC shown as its number(s), matching the template (not a barcode).
+    const upcText = parseUpcList(l.upc).map(esc).join('<br>');
     return `<tr>
       <td class="c-item">${esc(displayCode(l.id))}</td>
-      <td class="c-num">${cases}</td>
-      <td class="c-num">${each}</td>
+      <td class="c-cs">${cases}</td>
+      <td class="c-each">${each}</td>
       <td class="c-desc">${desc}</td>
-      <td class="c-spacer"></td>
-      <td class="c-upc">${bc}</td>
-      <td class="c-price">${formatMoney(l.price)}</td>
-      <td class="c-total">${formatMoney(lineTotal(l, l.qty))}</td>
+      <td class="c-upc">${upcText}</td>
+      <td class="c-price">${money(l.price)}</td>
+      <td class="c-total">${money(lineTotal(l, l.qty))}</td>
     </tr>`;
   }).join('');
 
@@ -590,79 +589,76 @@ function printInvoice(order, customer, printSequence) {
     <title>Invoice ${invoiceNumberFor(order)}</title>
     <style>
       * { box-sizing: border-box; }
-      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 22px 26px; font-size: 12px; }
+      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 26px 30px; font-size: 12px; }
       .printBtn { display: inline-block; margin-bottom: 14px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }
       table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      /* The whole header sits in thead so it repeats on every printed page. */
-      .hdr-top { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
-      .hdr-top td { vertical-align: top; padding: 0; }
-      .company { font-size: 22px; font-weight: bold; line-height: 1.1; white-space: nowrap; }
-      .company small { display: block; font-size: 11px; font-weight: normal; white-space: nowrap; }
-      .invoice-word { text-align: center; font-size: 26px; font-weight: bold; letter-spacing: 1px; padding-top: 18px; }
+      .hdr-top { width: 100%; border-collapse: collapse; }
+      .hdr-top > tbody > tr > td { vertical-align: top; padding: 0; }
+      .company { font-size: 27px; font-weight: bold; line-height: 1.08; white-space: nowrap; }
+      .company small { display: block; font-size: 12px; font-weight: normal; white-space: nowrap; }
+      .invoice-word { font-size: 30px; font-weight: bold; text-align: center; padding-top: 20px; }
+      /* Date / Invoice # each in their own box; terms below, unboxed. */
       .metabox { border-collapse: collapse; margin-left: auto; }
-      .metabox td { border: 1px solid #000; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
-      .metabox td.lbl { border: none; text-align: right; font-weight: bold; padding-right: 8px; white-space: nowrap; }
-      .metabox td.terms { border: none; }
-      .addrs { width: 100%; margin: 10px 0 6px; }
+      .metabox td { padding: 3px 6px; font-size: 14px; }
+      .metabox td.lbl { text-align: right; font-weight: bold; padding-right: 10px; white-space: nowrap; }
+      .metabox td.boxed { border: 1px solid #000; text-align: center; min-width: 92px; }
+      .addrs { width: 100%; margin: 20px 0 0; }
       .addrs td { vertical-align: top; width: 50%; padding: 0; }
-      .addr-lbl { font-weight: bold; font-size: 11px; font-family: Arial, sans-serif; }
-      .pobox { margin: 8px 0 6px; }
+      .addr-lbl { font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; margin-bottom: 4px; }
+      .addr-body { font-size: 13px; line-height: 1.4; }
+      .pobox { margin: 24px 0 6px; }
       .pobox table { border-collapse: collapse; }
-      .pobox td.lbl { font-weight: bold; padding-right: 10px; }
-      .pobox td.val { border: 1px solid #000; padding: 4px 30px 4px 24px; font-size: 15px; font-weight: bold; }
-      thead .colhdr th { border-bottom: 1.5px solid #000; border-top: 1px solid #000; text-align: left; font-size: 11px; font-family: Arial, sans-serif; padding: 3px 4px; }
-      th.c-price, td.c-price, th.c-total, td.c-total { text-align: right; }
-      td.c-item, th.c-item { white-space: nowrap; text-align: left; }
-      td.c-num, th.c-num { text-align: left; white-space: nowrap; }
-      td.c-desc, th.c-desc { padding-right: 12px; overflow: hidden; }
-      td.c-upc, th.c-upc { text-align: center; overflow: hidden; }
-      td.c-spacer, th.c-spacer { padding: 0; }
-      td.c-upc, th.c-upc { font-size: 10px; text-align: center; white-space: nowrap; }
-      td.c-price, td.c-total { white-space: nowrap; }
-      tbody td { padding: 7px 4px; font-size: 12.5px; vertical-align: middle; border-bottom: 1px solid #ECEAE1; }
-      tbody tr:last-child td { border-bottom: none; }
-      .c-upc .barcode svg { display: block; margin: 0 auto; height: 26px; }
-      .c-upc .barcode + .barcode { margin-top: 2px; }
-      .totals { width: 100%; margin-top: 34px; }
+      .pobox td.lbl { font-weight: bold; padding-right: 12px; font-size: 15px; }
+      .pobox td.val { border: 1px solid #000; padding: 6px 60px; font-size: 17px; font-weight: bold; text-align: center; }
+      thead .colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }
+      thead .colhdr th.r { text-align: right; }
+      thead .colhdr th.ctr { text-align: center; }
+      tbody td { padding: 1.5px 4px; font-size: 12.5px; vertical-align: top; line-height: 1.25; }
+      td.c-item { white-space: nowrap; }
+      td.c-cs, td.c-each { text-align: center; }
+      td.c-upc { text-align: left; font-size: 11px; }
+      td.c-price, td.c-total { text-align: right; white-space: nowrap; }
+      .totals { width: 100%; margin-top: 30px; }
       .totals td { vertical-align: bottom; }
-      .totals .left { font-size: 14px; line-height: 2.1; }
+      .totals .left { font-size: 14px; line-height: 2.0; }
       .totals .right table { border-collapse: collapse; margin-left: auto; }
-      .totals .right td { padding: 5px 10px; font-size: 14px; }
-      .totals .right td.lbl { text-align: right; }
-      .totals .right tr.grand td { font-weight: bold; border-top: 1px solid #000; font-size: 15px; }
-      .sigrow { width: 100%; margin-top: 46px; border-top: 1px solid #000; padding-top: 5px; }
-      .sigrow td { text-align: center; font-size: 10px; font-family: Arial, sans-serif; color: #333; padding-top: 4px; }
-      @media print { body { padding: 12px 16px; } .no-print { display: none; } thead { display: table-header-group; } .barcode svg { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      .totals .right td { padding: 6px 12px; font-size: 15px; }
+      .totals .right td.lbl { text-align: center; }
+      .totals .right td.amt { text-align: right; white-space: nowrap; }
+      .totals .right tr.grand td { font-weight: bold; }
+      .sigrow { width: 100%; margin-top: 40px; }
+      .sigrow td { text-align: center; font-size: 11px; color: #000; border-top: 1px solid #000; padding-top: 3px; }
+      @media print { body { padding: 16px 22px; } .no-print { display: none; } thead { display: table-header-group; } }
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <table class="sheet">
       <colgroup>
-        <col style="width:9%" /><col style="width:5%" /><col style="width:5%" />
-        <col style="width:40%" /><col style="width:0" /><col style="width:16%" />
-        <col style="width:8%" /><col style="width:11%" />
+        <col style="width:9%" /><col style="width:5%" /><col style="width:6%" />
+        <col style="width:39%" /><col style="width:20%" />
+        <col style="width:8%" /><col style="width:13%" />
       </colgroup>
       <thead>
-        <tr><td colspan="8">
+        <tr><td colspan="7">
           <table class="hdr-top"><tr>
-            <td style="width:36%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>
-            <td style="width:28%"><div class="invoice-word">INVOICE</div></td>
+            <td style="width:40%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>
+            <td style="width:24%"><div class="invoice-word">INVOICE</div></td>
             <td style="width:36%">
               <table class="metabox">
-                <tr><td class="lbl">DATE:</td><td>${esc(dateStr)}</td></tr>
-                <tr><td class="lbl">INVOICE #</td><td>${invoiceNumberFor(order)}</td></tr>
-                <tr><td class="lbl">TERMS:</td><td class="terms">1% 10 Net 11</td></tr>
+                <tr><td class="lbl">DATE:</td><td class="boxed">${esc(dateStr)}</td></tr>
+                <tr><td class="lbl">INVOICE #</td><td class="boxed">${invoiceNumberFor(order)}</td></tr>
+                <tr><td class="lbl">TERMS:</td><td>1% 10 Net 11</td></tr>
               </table>
             </td>
           </tr></table>
           <table class="addrs"><tr>
-            <td><div class="addr-lbl">BILL TO:</div>${billBlock || '&nbsp;'}</td>
-            <td><div class="addr-lbl">SHIP TO:</div>${shipBlock || '&nbsp;'}</td>
+            <td><div class="addr-lbl">BILL TO:</div><div class="addr-body">${billBlock || '&nbsp;'}</div></td>
+            <td><div class="addr-lbl">SHIP TO:</div><div class="addr-body">${shipBlock || '&nbsp;'}</div></td>
           </tr></table>
           <div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">${esc(poNumber) || '&nbsp;'}</td></tr></table></div>
         </td></tr>
         <tr class="colhdr">
-          <th class="c-item">ITEM #</th><th class="c-num">CS</th><th class="c-num">EACH</th>
-          <th class="c-desc">DESCRIPTION</th><th class="c-spacer"></th><th class="c-upc">UPC</th><th class="c-price">PRICE</th><th class="c-total">TOTAL($)</th>
+          <th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th>
+          <th>DESCRIPTION</th><th>UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -671,9 +667,9 @@ function printInvoice(order, customer, printSequence) {
       <td class="left">Total Case: ${totalCases}<br>Total Each: ${totalEach}</td>
       <td class="right">
         <table>
-          <tr><td class="lbl">Subtotal</td><td>${formatMoney(subtotal)}</td></tr>
-          <tr><td class="lbl">Sales Tax (0.5%)</td><td>${formatMoney(tax)}</td></tr>
-          <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td>${formatMoney(grand)}</td></tr>
+          <tr><td class="lbl">Subtotal</td><td class="amt">${money(subtotal)}</td></tr>
+          <tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">${money(tax)}</td></tr>
+          <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">${money(grand)}</td></tr>
         </table>
       </td>
     </tr></table>
