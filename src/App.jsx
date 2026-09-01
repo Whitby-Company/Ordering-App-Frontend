@@ -3950,6 +3950,20 @@ function OfficeCustomers({ customers, onRefresh }) {
       setSeeding(false);
     }
   }
+
+  async function handleApplyAddresses() {
+    setSeeding(true);
+    setShipToSeedMsg('');
+    try {
+      const r = await apiPost('/customers/apply-addresses', {});
+      await onRefresh();
+      setShipToSeedMsg(`Applied QuickBooks bill-to & ship-to to ${r.matchedCount} customer${r.matchedCount === 1 ? '' : 's'}.`);
+    } catch (err) {
+      setShipToSeedMsg(err.message || 'Could not apply addresses.');
+    } finally {
+      setSeeding(false);
+    }
+  }
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return customers.filter(c => {
@@ -3988,6 +4002,9 @@ function OfficeCustomers({ customers, onRefresh }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 12px', flexWrap: 'wrap' }}>
           <button style={officeStyles.smallBtn} onClick={handleReseedShipTo} disabled={seeding} title="Fill in the built-in store ship-to addresses for any matching customers that don't have one yet">
             {seeding ? 'Loading…' : 'Load store ship-to addresses'}
+          </button>
+          <button style={officeStyles.smallBtn} onClick={handleApplyAddresses} disabled={seeding} title="Apply the bill-to and ship-to addresses exported from QuickBooks to all matching customers (overwrites)">
+            {seeding ? 'Applying…' : 'Apply QuickBooks addresses'}
           </button>
           {shipToSeedMsg && <span style={{ fontSize: 12.5, color: '#5B6058' }}>{shipToSeedMsg}</span>}
         </div>
