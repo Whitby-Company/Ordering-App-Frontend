@@ -530,9 +530,153 @@ function printOrder(order, printSequence, options = {}) {
   win.document.close();
   win.focus();
 }
+
+// Printed-invoice number: the order number offset so numbering starts at 30000.
+const INVOICE_BASE = 30000;
+function invoiceNumberFor(order) { return INVOICE_BASE + Number(order.id || 0); }
+
+// Build a printable invoice that matches the Hawken Group template, using the
+// same data as the TP export (customer bill-to/ship-to, PO, line items with
+// cases/eaches/price, UPCs, totals, 0.5% sales tax).
+function printInvoice(order, customer, printSequence) {
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const c = customer || {};
+  const SALES_TAX_RATE = 0.005; // 0.5%
+
+  const ordered = sortLinesForPrint(order.lines, printSequence);
+  // Positive lines first; backorder (qty 0) lines fall to the bottom as $0 rows.
+  const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
+  const zeros = ordered.filter(l => (Number(l.qty) || 0) === 0);
+  const lines = [...positive, ...zeros];
+
+  const totalCases = positive.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  const totalEach = positive.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+  const subtotal = positive.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+  const tax = Math.round(subtotal * SALES_TAX_RATE * 100) / 100;
+  const grand = Math.round((subtotal + tax) * 100) / 100;
+
+  // PO # = MMDDYY(today) - abbreviation (same as the TP export).
+  const now = new Date();
+  const poDate = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getFullYear()).slice(2)}`;
+  const abbr = (c.abbreviation || '').trim();
+  const poNumber = abbr ? `${poDate}-${abbr}` : '';
+  const dateStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+
+  const cityLine = (l1, st, z) => [[l1, st].filter(Boolean).join(', '), z].filter(Boolean).join(' ').trim();
+  const billBlock = [c.billToLine1, c.billToLine2, cityLine(c.billToCity, c.billToState, c.billToZip)].filter(Boolean).map(esc).join('<br>');
+  const shipBlock = [c.shipToLine1, c.shipToLine2, cityLine(c.shipToCity, c.shipToState, c.shipToZip)].filter(Boolean).map(esc).join('<br>');
+
+  const rows = lines.map(l => {
+    const cases = Number(l.qty) || 0;
+    const pack = Number(l.pack) || 1;
+    const each = cases * pack;
+    const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
+    return `<tr>
+      <td class="c-item">${esc(displayCode(l.id))}</td>
+      <td class="c-num">${cases}</td>
+      <td class="c-num">${each}</td>
+      <td class="c-desc">${desc}</td>
+      <td class="c-upc">${esc(l.upc || '')}</td>
+      <td class="c-price">${formatMoney(l.price)}</td>
+      <td class="c-total">${formatMoney(lineTotal(l, l.qty))}</td>
+    </tr>`;
+  }).join('');
+
+  const win = window.open('', '_blank', 'width=850,height=1000');
+  if (!win) return;
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8" />
+    <title>Invoice ${invoiceNumberFor(order)}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 22px 26px; font-size: 12px; }
+      .printBtn { display: inline-block; margin-bottom: 14px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }
+      table.sheet { width: 100%; border-collapse: collapse; }
+      /* The whole header sits in thead so it repeats on every printed page. */
+      .hdr-top { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+      .hdr-top td { vertical-align: top; padding: 0; }
+      .company { font-size: 24px; font-weight: bold; line-height: 1.05; }
+      .company small { display: block; font-size: 11px; font-weight: normal; }
+      .invoice-word { text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 1px; padding-top: 22px; }
+      .metabox { border-collapse: collapse; margin-left: auto; }
+      .metabox td { border: 1px solid #000; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
+      .metabox td.lbl { border: none; text-align: right; font-weight: bold; padding-right: 8px; white-space: nowrap; }
+      .metabox td.terms { border: none; }
+      .addrs { width: 100%; margin: 10px 0 6px; }
+      .addrs td { vertical-align: top; width: 50%; padding: 0; }
+      .addr-lbl { font-weight: bold; font-size: 11px; font-family: Arial, sans-serif; }
+      .pobox { margin: 8px 0 6px; }
+      .pobox table { border-collapse: collapse; }
+      .pobox td.lbl { font-weight: bold; padding-right: 10px; }
+      .pobox td.val { border: 1px solid #000; padding: 4px 30px 4px 24px; font-size: 15px; font-weight: bold; }
+      thead .colhdr th { border-bottom: 1.5px solid #000; border-top: 1px solid #000; text-align: left; font-size: 11px; font-family: Arial, sans-serif; padding: 3px 4px; }
+      th.c-num, td.c-num, th.c-price, td.c-price, th.c-total, td.c-total { text-align: right; }
+      td.c-item { white-space: nowrap; }
+      td.c-num { text-align: center; width: 34px; }
+      th.c-num { text-align: center; }
+      td.c-upc, th.c-upc { font-size: 10px; text-align: center; white-space: nowrap; }
+      td.c-price, td.c-total { white-space: nowrap; }
+      tbody td { padding: 1.5px 4px; font-size: 12px; }
+      .totals { width: 100%; margin-top: 18px; }
+      .totals td { vertical-align: bottom; }
+      .totals .left { font-size: 13px; line-height: 1.9; }
+      .totals .right table { border-collapse: collapse; margin-left: auto; }
+      .totals .right td { padding: 3px 8px; font-size: 13px; }
+      .totals .right td.lbl { text-align: right; }
+      .totals .right tr.grand td { font-weight: bold; border-top: 1px solid #000; }
+      .sigrow { width: 100%; margin-top: 26px; border-top: 1px solid #000; padding-top: 4px; }
+      .sigrow td { text-align: center; font-size: 10px; font-family: Arial, sans-serif; color: #333; }
+      @media print { body { padding: 12px 16px; } .no-print { display: none; } thead { display: table-header-group; } }
+    </style></head><body>
+    <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
+    <table class="sheet">
+      <thead>
+        <tr><td>
+          <table class="hdr-top"><tr>
+            <td style="width:42%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>
+            <td style="width:22%"><div class="invoice-word">INVOICE</div></td>
+            <td style="width:36%">
+              <table class="metabox">
+                <tr><td class="lbl">DATE:</td><td>${esc(dateStr)}</td></tr>
+                <tr><td class="lbl">INVOICE #</td><td>${invoiceNumberFor(order)}</td></tr>
+                <tr><td class="lbl">TERMS:</td><td class="terms">1% 10 Net 11</td></tr>
+              </table>
+            </td>
+          </tr></table>
+          <table class="addrs"><tr>
+            <td><div class="addr-lbl">BILL TO:</div>${billBlock || '&nbsp;'}</td>
+            <td><div class="addr-lbl">SHIP TO:</div>${shipBlock || '&nbsp;'}</td>
+          </tr></table>
+          <div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">${esc(poNumber) || '&nbsp;'}</td></tr></table></div>
+        </td></tr>
+        <tr class="colhdr">
+          <th class="c-item">ITEM #</th><th class="c-num">CS</th><th class="c-num">EACH</th>
+          <th>DESCRIPTION</th><th class="c-upc">UPC</th><th class="c-price">PRICE</th><th class="c-total">TOTAL($)</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <table class="totals"><tr>
+      <td class="left">Total Case: ${totalCases}<br>Total Each: ${totalEach}</td>
+      <td class="right">
+        <table>
+          <tr><td class="lbl">Subtotal</td><td>${formatMoney(subtotal)}</td></tr>
+          <tr><td class="lbl">Sales Tax (0.5%)</td><td>${formatMoney(tax)}</td></tr>
+          <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td>${formatMoney(grand)}</td></tr>
+        </table>
+      </td>
+    </tr></table>
+    <table class="sigrow"><tr>
+      <td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>
+      <td style="width:30%">Signature</td><td style="width:20%">Date</td>
+    </tr></table>
+    </body></html>`);
+  win.document.close();
+  win.focus();
+}
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
 }
+
 // Item numbers are stored brand-prefixed (e.g. "Ritter Sport:2146") because
 // that's the real DB key used for API calls, matching, and cart ops. For
 // DISPLAY ONLY, strip the brand prefix so users just see the bare code
@@ -2684,6 +2828,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                           <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print w/UPC</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence)} title="Print an invoice for this order">Invoice</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
                           </button>{' '}
@@ -3917,7 +4062,15 @@ function OfficeCustomers({ customers, onRefresh }) {
               {editMode && shipOpen && (
                 <tr>
                   <td colSpan={6} style={officeStyles.shipToCell}>
-                    <div style={officeStyles.shipToTitle}>Ship-to address for {c.name}</div>
+                    <div style={officeStyles.shipToTitle}>Bill-to address (invoice) for {c.name}</div>
+                    <div style={officeStyles.shipToGrid}>
+                      <CustomerTextField customer={c} field="billToLine1" value={c.billToLine1} placeholder="Bill-to line 1 (company)" width={220} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="billToLine2" value={c.billToLine2} placeholder="Bill-to line 2 (street)" width={220} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="billToCity" value={c.billToCity} placeholder="City" width={140} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="billToState" value={c.billToState} placeholder="State" width={70} onRefresh={onRefresh} />
+                      <CustomerTextField customer={c} field="billToZip" value={c.billToZip} placeholder="Zip" width={90} onRefresh={onRefresh} />
+                    </div>
+                    <div style={{ ...officeStyles.shipToTitle, marginTop: 12 }}>Ship-to address for {c.name}</div>
                     <div style={officeStyles.shipToGrid}>
                       <CustomerTextField customer={c} field="shipToLine1" value={c.shipToLine1} placeholder="Line 1 (store name)" width={220} onRefresh={onRefresh} />
                       <CustomerTextField customer={c} field="shipToLine2" value={c.shipToLine2} placeholder="Line 2 (street)" width={220} onRefresh={onRefresh} />
