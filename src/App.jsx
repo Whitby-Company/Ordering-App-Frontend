@@ -571,12 +571,13 @@ function printInvoice(order, customer, printSequence) {
     const pack = Number(l.pack) || 1;
     const each = cases * pack;
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
+    const bc = barcodesForCell(l.upc) || esc(l.upc || '');
     return `<tr>
       <td class="c-item">${esc(displayCode(l.id))}</td>
       <td class="c-num">${cases}</td>
       <td class="c-num">${each}</td>
       <td class="c-desc">${desc}</td>
-      <td class="c-upc">${esc(l.upc || '')}</td>
+      <td class="c-upc">${bc}</td>
       <td class="c-price">${formatMoney(l.price)}</td>
       <td class="c-total">${formatMoney(lineTotal(l, l.qty))}</td>
     </tr>`;
@@ -615,17 +616,20 @@ function printInvoice(order, customer, printSequence) {
       th.c-num { text-align: center; }
       td.c-upc, th.c-upc { font-size: 10px; text-align: center; white-space: nowrap; }
       td.c-price, td.c-total { white-space: nowrap; }
-      tbody td { padding: 1.5px 4px; font-size: 12px; }
-      .totals { width: 100%; margin-top: 18px; }
+      tbody td { padding: 7px 4px; font-size: 12.5px; vertical-align: middle; border-bottom: 1px solid #ECEAE1; }
+      tbody tr:last-child td { border-bottom: none; }
+      .c-upc .barcode svg { display: block; margin: 0 auto; height: 26px; }
+      .c-upc .barcode + .barcode { margin-top: 2px; }
+      .totals { width: 100%; margin-top: 34px; }
       .totals td { vertical-align: bottom; }
-      .totals .left { font-size: 13px; line-height: 1.9; }
+      .totals .left { font-size: 14px; line-height: 2.1; }
       .totals .right table { border-collapse: collapse; margin-left: auto; }
-      .totals .right td { padding: 3px 8px; font-size: 13px; }
+      .totals .right td { padding: 5px 10px; font-size: 14px; }
       .totals .right td.lbl { text-align: right; }
-      .totals .right tr.grand td { font-weight: bold; border-top: 1px solid #000; }
-      .sigrow { width: 100%; margin-top: 26px; border-top: 1px solid #000; padding-top: 4px; }
-      .sigrow td { text-align: center; font-size: 10px; font-family: Arial, sans-serif; color: #333; }
-      @media print { body { padding: 12px 16px; } .no-print { display: none; } thead { display: table-header-group; } }
+      .totals .right tr.grand td { font-weight: bold; border-top: 1px solid #000; font-size: 15px; }
+      .sigrow { width: 100%; margin-top: 46px; border-top: 1px solid #000; padding-top: 5px; }
+      .sigrow td { text-align: center; font-size: 10px; font-family: Arial, sans-serif; color: #333; padding-top: 4px; }
+      @media print { body { padding: 12px 16px; } .no-print { display: none; } thead { display: table-header-group; } .barcode svg { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <table class="sheet">
