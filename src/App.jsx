@@ -543,6 +543,9 @@ function printInvoice(order, customer, printSequence) {
   const c = customer || {};
   const SALES_TAX_RATE = 0.005; // 0.5%
   const money = n => (Number(n) || 0).toFixed(2);
+  // Totals show a "$" and thousands separators, matching the reference; line
+  // items stay plain (no $).
+  const moneyD = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const ordered = sortLinesForPrint(order.lines, printSequence);
   const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
@@ -593,9 +596,9 @@ function printInvoice(order, customer, printSequence) {
     '<td style="width:40%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>' +
     '<td style="width:24%"><div class="invoice-word">INVOICE</div></td>' +
     '<td style="width:36%"><table class="metabox">' +
-    '<tr><td class="lbl">DATE:</td><td class="boxed">' + (esc(dateStr) || '&nbsp;') + '</td></tr>' +
-    '<tr><td class="lbl">INVOICE #</td><td class="boxed">' + invoiceNumberFor(order) + '</td></tr>' +
-    '<tr><td class="lbl">TERMS:</td><td>1% 10 Net 11</td></tr></table></td></tr></table>' +
+    '<tr class="boxrow"><td class="lbl">DATE:</td><td class="val">' + (esc(dateStr) || '&nbsp;') + '</td></tr>' +
+    '<tr class="boxrow"><td class="lbl">INVOICE #</td><td class="val">' + invoiceNumberFor(order) + '</td></tr>' +
+    '<tr class="termsrow"><td class="lbl">TERMS:</td><td class="val">1% 10 Net 11</td></tr></table></td></tr></table>' +
     '<table class="addrs"><tr>' +
     '<td><div class="addr-lbl">BILL TO:</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></td>' +
     '<td><div class="addr-lbl">SHIP TO:</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></td></tr></table>' +
@@ -605,9 +608,9 @@ function printInvoice(order, customer, printSequence) {
     '<table class="totals"><tr>' +
     '<td class="tf-left">Total Case: ' + totalCases + '<br>Total Each: ' + totalEach + '</td>' +
     '<td class="tf-right"><table>' +
-    '<tr><td class="lbl">Subtotal</td><td class="amt">' + money(subtotal) + '</td></tr>' +
-    '<tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">' + money(tax) + '</td></tr>' +
-    '<tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">' + money(grand) + '</td></tr>' +
+    '<tr><td class="lbl">Subtotal</td><td class="amt">' + moneyD(subtotal) + '</td></tr>' +
+    '<tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">' + moneyD(tax) + '</td></tr>' +
+    '<tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">' + moneyD(grand) + '</td></tr>' +
     '</table></td></tr></table>';
 
   const SIG =
@@ -630,11 +633,13 @@ function printInvoice(order, customer, printSequence) {
     '.hdr-top > tbody > tr > td { vertical-align: top; padding: 0; }' +
     '.company { font-size: 27px; font-weight: bold; line-height: 1.08; white-space: nowrap; }' +
     '.company small { display: block; font-size: 12px; font-weight: normal; white-space: nowrap; }' +
-    '.invoice-word { font-size: 30px; font-weight: bold; text-align: center; padding-top: 20px; }' +
+    '.invoice-word { font-size: 30px; font-weight: bold; text-align: center; padding-top: 36px; }' +
     '.metabox { border-collapse: collapse; margin-left: auto; }' +
-    '.metabox td { padding: 3px 6px; font-size: 14px; }' +
-    '.metabox td.lbl { text-align: right; font-weight: bold; padding-right: 10px; white-space: nowrap; }' +
-    '.metabox td.boxed { border: 1px solid #000; text-align: center; min-width: 92px; }' +
+    '.metabox tr.boxrow td { border: 1px solid #000; padding: 4px 10px; font-size: 14px; }' +
+    '.metabox tr.boxrow td.lbl { font-weight: bold; text-align: right; }' +
+    '.metabox tr.boxrow td.val { text-align: center; min-width: 90px; }' +
+    '.metabox tr.termsrow td { border: none; padding: 3px 10px; font-size: 14px; }' +
+    '.metabox tr.termsrow td.lbl { font-weight: bold; text-align: right; }' +
     '.addrs { width: 100%; margin: 18px 0 0; }' +
     '.addrs td { vertical-align: top; width: 50%; padding: 0; }' +
     ".addr-lbl { font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; margin-bottom: 4px; }" +
@@ -648,9 +653,10 @@ function printInvoice(order, customer, printSequence) {
     'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }' +
     'td.c-item { white-space: nowrap; } td.c-cs, td.c-each { text-align: center; }' +
     'td.c-upc { text-align: center; font-size: 11px; }' +
-    'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 30px; width: auto; max-width: 100%; }' +
+    'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 26px; width: auto; max-width: 100%; }' +
     'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
     'td.c-price, td.c-total { text-align: right; white-space: nowrap; }' +
+    '.contd { text-align: center; font-size: 12px; font-weight: bold; margin-bottom: 6px; }' +
     '.pg-footer { position: absolute; left: 0.4in; right: 0.4in; bottom: 0.3in; }' +
     '.totals { width: 100%; }' +
     '.tf-left { font-size: 14px; line-height: 1.9; vertical-align: bottom; }' +
@@ -676,14 +682,15 @@ function printInvoice(order, customer, printSequence) {
     'function newPage(){var pg=document.createElement("div");pg.className="page";' +
     'pg.innerHTML=\'<div class="pg-head">\'+HDR+\'</div><table class="sheet">\'+COLG+\'<thead>\'+COLH+\'</thead><tbody class="rowbody"></tbody></table><div class="pg-footer"></div>\';' +
     'pagesEl.appendChild(pg);return pg;}' +
-    'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
+    'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=\'<div class="contd">Continued on next page</div>\'+TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
     'var footerH=probe.querySelector(".pg-footer").offsetHeight;pagesEl.removeChild(probe);' +
     'var RESERVE=footerH+16;' +
     'var pg=newPage(),tbody=pg.querySelector("tbody.rowbody");' +
     'function over(){var tb=pg.querySelector("table.sheet").getBoundingClientRect(),pr=pg.getBoundingClientRect();return tb.bottom>(pr.bottom-(0.3*96)-RESERVE);}' +
     'for(var i=0;i<srcRows.length;i++){tbody.appendChild(srcRows[i]);if(over()&&tbody.children.length>1){tbody.removeChild(srcRows[i]);pg=newPage();tbody=pg.querySelector("tbody.rowbody");tbody.appendChild(srcRows[i]);}}' +
     'var all=pagesEl.querySelectorAll(".page"),N=all.length;' +
-    'for(var p=0;p<N;p++){all[p].querySelector(".pg-footer").innerHTML=TOT+SIG+\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';}' +
+    'for(var p=0;p<N;p++){var cont=(p<N-1)?\'<div class="contd">Continued on next page \\u25B6</div>\':"";' +
+    'all[p].querySelector(".pg-footer").innerHTML=cont+TOT+SIG+\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';}' +
     '})();';
 
   win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>Invoice ' + invoiceNumberFor(order) + '</title><style>' + style + '</style></head><body>' +
