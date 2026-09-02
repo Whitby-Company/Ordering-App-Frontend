@@ -1,8 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <g fill="none" stroke="#14181F" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
-    <ellipse cx="32" cy="32" rx="12" ry="10"/>
-    <path d="M20 32 L12 25 Q11 32 12 39 Z"/>
-    <path d="M44 32 L52 25 Q53 32 52 39 Z"/>
-    <path d="M26 33 Q30 26 33 32 T39 31"/>
-  </g>
+  <path d="
+    M24 52
+    Q17 51 15 43
+    Q13.5 35 21 34
+    Q16 25 15 15
+    Q14.5 8 20 8
+    Q25 8.5 25 15
+    Q26 24 30 30
+    Q30.5 26 35 26
+    Q39.5 26 40 32
+    L41 37
+    Q48 33 56 33
+    Q63 33 62 40
+    Q61 46 53 45
+    L43 44
+    Q42 51 33 52
+    Z"
+    fill="#14181F"/>
 </svg>
