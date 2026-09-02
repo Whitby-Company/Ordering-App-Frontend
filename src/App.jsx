@@ -635,7 +635,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     '<td style="width:30%">Signature</td><td style="width:20%">Date</td></tr></table>';
 
   const COLG = '<colgroup><col style="width:9%"/><col style="width:5%"/><col style="width:6%"/><col style="width:39%"/><col style="width:20%"/><col style="width:8%"/><col style="width:13%"/></colgroup>';
-  const COLH = '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th><th>DESCRIPTION</th><th>UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>';
+  const COLH = '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th><th>DESCRIPTION</th><th class="ctr">UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>';
 
   const win = window.open('', '_blank', 'width=880,height=1000');
   if (!win) return;
