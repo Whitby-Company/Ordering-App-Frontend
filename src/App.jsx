@@ -559,7 +559,6 @@ function printInvoice(order, customer, printSequence) {
   const poDate = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getFullYear()).slice(2)}`;
   const abbr = (c.abbreviation || '').trim();
   const poNumber = abbr ? `${poDate}-${abbr}` : '';
-  // Invoice DATE = the order's delivery date (fall back to today if missing).
   let dateStr;
   if (order.deliveryDate) {
     const [dy, dm, dd] = String(order.deliveryDate).split('-').map(Number);
@@ -578,125 +577,120 @@ function printInvoice(order, customer, printSequence) {
     const each = cases * pack;
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
     const upcCell = barcodesForCell(l.upc) || parseUpcList(l.upc).map(esc).join('<br>');
-    return `<tr>
-      <td class="c-item">${esc(displayCode(l.id))}</td>
-      <td class="c-cs">${cases}</td>
-      <td class="c-each">${each}</td>
-      <td class="c-desc">${desc}</td>
-      <td class="c-upc">${upcCell}</td>
-      <td class="c-price">${money(l.price)}</td>
-      <td class="c-total">${money(lineTotal(l, l.qty))}</td>
-    </tr>`;
+    return '<tr>' +
+      '<td class="c-item">' + esc(displayCode(l.id)) + '</td>' +
+      '<td class="c-cs">' + cases + '</td>' +
+      '<td class="c-each">' + each + '</td>' +
+      '<td class="c-desc">' + desc + '</td>' +
+      '<td class="c-upc">' + upcCell + '</td>' +
+      '<td class="c-price">' + money(l.price) + '</td>' +
+      '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
+    '</tr>';
   }).join('');
 
-  const win = window.open('', '_blank', 'width=850,height=1000');
+  const HDR =
+    '<table class="hdr-top"><tr>' +
+    '<td style="width:40%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>' +
+    '<td style="width:24%"><div class="invoice-word">INVOICE</div></td>' +
+    '<td style="width:36%"><table class="metabox">' +
+    '<tr><td class="lbl">DATE:</td><td class="boxed">' + (esc(dateStr) || '&nbsp;') + '</td></tr>' +
+    '<tr><td class="lbl">INVOICE #</td><td class="boxed">' + invoiceNumberFor(order) + '</td></tr>' +
+    '<tr><td class="lbl">TERMS:</td><td>1% 10 Net 11</td></tr></table></td></tr></table>' +
+    '<table class="addrs"><tr>' +
+    '<td><div class="addr-lbl">BILL TO:</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></td>' +
+    '<td><div class="addr-lbl">SHIP TO:</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></td></tr></table>' +
+    '<div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">' + (esc(poNumber) || '&nbsp;') + '</td></tr></table></div>';
+
+  const TOT =
+    '<table class="totals"><tr>' +
+    '<td class="tf-left">Total Case: ' + totalCases + '<br>Total Each: ' + totalEach + '</td>' +
+    '<td class="tf-right"><table>' +
+    '<tr><td class="lbl">Subtotal</td><td class="amt">' + money(subtotal) + '</td></tr>' +
+    '<tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">' + money(tax) + '</td></tr>' +
+    '<tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">' + money(grand) + '</td></tr>' +
+    '</table></td></tr></table>';
+
+  const SIG =
+    '<table class="sigrow"><tr><td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>' +
+    '<td style="width:30%">Signature</td><td style="width:20%">Date</td></tr></table>';
+
+  const COLG = '<colgroup><col style="width:9%"/><col style="width:5%"/><col style="width:6%"/><col style="width:39%"/><col style="width:20%"/><col style="width:8%"/><col style="width:13%"/></colgroup>';
+  const COLH = '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th><th>DESCRIPTION</th><th>UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>';
+
+  const win = window.open('', '_blank', 'width=880,height=1000');
   if (!win) return;
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8" />
-    <title>Invoice ${invoiceNumberFor(order)}</title>
-    <style>
-      * { box-sizing: border-box; }
-      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 0; font-size: 12px; }
-      .printBtn { position: fixed; top: 10px; left: 10px; z-index: 20; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }
-      .sheetwrap { padding: 26px 30px 20px; }
-      table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      .hdr-top { width: 100%; border-collapse: collapse; }
-      .hdr-top > tbody > tr > td { vertical-align: top; padding: 0; }
-      .company { font-size: 27px; font-weight: bold; line-height: 1.08; white-space: nowrap; }
-      .company small { display: block; font-size: 12px; font-weight: normal; white-space: nowrap; }
-      .invoice-word { font-size: 30px; font-weight: bold; text-align: center; padding-top: 20px; }
-      .metabox { border-collapse: collapse; margin-left: auto; }
-      .metabox td { padding: 3px 6px; font-size: 14px; }
-      .metabox td.lbl { text-align: right; font-weight: bold; padding-right: 10px; white-space: nowrap; }
-      .metabox td.boxed { border: 1px solid #000; text-align: center; min-width: 92px; }
-      .addrs { width: 100%; margin: 20px 0 0; }
-      .addrs td { vertical-align: top; width: 50%; padding: 0; }
-      .addr-lbl { font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; margin-bottom: 4px; }
-      .addr-body { font-size: 13px; line-height: 1.4; }
-      .pobox { margin: 24px 0 6px; }
-      .pobox table { border-collapse: collapse; }
-      .pobox td.lbl { font-weight: bold; padding-right: 12px; font-size: 15px; }
-      .pobox td.val { border: 1px solid #000; padding: 6px 60px; font-size: 17px; font-weight: bold; text-align: center; }
-      thead .colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }
-      thead .colhdr th.r { text-align: right; }
-      thead .colhdr th.ctr { text-align: center; }
-      tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }
-      tr { page-break-inside: avoid; }
-      td.c-item { white-space: nowrap; }
-      td.c-cs, td.c-each { text-align: center; }
-      td.c-upc { text-align: center; font-size: 11px; }
-      td.c-upc .barcode svg { display: block; margin: 0 auto; height: 30px; width: auto; max-width: 100%; }
-      td.c-upc .barcode + .barcode { margin-top: 2px; }
-      td.c-price, td.c-total { text-align: right; white-space: nowrap; }
-      /* Totals in tfoot: the browser repeats it at the bottom of every printed page. */
-      tfoot { display: table-footer-group; }
-      tfoot td { padding-top: 16px; vertical-align: bottom; }
-      .tf-left { font-size: 14px; line-height: 1.9; }
-      .tf-right table { border-collapse: collapse; margin-left: auto; }
-      .tf-right td { padding: 4px 12px; font-size: 15px; }
-      .tf-right td.lbl { text-align: center; }
-      .tf-right td.amt { text-align: right; white-space: nowrap; }
-      .tf-right tr.grand td { font-weight: bold; }
-      .sigrow { width: 100%; margin-top: 26px; }
-      .sigrow td { text-align: center; font-size: 11px; color: #000; border-top: 1px solid #000; padding-top: 3px; }
-      @media print {
-        .no-print { display: none; }
-        thead { display: table-header-group; }
-        tfoot { display: table-footer-group; }
-        .barcode svg { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .sheetwrap { padding: 16px 22px; }
-      }
-      @page { size: letter; margin: 0.3in; }
-    </style></head><body>
-    <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
-    <div class="sheetwrap">
-    <table class="sheet">
-      <colgroup>
-        <col style="width:9%" /><col style="width:5%" /><col style="width:6%" />
-        <col style="width:39%" /><col style="width:20%" />
-        <col style="width:8%" /><col style="width:13%" />
-      </colgroup>
-      <thead>
-        <tr><td colspan="7">
-          <table class="hdr-top"><tr>
-            <td style="width:40%"><div class="company">Hawken Group<small>PO Box 8514</small><small>Honolulu, HI 96830</small></div></td>
-            <td style="width:24%"><div class="invoice-word">INVOICE</div></td>
-            <td style="width:36%">
-              <table class="metabox">
-                <tr><td class="lbl">DATE:</td><td class="boxed">${esc(dateStr) || '&nbsp;'}</td></tr>
-                <tr><td class="lbl">INVOICE #</td><td class="boxed">${invoiceNumberFor(order)}</td></tr>
-                <tr><td class="lbl">TERMS:</td><td>1% 10 Net 11</td></tr>
-              </table>
-            </td>
-          </tr></table>
-          <table class="addrs"><tr>
-            <td><div class="addr-lbl">BILL TO:</div><div class="addr-body">${billBlock || '&nbsp;'}</div></td>
-            <td><div class="addr-lbl">SHIP TO:</div><div class="addr-body">${shipBlock || '&nbsp;'}</div></td>
-          </tr></table>
-          <div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">${esc(poNumber) || '&nbsp;'}</td></tr></table></div>
-        </td></tr>
-        <tr class="colhdr">
-          <th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th>
-          <th>DESCRIPTION</th><th>UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th>
-        </tr>
-      </thead>
-      <tfoot>
-        <tr>
-          <td colspan="3" class="tf-left">Total Case: ${totalCases}<br>Total Each: ${totalEach}</td>
-          <td colspan="4" class="tf-right"><table>
-            <tr><td class="lbl">Subtotal</td><td class="amt">${money(subtotal)}</td></tr>
-            <tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">${money(tax)}</td></tr>
-            <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">${money(grand)}</td></tr>
-          </table></td>
-        </tr>
-      </tfoot>
-      <tbody>${rows}</tbody>
-    </table>
-    <table class="sigrow"><tr>
-      <td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>
-      <td style="width:30%">Signature</td><td style="width:20%">Date</td>
-    </tr></table>
-    </div>
-    </body></html>`);
+  const style =
+    '* { box-sizing: border-box; }' +
+    'html, body { margin: 0; padding: 0; }' +
+    "body { font-family: 'Times New Roman', Times, serif; color: #000; font-size: 12px; background: #e9e9e9; }" +
+    '.printBtn { position: fixed; top: 10px; left: 10px; z-index: 20; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }' +
+    '.page { position: relative; width: 8.5in; height: 11in; padding: 0.35in 0.4in; background: #fff; margin: 12px auto; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.25); }' +
+    'table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }' +
+    '.hdr-top { width: 100%; border-collapse: collapse; }' +
+    '.hdr-top > tbody > tr > td { vertical-align: top; padding: 0; }' +
+    '.company { font-size: 27px; font-weight: bold; line-height: 1.08; white-space: nowrap; }' +
+    '.company small { display: block; font-size: 12px; font-weight: normal; white-space: nowrap; }' +
+    '.invoice-word { font-size: 30px; font-weight: bold; text-align: center; padding-top: 20px; }' +
+    '.metabox { border-collapse: collapse; margin-left: auto; }' +
+    '.metabox td { padding: 3px 6px; font-size: 14px; }' +
+    '.metabox td.lbl { text-align: right; font-weight: bold; padding-right: 10px; white-space: nowrap; }' +
+    '.metabox td.boxed { border: 1px solid #000; text-align: center; min-width: 92px; }' +
+    '.addrs { width: 100%; margin: 18px 0 0; }' +
+    '.addrs td { vertical-align: top; width: 50%; padding: 0; }' +
+    ".addr-lbl { font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; margin-bottom: 4px; }" +
+    '.addr-body { font-size: 13px; line-height: 1.4; }' +
+    '.pobox { margin: 20px 0 6px; }' +
+    '.pobox table { border-collapse: collapse; }' +
+    '.pobox td.lbl { font-weight: bold; padding-right: 12px; font-size: 15px; }' +
+    '.pobox td.val { border: 1px solid #000; padding: 6px 60px; font-size: 17px; font-weight: bold; text-align: center; }' +
+    '.colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }' +
+    '.colhdr th.r { text-align: right; } .colhdr th.ctr { text-align: center; }' +
+    'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }' +
+    'td.c-item { white-space: nowrap; } td.c-cs, td.c-each { text-align: center; }' +
+    'td.c-upc { text-align: center; font-size: 11px; }' +
+    'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 30px; width: auto; max-width: 100%; }' +
+    'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
+    'td.c-price, td.c-total { text-align: right; white-space: nowrap; }' +
+    '.pg-footer { position: absolute; left: 0.4in; right: 0.4in; bottom: 0.3in; }' +
+    '.totals { width: 100%; }' +
+    '.tf-left { font-size: 14px; line-height: 1.9; vertical-align: bottom; }' +
+    '.tf-right { vertical-align: bottom; }' +
+    '.tf-right table { border-collapse: collapse; margin-left: auto; }' +
+    '.tf-right td { padding: 4px 12px; font-size: 15px; }' +
+    '.tf-right td.lbl { text-align: center; } .tf-right td.amt { text-align: right; white-space: nowrap; }' +
+    '.tf-right tr.grand td { font-weight: bold; }' +
+    '.sigrow { width: 100%; margin-top: 16px; }' +
+    '.sigrow td { text-align: center; font-size: 11px; border-top: 1px solid #000; padding-top: 3px; }' +
+    '.pnum { text-align: right; font-size: 10px; color: #444; font-family: Arial, sans-serif; margin-top: 6px; }' +
+    '@media print { html, body { background: #fff; } .no-print { display: none; }' +
+    ' .page { margin: 0; box-shadow: none; page-break-after: always; }' +
+    ' .page:last-child { page-break-after: auto; }' +
+    ' .barcode svg { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }' +
+    '@page { size: letter; margin: 0; }';
+
+  const script =
+    '(function(){' +
+    'var HDR=' + JSON.stringify(HDR) + ',TOT=' + JSON.stringify(TOT) + ',SIG=' + JSON.stringify(SIG) + ',COLG=' + JSON.stringify(COLG) + ',COLH=' + JSON.stringify(COLH) + ';' +
+    'var pagesEl=document.getElementById("pages"),tpl=document.getElementById("rowsrc");' +
+    'var srcRows=Array.prototype.slice.call((tpl.content||tpl).querySelectorAll("tr"));' +
+    'function newPage(){var pg=document.createElement("div");pg.className="page";' +
+    'pg.innerHTML=\'<div class="pg-head">\'+HDR+\'</div><table class="sheet">\'+COLG+\'<thead>\'+COLH+\'</thead><tbody class="rowbody"></tbody></table><div class="pg-footer"></div>\';' +
+    'pagesEl.appendChild(pg);return pg;}' +
+    'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
+    'var footerH=probe.querySelector(".pg-footer").offsetHeight;pagesEl.removeChild(probe);' +
+    'var RESERVE=footerH+16;' +
+    'var pg=newPage(),tbody=pg.querySelector("tbody.rowbody");' +
+    'function over(){var tb=pg.querySelector("table.sheet").getBoundingClientRect(),pr=pg.getBoundingClientRect();return tb.bottom>(pr.bottom-(0.3*96)-RESERVE);}' +
+    'for(var i=0;i<srcRows.length;i++){tbody.appendChild(srcRows[i]);if(over()&&tbody.children.length>1){tbody.removeChild(srcRows[i]);pg=newPage();tbody=pg.querySelector("tbody.rowbody");tbody.appendChild(srcRows[i]);}}' +
+    'var all=pagesEl.querySelectorAll(".page"),N=all.length;' +
+    'for(var p=0;p<N;p++){all[p].querySelector(".pg-footer").innerHTML=TOT+SIG+\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';}' +
+    '})();';
+
+  win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>Invoice ' + invoiceNumberFor(order) + '</title><style>' + style + '</style></head><body>' +
+    '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>' +
+    '<div id="pages"></div>' +
+    '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
+    '<script>' + script + '<\/script></body></html>');
   win.document.close();
   win.focus();
 }
