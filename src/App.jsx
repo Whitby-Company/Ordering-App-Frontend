@@ -652,19 +652,19 @@ function printInvoice(order, customer, printSequence, items = []) {
     '.company small { display: block; font-size: 12px; font-weight: normal; white-space: nowrap; }' +
     '.invoice-word { font-size: 30px; font-weight: bold; text-align: center; padding-top: 36px; }' +
     '.metabox { border-collapse: collapse; margin-left: auto; }' +
-    '.metabox tr.boxrow td { border: 1px solid #000; padding: 4px 10px; font-size: 14px; }' +
-    '.metabox tr.boxrow td.lbl { font-weight: bold; text-align: right; }' +
-    '.metabox tr.boxrow td.val { text-align: center; min-width: 90px; }' +
-    '.metabox tr.termsrow td { border: none; padding: 3px 10px; font-size: 14px; }' +
-    '.metabox tr.termsrow td.lbl { font-weight: bold; text-align: right; }' +
+    '.metabox tr.boxrow td { border: 1px solid #000; padding: 5px 14px; font-size: 14px; }' +
+    '.metabox tr.boxrow td.lbl { font-weight: bold; text-align: center; }' +
+    '.metabox tr.boxrow td.val { text-align: center; min-width: 110px; }' +
+    '.metabox tr.termsrow td { border: none; padding: 4px 10px; font-size: 14px; }' +
+    '.metabox tr.termsrow td.lbl { font-weight: bold; text-align: center; }' +
     '.addrs { width: 100%; margin: 18px 0 0; }' +
     '.addrs td { vertical-align: top; width: 50%; padding: 0; }' +
     ".addr-lbl { font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; margin-bottom: 4px; }" +
     '.addr-body { font-size: 13px; line-height: 1.4; }' +
     '.pobox { margin: 20px 0 6px; }' +
     '.pobox table { border-collapse: collapse; }' +
-    '.pobox td.lbl { font-weight: bold; padding-right: 12px; font-size: 15px; }' +
-    '.pobox td.val { border: 1px solid #000; padding: 6px 60px; font-size: 17px; font-weight: bold; text-align: center; }' +
+    '.pobox td.lbl { border: 1px solid #000; font-weight: bold; padding: 8px 18px; font-size: 15px; text-align: center; }' +
+    '.pobox td.val { border: 1px solid #000; padding: 8px 90px; font-size: 17px; font-weight: bold; text-align: center; }' +
     '.colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }' +
     '.colhdr th.r { text-align: right; } .colhdr th.ctr { text-align: center; }' +
     'tbody td { padding: 3px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }' +
