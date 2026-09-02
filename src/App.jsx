@@ -1149,6 +1149,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [brand, setBrand] = useState('All');
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
+  const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
   const [order, setOrder] = useState(isEdit ? editInitLines : (Array.isArray(savedDraft.order) ? savedDraft.order : []));
   const [notes, setNotes] = useState(isEdit ? (editOrder.notes || '') : (savedDraft.notes || ''));
   const [ticketOpen, setTicketOpen] = useState(false);
@@ -1252,11 +1253,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // restrict to their catalog and apply their per-each prices.
   const catalogItems = useMemo(() => {
     if (isEdit || !catalog) return items;
+    // Escape hatch: show every item (still apply the store's price if they have one).
+    if (showAllItems) {
+      return items.map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i));
+    }
     if (catalog.off) return [];
     return items
       .filter(i => catalog.ids.has(i.id))
       .map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i));
-  }, [items, catalog, isEdit]);
+  }, [items, catalog, isEdit, showAllItems]);
 
   const brandList = useMemo(() => Array.from(new Set(catalogItems.map(i => i.brand))), [catalogItems]);
   const brandCounts = useMemo(() => {
@@ -1556,15 +1561,24 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         <button style={styles.gridSizeBtn} onClick={toggleGridSize} title={`Tile size: ${gridSize} (tap to change)`}>
           <GridSizeIcon variant={gridSize} size={16} color="#5B6058" />
         </button>
+        {!isEdit && customerId != null && (
+          <button
+            style={{ ...styles.allItemsChip, ...(showAllItems ? styles.allItemsChipOn : {}) }}
+            onClick={() => setShowAllItems(v => !v)}
+            title={showAllItems ? 'Showing all items — tap to show only this store\u2019s catalog' : 'Show every item, not just this store\u2019s catalog'}
+          >
+            {showAllItems ? 'All items ✓' : 'All items'}
+          </button>
+        )}
       </div>
 
       {!isEdit && customerId == null && (
         <div style={styles.catalogNote}>Pick a customer to see the items they carry.</div>
       )}
-      {!isEdit && customerId != null && catalog && catalog.off && (
-        <div style={styles.catalogNote}>This store has no catalog set up yet — set one up on the desktop (Catalogs tab) before ordering.</div>
+      {!isEdit && customerId != null && catalog && catalog.off && !showAllItems && (
+        <div style={styles.catalogNote}>This store has no catalog set up yet — set one up on the desktop (Catalogs tab), or tap "All items" to browse everything.</div>
       )}
-      {screen === 'brands' && !searching && (customerId != null || isEdit) && !(catalog && catalog.off) && (
+      {screen === 'brands' && !searching && (customerId != null || isEdit) && !(catalog && catalog.off && !showAllItems) && (
         <div style={{ ...styles.brandGrid, gridTemplateColumns: `repeat(auto-fill, minmax(${gridSizeMinWidth(gridSize)}px, 1fr))` }}>
           <button
             style={{ ...styles.brandTile, background: '#3C4132', ...styles.brandTileVariant[gridSize] }}
@@ -4674,6 +4688,8 @@ const styles = {
   clearSearchBtn: { position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: '#EAE8DD', border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
   clearSearchBtnInner: { position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: '#EAE8DD', border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
   gridSizeBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
+  allItemsChip: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, height: 38, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#5B6058', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  allItemsChipOn: { background: '#2B5D50', color: '#F7F8F4', border: '1px solid #2B5D50' },
   brandGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, padding: '8px 16px 20px', flex: 1, minHeight: 0, overflowY: 'auto', alignContent: 'start' },
   brandTile: { border: 'none', borderRadius: 14, padding: '20px 14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, cursor: 'pointer', minHeight: 78 },
   brandTileVariant: {
