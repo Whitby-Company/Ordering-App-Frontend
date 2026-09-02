@@ -4415,6 +4415,7 @@ function OfficeCustomers({ customers, onRefresh }) {
   const [shipToOpenId, setShipToOpenId] = useState(null);
   const [shipToSeedMsg, setShipToSeedMsg] = useState('');
   const [seeding, setSeeding] = useState(false);
+  const [sortBy, setSortBy] = useState('name-asc'); // name-asc | name-desc | active-first | inactive-first
 
   async function handleReseedShipTo() {
     setSeeding(true);
@@ -4446,11 +4447,18 @@ function OfficeCustomers({ customers, onRefresh }) {
   }
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return customers.filter(c => {
+    const list = customers.filter(c => {
       if (!showInactive && !c.active) return false;
       return !q || c.name.toLowerCase().includes(q);
     });
-  }, [customers, query, showInactive]);
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const sorted = [...list];
+    if (sortBy === 'name-asc') sorted.sort(byName);
+    else if (sortBy === 'name-desc') sorted.sort((a, b) => byName(b, a));
+    else if (sortBy === 'active-first') sorted.sort((a, b) => (Number(!!b.active) - Number(!!a.active)) || byName(a, b));
+    else if (sortBy === 'inactive-first') sorted.sort((a, b) => (Number(!!a.active) - Number(!!b.active)) || byName(a, b));
+    return sorted;
+  }, [customers, query, showInactive, sortBy]);
 
   return (
     <div>
@@ -4462,6 +4470,12 @@ function OfficeCustomers({ customers, onRefresh }) {
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        <select style={officeStyles.sortSelect} value={sortBy} onChange={e => setSortBy(e.target.value)} title="Sort customers">
+          <option value="name-asc">Name A–Z</option>
+          <option value="name-desc">Name Z–A</option>
+          <option value="active-first">Active first</option>
+          <option value="inactive-first">Inactive first</option>
+        </select>
         <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
           onClick={() => setEditMode(v => !v)}
