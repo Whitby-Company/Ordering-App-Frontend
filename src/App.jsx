@@ -1226,7 +1226,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     const q = customerQuery.trim().toLowerCase();
     let active = customers.filter(c => c.active !== 0);
     // On mobile, show only "show on mobile" customers unless the rep opted into all.
-    if (!desktop && !showAllCustomers) active = active.filter(c => c.showOnMobile !== false);
+    if (!desktop && !showAllCustomers) active = active.filter(c => !!c.showOnMobile && c.showOnMobile !== 0);
     if (customerDayFilter !== null) active = active.filter(c => c.deliveryDay === customerDayFilter);
     if (q) active = active.filter(c => c.name.toLowerCase().includes(q));
     return active;
@@ -4582,7 +4582,7 @@ function OfficeCustomers({ customers, onRefresh }) {
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <input
                     type="checkbox"
-                    checked={c.showOnMobile !== false}
+                    checked={!!c.showOnMobile && c.showOnMobile !== 0}
                     onChange={async e => { await apiPatch(`/customers/${c.id}`, { showOnMobile: e.target.checked }); await onRefresh(); }}
                     title="Show this customer in the mobile field-rep picker"
                   />
