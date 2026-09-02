@@ -4518,8 +4518,8 @@ function OfficeCustomers({ customers, onRefresh }) {
           {shipToSeedMsg && <span style={{ fontSize: 12.5, color: '#5B6058' }}>{shipToSeedMsg}</span>}
         </div>
       )}
-      <div style={officeStyles.tableCard}>
-        <table style={officeStyles.table}>
+      <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
+        <table style={{ ...officeStyles.table, ...(editMode ? { minWidth: 1000 } : {}) }}>
           <thead><tr>
             <th style={officeStyles.th}>Customer name</th>
             {editMode && <th style={officeStyles.th}>Usual delivery day</th>}
@@ -4662,7 +4662,7 @@ const styles = {
     fontFamily: "'Inter', system-ui, sans-serif",
     background: '#F7F8F4',
     width: '100%',
-    maxWidth: 1280,
+    maxWidth: 1440,
     height: '100vh',
     overflow: 'hidden',
     margin: '0 auto',
