@@ -538,7 +538,7 @@ function invoiceNumberFor(order) { return INVOICE_BASE + Number(order.id || 0); 
 // Build a printable invoice that matches the Hawken Group template, using the
 // same data as the TP export (customer bill-to/ship-to, PO, line items with
 // cases/eaches/price, UPCs, totals, 0.5% sales tax).
-function printInvoice(order, customer, printSequence) {
+function printInvoice(order, customer, printSequence, items = []) {
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const c = customer || {};
   const SALES_TAX_RATE = 0.005; // 0.5%
@@ -574,13 +574,16 @@ function printInvoice(order, customer, printSequence) {
   const billBlock = [c.billToLine1, c.billToLine2, cityLine(c.billToCity, c.billToState, c.billToZip)].filter(Boolean).map(esc).join('<br>');
   const shipBlock = [c.shipToLine1, c.shipToLine2, cityLine(c.shipToCity, c.shipToState, c.shipToZip)].filter(Boolean).map(esc).join('<br>');
 
+  const itemById = {};
+  for (const it of items) itemById[it.id] = it;
+
   const rows = lines.map(l => {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
     const each = cases * pack;
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
     const upcCell = barcodesForCell(l.upc) || parseUpcList(l.upc).map(esc).join('<br>');
-    return '<tr>' +
+    let row = '<tr class="itemrow">' +
       '<td class="c-item">' + esc(displayCode(l.id)) + '</td>' +
       '<td class="c-cs">' + cases + '</td>' +
       '<td class="c-each">' + each + '</td>' +
@@ -589,6 +592,20 @@ function printInvoice(order, customer, printSequence) {
       '<td class="c-price">' + money(l.price) + '</td>' +
       '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
     '</tr>';
+    // Shipper "Contains below" sub-lines (from the item's `contains` list).
+    const contains = (itemById[l.id] && itemById[l.id].contains) || [];
+    if (Array.isArray(contains) && contains.length) {
+      row += '<tr class="containrow"><td></td><td></td><td></td>' +
+        '<td class="c-contains"><div class="contains-lbl">Contains below:</div>' +
+        contains.map(x => {
+          const bc = barcodeSVG(x.upc);
+          const label = (x.qty ? x.qty + 'ea ' : '') + esc(x.name || '');
+          return '<div class="contain-item"><span class="contain-name">' + label + '</span>' +
+                 '<span class="contain-bc">' + (bc ? '<div class="barcode">' + bc + '</div>' : esc(x.upc || '')) + '</span></div>';
+        }).join('') +
+        '</td><td></td><td></td><td></td></tr>';
+    }
+    return row;
   }).join('');
 
   const HDR =
@@ -650,13 +667,21 @@ function printInvoice(order, customer, printSequence) {
     '.pobox td.val { border: 1px solid #000; padding: 6px 60px; font-size: 17px; font-weight: bold; text-align: center; }' +
     '.colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }' +
     '.colhdr th.r { text-align: right; } .colhdr th.ctr { text-align: center; }' +
-    'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }' +
+    'tbody td { padding: 3px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }' +
+    'tbody tr.itemrow td { border-top: 1px solid #F0EEE6; }' +
+    'tbody tr.itemrow:first-child td { border-top: none; }' +
     'td.c-item { white-space: nowrap; } td.c-cs, td.c-each { text-align: center; }' +
     'td.c-upc { text-align: center; font-size: 11px; }' +
     'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 26px; width: auto; max-width: 100%; }' +
     'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
     'td.c-price, td.c-total { text-align: right; white-space: nowrap; }' +
     '.contd { text-align: center; font-size: 12px; font-weight: bold; margin-bottom: 6px; }' +
+    /* Contains-below sub-lines under a shipper item */
+    'tr.containrow td { padding-top: 0; padding-bottom: 4px; vertical-align: top; }' +
+    '.contains-lbl { font-size: 12px; font-style: italic; margin: 0 0 2px; }' +
+    '.contain-item { display: flex; align-items: center; gap: 12px; padding: 1px 0; }' +
+    '.contain-name { font-size: 12px; min-width: 130px; }' +
+    '.contain-bc .barcode svg { display: block; height: 24px; width: auto; }' +
     '.pg-footer { position: absolute; left: 0.4in; right: 0.4in; bottom: 0.3in; }' +
     '.totals { width: 100%; }' +
     '.tf-left { font-size: 14px; line-height: 1.9; vertical-align: bottom; }' +
@@ -687,7 +712,14 @@ function printInvoice(order, customer, printSequence) {
     'var RESERVE=footerH+16;' +
     'var pg=newPage(),tbody=pg.querySelector("tbody.rowbody");' +
     'function over(){var tb=pg.querySelector("table.sheet").getBoundingClientRect(),pr=pg.getBoundingClientRect();return tb.bottom>(pr.bottom-(0.3*96)-RESERVE);}' +
-    'for(var i=0;i<srcRows.length;i++){tbody.appendChild(srcRows[i]);if(over()&&tbody.children.length>1){tbody.removeChild(srcRows[i]);pg=newPage();tbody=pg.querySelector("tbody.rowbody");tbody.appendChild(srcRows[i]);}}' +
+    'for(var i=0;i<srcRows.length;i++){var r=srcRows[i];tbody.appendChild(r);' +
+    'if(over()&&tbody.children.length>1){' +
+    'var isContain=r.className.indexOf("containrow")>=0;' +
+    'var prev=isContain?r.previousElementSibling:null;' +
+    'tbody.removeChild(r);if(prev&&prev.parentNode===tbody)tbody.removeChild(prev);' +
+    'pg=newPage();tbody=pg.querySelector("tbody.rowbody");' +
+    'if(prev)tbody.appendChild(prev);tbody.appendChild(r);}' +
+    '}' +
     'var all=pagesEl.querySelectorAll(".page"),N=all.length;' +
     'for(var p=0;p<N;p++){var cont=(p<N-1)?\'<div class="contd">Continued on next page \\u25B6</div>\':"";' +
     'all[p].querySelector(".pg-footer").innerHTML=cont+TOT+SIG+\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';}' +
@@ -2881,7 +2913,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                           <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print w/UPC</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence)} title="Print an invoice for this order">Invoice</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items)} title="Print an invoice for this order">Invoice</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
                           </button>{' '}
@@ -3000,6 +3032,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [pendingStock, setPendingStock] = useState({}); // { itemId: newValue }
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savingStock, setSavingStock] = useState(false);
+  const [editingContents, setEditingContents] = useState(null); // item whose "contains" list is being edited
 
   function setPending(itemId, value) {
     setPendingStock(prev => {
@@ -3451,6 +3484,15 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 </td>
                 <td style={{ ...officeStyles.td, cursor: (isItems && canEdit('name')) ? 'default' : 'pointer' }} onClick={(isItems && canEdit('name')) ? undefined : toggleHistory}>
                   {(isItems && canEdit('name')) ? <TextFieldEditor item={item} field="name" onSaved={onRefresh} /> : item.name}
+                  {isItems && editMode && (
+                    <button
+                      style={officeStyles.containsBtn}
+                      onClick={e => { e.stopPropagation(); setEditingContents(item); }}
+                      title="Edit the contained items shown under this item on the invoice (for shippers)"
+                    >
+                      {item.contains && item.contains.length ? `Contents (${item.contains.length})` : '+ Contents'}
+                    </button>
+                  )}
                 </td>
                 <td style={officeStyles.td}>
                   {(isItems && canEdit('brand')) ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
@@ -3629,9 +3671,77 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           </div>
         </div>
       )}
+      {editingContents && (
+        <ItemContentsModal
+          item={editingContents}
+          onClose={() => setEditingContents(null)}
+          onSaved={async () => { setEditingContents(null); await onRefresh(); }}
+        />
+      )}
     </div>
   );
 }
+
+// Modal to edit a shipper item's contained sub-items (qty / name / UPC), which
+// print under the item on the invoice, each with its own barcode.
+function ItemContentsModal({ item, onClose, onSaved }) {
+  const [list, setList] = useState(() => (item.contains && item.contains.length ? item.contains.map(x => ({ ...x })) : [{ qty: '', name: '', upc: '' }]));
+  const [saving, setSaving] = useState(false);
+  function update(i, field, val) { setList(prev => prev.map((r, idx) => (idx === i ? { ...r, [field]: val } : r))); }
+  function addRow() { setList(prev => [...prev, { qty: '', name: '', upc: '' }]); }
+  function removeRow(i) { setList(prev => prev.filter((_, idx) => idx !== i)); }
+  async function save() {
+    setSaving(true);
+    const clean = list
+      .map(r => ({ qty: Number(r.qty) || 0, name: String(r.name || '').trim(), upc: String(r.upc || '').trim() }))
+      .filter(r => r.name || r.upc || r.qty);
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { contains: clean });
+      await onSaved();
+    } catch (err) { setSaving(false); }
+  }
+  return (
+    <div style={styles.editOverlay} onClick={onClose}>
+      <div style={contentsStyles.card} onClick={e => e.stopPropagation()}>
+        <div style={contentsStyles.title}>Contents of {item.name}</div>
+        <div style={contentsStyles.sub}>These print under the item on the invoice as "Contains below", each with a barcode. Use for shippers that hold multiple products.</div>
+        <div style={contentsStyles.headRow}>
+          <span style={{ width: 60 }}>Qty (ea)</span>
+          <span style={{ flex: 1 }}>Name</span>
+          <span style={{ width: 170 }}>UPC</span>
+          <span style={{ width: 28 }} />
+        </div>
+        {list.map((r, i) => (
+          <div key={i} style={contentsStyles.row}>
+            <input style={{ ...contentsStyles.input, width: 60 }} value={r.qty} inputMode="numeric" placeholder="24" onChange={e => update(i, 'qty', e.target.value.replace(/[^0-9]/g, ''))} />
+            <input style={{ ...contentsStyles.input, flex: 1 }} value={r.name} placeholder="Original" onChange={e => update(i, 'name', e.target.value)} />
+            <input style={{ ...contentsStyles.input, width: 170 }} value={r.upc} placeholder="9-310072-028187" onChange={e => update(i, 'upc', e.target.value)} />
+            <button style={contentsStyles.removeBtn} onClick={() => removeRow(i)} title="Remove">×</button>
+          </div>
+        ))}
+        <button style={contentsStyles.addBtn} onClick={addRow}>+ Add item</button>
+        <div style={contentsStyles.actions}>
+          <button style={contentsStyles.cancel} onClick={onClose} disabled={saving}>Cancel</button>
+          <button style={contentsStyles.save} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save contents'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const contentsStyles = {
+  card: { width: '100%', maxWidth: 560, maxHeight: '86vh', overflowY: 'auto', background: '#F7F8F4', borderRadius: 16, boxShadow: '0 20px 60px rgba(20,24,31,0.4)', padding: 22 },
+  title: { fontSize: 17, fontWeight: 800, color: '#14181F' },
+  sub: { fontSize: 12.5, color: '#5B6058', margin: '4px 0 14px' },
+  headRow: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '0 2px 4px' },
+  row: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },
+  input: { background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 9px', fontSize: 13, color: '#14181F', fontFamily: 'inherit', outline: 'none' },
+  removeBtn: { width: 28, height: 28, borderRadius: 7, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 16, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
+  addBtn: { marginTop: 4, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  actions: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 },
+  cancel: { background: '#EDEBE3', color: '#14181F', border: '1px solid #E3E1D6', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  save: { background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+};
 
 function TextFieldEditor({ item, field, onSaved, placeholder, small }) {
   const [editing, setEditing] = useState(false);
@@ -4445,6 +4555,7 @@ const officeStyles = {
   itemHistoryTh: { textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '7px 10px', borderBottom: '1px solid #ECEAE1', background: '#FBFAF6' },
   itemHistoryTd: { fontSize: 13, color: '#14181F', padding: '7px 10px', borderBottom: '1px solid #F0EEE6' },
   historyLinkBtn: { background: '#FFFFFF', border: '1px solid #D6D3C6', color: '#2B5D50', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  containsBtn: { display: 'inline-block', marginTop: 4, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   markDoneBtn: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   rowInactive: { opacity: 0.5 },
   emptyCell: { padding: '28px 14px', textAlign: 'center', color: '#8A8F87', fontSize: 13.5 },
