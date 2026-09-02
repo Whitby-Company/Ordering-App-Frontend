@@ -719,7 +719,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     'if(prev)tbody.appendChild(prev);tbody.appendChild(r);}' +
     '}' +
     'var all=pagesEl.querySelectorAll(".page"),N=all.length;' +
-    'for(var p=0;p<N;p++){var cont=(p<N-1)?\'<div class="contd">Continued \\u25B6</div>\':"";' +
+    'for(var p=0;p<N;p++){var cont=(p<N-1)?\'<div class="contd">Continued</div>\':"";' +
     'all[p].querySelector(".pg-footer").innerHTML=cont+TOT+SIG+\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';}' +
     '})();';
 
