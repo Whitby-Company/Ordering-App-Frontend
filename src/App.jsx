@@ -1043,6 +1043,35 @@ function TabBar({ active, onChange }) {
 // ============================================================
 // TAB 1 — NEW ORDER
 // ============================================================
+// Editable quantity field for a line on the order-ticket / review screen. Lets
+// the user type a number; commits (clamped to stock) on blur/Enter.
+function TicketQtyInput({ qty, onSet, disabled }) {
+  const [val, setVal] = useState(String(qty));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setVal(String(qty)); }, [qty, editing]);
+  function commit() {
+    setEditing(false);
+    const n = parseInt(val, 10);
+    if (Number.isNaN(n)) { setVal(String(qty)); return; }
+    onSet(Math.max(0, n));
+  }
+  return (
+    <div style={styles.ticketQtyWrap}>
+      <span style={styles.ticketQtyX}>×</span>
+      <input
+        style={styles.ticketQtyInput}
+        value={val}
+        disabled={disabled}
+        inputMode="numeric"
+        onFocus={e => { setEditing(true); e.target.select(); }}
+        onChange={e => setVal(e.target.value.replace(/[^0-9]/g, ''))}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setVal(String(qty)); e.currentTarget.blur(); } }}
+      />
+    </div>
+  );
+}
+
 function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
   const isEdit = !!editOrder;
   // Restore an in-progress order draft (customer, delivery date, quantities)
@@ -1625,15 +1654,17 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               {orderLines.map(l => (
                 <div key={l.id} style={styles.sheetLine}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={styles.sheetLineName}>{l.name}</div>
+                    <div style={styles.sheetLineName}>
+                      <span style={styles.sheetLineCode}>{displayCode(l.id)}</span>
+                      {l.name}
+                    </div>
                     <div style={styles.sheetLineSku}>
-                      {displayCode(l.id)}{l.pack > 1 ? ` · ${l.pack}ea` : ''}
-                      {l.price > 0 && l.qty > 0 ? ` · ${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
+                      {l.pack > 1 ? `${l.pack}ea` : ''}
+                      {l.price > 0 && l.qty > 0 ? `${l.pack > 1 ? ' · ' : ''}${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
                     </div>
                   </div>
-                  {l.qty === 0
-                    ? <><div style={styles.checkinTag}>check-in</div><div style={styles.sheetLineQty}>×0</div></>
-                    : <div style={styles.sheetLineQty}>×{l.qty}</div>}
+                  {l.checkin && l.qty === 0 && <div style={styles.checkinTag}>check-in</div>}
+                  <TicketQtyInput qty={l.qty} onSet={v => setQty(l.id, v)} disabled={submitting} />
                   <button style={styles.removeBtn} onClick={() => removeLine(l.id)} disabled={submitting}>
                     <X size={14} color="#8A8F87" />
                   </button>
@@ -4284,6 +4315,10 @@ const styles = {
   sheetLines: { overflowY: 'auto', flex: 1 },
   sheetLine: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid #EAE8DD' },
   sheetLineName: { fontSize: 13.5, fontWeight: 600, color: '#14181F' },
+  sheetLineCode: { fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, color: '#2B5D50', marginRight: 7 },
+  ticketQtyWrap: { display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 },
+  ticketQtyX: { fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: '#8A8F87' },
+  ticketQtyInput: { width: 46, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color: '#14181F', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 7, padding: '4px 4px', outline: 'none' },
   sheetLineSku: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#8A8F87', marginTop: 2 },
   sheetLineQty: { fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: '#14181F' },
   checkinBtn: { marginRight: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '4px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
