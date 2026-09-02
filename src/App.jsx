@@ -1828,15 +1828,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                   onClick={() => {
                     setCustomerId(c.id);
                     setCustomerOpen(false);
-                    // If this customer has a usual delivery day, jump the date to
-                    // the next occurrence of it. Still fully changeable afterward.
-                    // (Not in edit mode — keep the order's existing date.)
-                    let nextDate = deliveryDate;
-                    if (!isEdit && c.deliveryDay !== null && c.deliveryDay !== undefined) {
-                      nextDate = nextDateForWeekday(c.deliveryDay);
-                      setDeliveryDate(nextDate);
-                    }
-                    if (nextDate) setPickersExpanded(false);
+                    // Auto-date on customer select is turned off — leave the
+                    // delivery date as-is; the user picks it themselves.
+                    if (deliveryDate) setPickersExpanded(false);
                   }}
                 >
                   <User size={15} color="#8A8F87" />
