@@ -3771,17 +3771,17 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
 }
 
 const contentsStyles = {
-  card: { width: '100%', maxWidth: 560, maxHeight: '86vh', overflowY: 'auto', background: '#F7F8F4', borderRadius: 16, boxShadow: '0 20px 60px rgba(20,24,31,0.4)', padding: 22 },
+  card: { width: '100%', maxWidth: 560, background: '#F7F8F4', borderRadius: 16, boxShadow: '0 20px 60px rgba(20,24,31,0.4)', padding: 22 },
   title: { fontSize: 17, fontWeight: 800, color: '#14181F' },
   sub: { fontSize: 12.5, color: '#5B6058', margin: '4px 0 14px' },
   headRow: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '0 2px 4px' },
   row: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },
   input: { background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 9px', fontSize: 13, color: '#14181F', fontFamily: 'inherit', outline: 'none' },
   pickBtn: { flex: 1, textAlign: 'left', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13, color: '#14181F', fontFamily: 'inherit', cursor: 'pointer' },
-  dropdown: { position: 'absolute', left: 68, right: 36, top: '100%', marginTop: 2, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 8px 24px rgba(20,24,31,0.18)', zIndex: 5, padding: 6 },
-  searchInput: { width: '100%', background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 6, padding: '7px 9px', fontSize: 13, fontFamily: 'inherit', outline: 'none', marginBottom: 4 },
-  results: { maxHeight: 220, overflowY: 'auto' },
-  resultRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '7px 6px', fontSize: 13, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
+  dropdown: { position: 'absolute', left: 68, top: '100%', marginTop: 2, width: 'min(560px, 92vw)', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 34px rgba(20,24,31,0.22)', zIndex: 5, padding: 8 },
+  searchInput: { width: '100%', background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 6, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none', marginBottom: 6 },
+  results: { maxHeight: 320, overflowY: 'auto' },
+  resultRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '9px 8px', fontSize: 13.5, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   noResult: { fontSize: 12.5, color: '#8A8F87', padding: '8px 6px', fontStyle: 'italic' },
   removeBtn: { width: 28, height: 28, borderRadius: 7, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 16, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
   addBtn: { marginTop: 4, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
