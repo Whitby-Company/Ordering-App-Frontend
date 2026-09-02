@@ -1,20 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <path d="
-    M24 52
-    Q17 51 15 43
-    Q13.5 35 21 34
-    Q16 25 15 15
-    Q14.5 8 20 8
-    Q25 8.5 25 15
-    Q26 24 30 30
-    Q30.5 26 35 26
-    Q39.5 26 40 32
-    L41 37
-    Q48 33 56 33
-    Q63 33 62 40
-    Q61 46 53 45
-    L43 44
-    Q42 51 33 52
-    Z"
-    fill="#14181F"/>
+  <g fill="#14181F">
+    <!-- palm + folded fingers + wrist -->
+    <path d="M24 32
+             Q23 27 28 27 L37 27 Q41 27 41 32
+             L41 42 Q41 46 38 49 L36 55 Q35 58 32 58 L28 58 Q25 58 25 55 L24 48
+             Q21 45 21 40 L21 35 Q21 32 24 32 Z"/>
+    <!-- thumb: angled up-left -->
+    <path d="M26 33 Q16 29 11 20 Q8 15 13 13 Q18 12 20 18 Q23 26 30 30 Z"/>
+    <!-- pinky: angled up-right, joined to palm -->
+    <path d="M39 33 Q49 30 54 22 Q57 17 52 15 Q47 14 45 20 Q42 27 36 31 Z"/>
+  </g>
+  <!-- folded-finger separation lines -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" opacity="0.92">
+    <path d="M29 30 L29 41"/>
+    <path d="M33 30 L33 41"/>
+    <path d="M37 30 L37 41"/>
+  </g>
 </svg>
