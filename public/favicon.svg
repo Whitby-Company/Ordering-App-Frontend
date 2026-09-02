@@ -1,6 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="14" fill="#2B5D50"/>
-  <text x="32" y="33" text-anchor="middle" dominant-baseline="central"
-        font-family="Georgia, 'Times New Roman', serif" font-size="30" font-weight="700"
-        fill="#F7F8F4" letter-spacing="-1">HG</text>
+  <path d="M14 24 L22 32 L14 40 Q11 41 11.5 37 L13 32 L11.5 27 Q11 23 14 24 Z" fill="#E7B84B"/>
+  <path d="M50 24 L42 32 L50 40 Q53 41 52.5 37 L51 32 L52.5 27 Q53 23 50 24 Z" fill="#E7B84B"/>
+  <ellipse cx="32" cy="32" rx="12" ry="10" fill="#F4F1E6"/>
+  <path d="M25 32 Q29 25 32 32 T39 32" fill="none" stroke="#D64545" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="28" cy="28" rx="3" ry="2" fill="#FFFFFF" opacity="0.7"/>
 </svg>
