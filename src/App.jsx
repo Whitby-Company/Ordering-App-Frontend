@@ -3672,6 +3672,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       {editingContents && (
         <ItemContentsModal
           item={editingContents}
+          allItems={items}
           onClose={() => setEditingContents(null)}
           onSaved={async () => { setEditingContents(null); await onRefresh(); }}
         />
@@ -3682,12 +3683,32 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
 
 // Modal to edit a shipper item's contained sub-items (qty / name / UPC), which
 // print under the item on the invoice, each with its own barcode.
-function ItemContentsModal({ item, onClose, onSaved }) {
+function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
+  // Each contained row references an existing item (searched/picked from the
+  // catalog) plus a quantity. Name + UPC are pulled from the chosen item, but a
+  // legacy free-typed row still shows its stored name/upc.
   const [list, setList] = useState(() => (item.contains && item.contains.length ? item.contains.map(x => ({ ...x })) : [{ qty: '', name: '', upc: '' }]));
   const [saving, setSaving] = useState(false);
-  function update(i, field, val) { setList(prev => prev.map((r, idx) => (idx === i ? { ...r, [field]: val } : r))); }
+  const [openRow, setOpenRow] = useState(null);   // which row's search dropdown is open
+  const [query, setQuery] = useState('');
+
+  const candidates = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const pool = allItems.filter(it => it.id !== item.id); // don't add the shipper to itself
+    if (!q) return pool.slice(0, 30);
+    return pool.filter(it => it.name.toLowerCase().includes(q) || String(it.id).toLowerCase().includes(q)).slice(0, 40);
+  }, [allItems, query, item.id]);
+
+  function update(i, patch) { setList(prev => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r))); }
   function addRow() { setList(prev => [...prev, { qty: '', name: '', upc: '' }]); }
   function removeRow(i) { setList(prev => prev.filter((_, idx) => idx !== i)); }
+  function pick(i, it) {
+    // Use the item's first UPC (barcodes render per line).
+    const firstUpc = parseUpcList(it.upc)[0] || '';
+    update(i, { name: it.name, upc: firstUpc, itemId: it.id });
+    setOpenRow(null); setQuery('');
+  }
+
   async function save() {
     setSaving(true);
     const clean = list
@@ -3698,23 +3719,45 @@ function ItemContentsModal({ item, onClose, onSaved }) {
       await onSaved();
     } catch (err) { setSaving(false); }
   }
+
   return (
     <div style={styles.editOverlay} onClick={onClose}>
       <div style={contentsStyles.card} onClick={e => e.stopPropagation()}>
         <div style={contentsStyles.title}>Contents of {item.name}</div>
-        <div style={contentsStyles.sub}>These print under the item on the invoice as "Contains below", each with a barcode. Use for shippers that hold multiple products.</div>
+        <div style={contentsStyles.sub}>Search and pick the items this shipper contains. They print under the item on the invoice as "Contains below", each with its barcode.</div>
         <div style={contentsStyles.headRow}>
           <span style={{ width: 60 }}>Qty (ea)</span>
-          <span style={{ flex: 1 }}>Name</span>
-          <span style={{ width: 170 }}>UPC</span>
+          <span style={{ flex: 1 }}>Item</span>
           <span style={{ width: 28 }} />
         </div>
         {list.map((r, i) => (
-          <div key={i} style={contentsStyles.row}>
-            <input style={{ ...contentsStyles.input, width: 60 }} value={r.qty} inputMode="numeric" placeholder="24" onChange={e => update(i, 'qty', e.target.value.replace(/[^0-9]/g, ''))} />
-            <input style={{ ...contentsStyles.input, flex: 1 }} value={r.name} placeholder="Original" onChange={e => update(i, 'name', e.target.value)} />
-            <input style={{ ...contentsStyles.input, width: 170 }} value={r.upc} placeholder="9-310072-028187" onChange={e => update(i, 'upc', e.target.value)} />
-            <button style={contentsStyles.removeBtn} onClick={() => removeRow(i)} title="Remove">×</button>
+          <div key={i} style={{ position: 'relative', marginBottom: 6 }}>
+            <div style={contentsStyles.row}>
+              <input style={{ ...contentsStyles.input, width: 60 }} value={r.qty} inputMode="numeric" placeholder="24" onChange={e => update(i, { qty: e.target.value.replace(/[^0-9]/g, '') })} />
+              <button
+                style={{ ...contentsStyles.pickBtn, ...(r.name ? {} : { color: '#8A8F87', fontWeight: 500 }) }}
+                onClick={() => { setOpenRow(openRow === i ? null : i); setQuery(''); }}
+              >
+                {r.name
+                  ? <span><strong>{r.name}</strong>{r.upc ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {r.upc}</span> : ''}</span>
+                  : 'Search for an item…'}
+              </button>
+              <button style={contentsStyles.removeBtn} onClick={() => removeRow(i)} title="Remove">×</button>
+            </div>
+            {openRow === i && (
+              <div style={contentsStyles.dropdown}>
+                <input autoFocus style={contentsStyles.searchInput} placeholder="Search items by name or #…" value={query} onChange={e => setQuery(e.target.value)} />
+                <div style={contentsStyles.results}>
+                  {candidates.length === 0 && <div style={contentsStyles.noResult}>No items match "{query}"</div>}
+                  {candidates.map(it => (
+                    <button key={it.id} style={contentsStyles.resultRow} onClick={() => pick(i, it)}>
+                      <span style={{ fontWeight: 600 }}>{it.name}</span>
+                      <span style={{ color: '#8A8F87', fontSize: 11, marginLeft: 8 }}>{displayCode(it.id)}{parseUpcList(it.upc)[0] ? ` · ${parseUpcList(it.upc)[0]}` : ''}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ))}
         <button style={contentsStyles.addBtn} onClick={addRow}>+ Add item</button>
@@ -3734,6 +3777,12 @@ const contentsStyles = {
   headRow: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '0 2px 4px' },
   row: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },
   input: { background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 9px', fontSize: 13, color: '#14181F', fontFamily: 'inherit', outline: 'none' },
+  pickBtn: { flex: 1, textAlign: 'left', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13, color: '#14181F', fontFamily: 'inherit', cursor: 'pointer' },
+  dropdown: { position: 'absolute', left: 68, right: 36, top: '100%', marginTop: 2, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 8px 24px rgba(20,24,31,0.18)', zIndex: 5, padding: 6 },
+  searchInput: { width: '100%', background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 6, padding: '7px 9px', fontSize: 13, fontFamily: 'inherit', outline: 'none', marginBottom: 4 },
+  results: { maxHeight: 220, overflowY: 'auto' },
+  resultRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '7px 6px', fontSize: 13, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
+  noResult: { fontSize: 12.5, color: '#8A8F87', padding: '8px 6px', fontStyle: 'italic' },
   removeBtn: { width: 28, height: 28, borderRadius: 7, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 16, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
   addBtn: { marginTop: 4, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 },
