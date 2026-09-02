@@ -2613,6 +2613,12 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
           >
             Customers
           </button>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'catalogs' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('catalogs')}
+          >
+            Catalogs
+          </button>
         </div>
         {isManualOverride && (
           <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
@@ -2647,6 +2653,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
+        {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
       </div>
     </div>
   );
@@ -4145,6 +4152,218 @@ function CustomerTextField({ customer, field, value: initial, placeholder, width
     />
   );
 }
+
+// Desktop per-store catalog manager: pick a store, toggle its catalog, see the
+// items it carries with per-customer prices, add/remove items, and apply the
+// QuickBooks-derived catalogs in bulk.
+function OfficeCatalogs({ customers, items, onRefresh }) {
+  const [selId, setSelId] = useState(null);
+  const [custQuery, setCustQuery] = useState('');
+  const [catalog, setCatalog] = useState(null); // { catalogOn, includeDefault, itemIds:Set, prices:Map }
+  const [loading, setLoading] = useState(false);
+  const [itemQuery, setItemQuery] = useState('');
+  const [brand, setBrand] = useState('All');
+  const [inCatalogOnly, setInCatalogOnly] = useState(false);
+  const [applyMsg, setApplyMsg] = useState('');
+  const [applying, setApplying] = useState(false);
+
+  const selCustomer = customers.find(c => c.id === selId) || null;
+  const brandList = useMemo(() => ['All', ...Array.from(new Set(items.map(i => i.brand))).sort()], [items]);
+  const itemById = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = custQuery.trim().toLowerCase();
+    return customers.filter(c => !q || c.name.toLowerCase().includes(q));
+  }, [customers, custQuery]);
+
+  async function loadCatalog(id) {
+    setLoading(true);
+    try {
+      const d = await apiGet(`/customers/${id}/catalog`);
+      const prices = new Map();
+      for (const o of (d.overrides || [])) if (o.present && o.price != null) prices.set(o.item_id, o.price);
+      setCatalog({ catalogOn: d.catalogOn, includeDefault: d.includeDefault, itemIds: new Set(d.itemIds || []), prices });
+    } catch (err) { setCatalog(null); }
+    finally { setLoading(false); }
+  }
+  function selectCustomer(id) { setSelId(id); setItemQuery(''); setBrand('All'); setInCatalogOnly(false); loadCatalog(id); }
+
+  async function setCatalogFlags(patch) {
+    await apiPatch(`/customers/${selId}/catalog`, patch);
+    await loadCatalog(selId);
+  }
+  async function toggleItem(itemId, present) {
+    await apiPut(`/customers/${selId}/catalog/items`, present ? { add: [itemId] } : { remove: [itemId] });
+    await loadCatalog(selId);
+  }
+  async function addBrand(brandName) {
+    const ids = items.filter(i => i.brand === brandName).map(i => i.id);
+    await apiPut(`/customers/${selId}/catalog/items`, { add: ids });
+    await loadCatalog(selId);
+  }
+  async function savePrice(itemId, value) {
+    await apiPut(`/customers/${selId}/catalog/price`, { itemId, price: value === '' ? null : Number(value) });
+    await loadCatalog(selId);
+  }
+  async function handleApplyQB() {
+    if (!window.confirm('Apply the QuickBooks catalogs & prices to all matched stores? This rebuilds each matched store\u2019s catalog from their order history.')) return;
+    setApplying(true); setApplyMsg('');
+    try {
+      const r = await apiPost('/customers/apply-catalogs', {});
+      await onRefresh();
+      if (selId) await loadCatalog(selId);
+      setApplyMsg(`Applied to ${r.customersMatched} stores — ${r.itemsAdded} items, ${r.pricesSet} prices set${r.itemsUnmatched ? `, ${r.itemsUnmatched} items skipped (not in app)` : ''}.`);
+    } catch (err) { setApplyMsg(err.message || 'Could not apply catalogs.'); }
+    finally { setApplying(false); }
+  }
+
+  const shownItems = useMemo(() => {
+    const q = itemQuery.trim().toLowerCase();
+    return items.filter(it => {
+      if (brand !== 'All' && it.brand !== brand) return false;
+      if (inCatalogOnly && !(catalog && catalog.itemIds.has(it.id))) return false;
+      if (q && !(it.name.toLowerCase().includes(q) || String(it.id).toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [items, itemQuery, brand, inCatalogOnly, catalog]);
+
+  const catalogCount = catalog ? catalog.itemIds.size : 0;
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Store catalogs</div>
+        <button style={officeStyles.smallBtn} onClick={handleApplyQB} disabled={applying} title="Rebuild every matched store's catalog & prices from the QuickBooks order-history export">
+          {applying ? 'Applying…' : 'Apply QuickBooks catalogs'}
+        </button>
+        {applyMsg && <span style={{ fontSize: 12.5, color: '#5B6058' }}>{applyMsg}</span>}
+      </div>
+      <div style={catStyles.wrap}>
+        {/* Left: customer list */}
+        <div style={catStyles.leftCol}>
+          <input style={officeStyles.search} placeholder="Search stores…" value={custQuery} onChange={e => setCustQuery(e.target.value)} />
+          <div style={catStyles.custList}>
+            {filteredCustomers.map(c => (
+              <button key={c.id} style={{ ...catStyles.custRow, ...(c.id === selId ? catStyles.custRowActive : {}) }} onClick={() => selectCustomer(c.id)}>
+                <span>{c.name}</span>
+                <span style={c.catalogOn ? catStyles.onTag : catStyles.offTag}>{c.catalogOn ? 'on' : 'off'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Right: selected store's catalog */}
+        <div style={catStyles.rightCol}>
+          {!selCustomer && <div style={catStyles.empty}>Select a store to manage its catalog.</div>}
+          {selCustomer && (
+            <>
+              <div style={catStyles.storeHead}>
+                <div style={catStyles.storeName}>{selCustomer.name}</div>
+                <label style={officeStyles.checkboxLabel}>
+                  <input type="checkbox" checked={!!(catalog && catalog.catalogOn)} onChange={e => setCatalogFlags({ catalogOn: e.target.checked })} />
+                  Catalog on (field can order)
+                </label>
+                <label style={officeStyles.checkboxLabel}>
+                  <input type="checkbox" checked={!!(catalog && catalog.includeDefault)} onChange={e => setCatalogFlags({ includeDefault: e.target.checked })} />
+                  Include default set
+                </label>
+                <div style={officeStyles.countPill}>{catalogCount} items</div>
+              </div>
+              <div style={catStyles.controls}>
+                <input style={officeStyles.search} placeholder="Search items…" value={itemQuery} onChange={e => setItemQuery(e.target.value)} />
+                <select style={officeStyles.sortSelect} value={brand} onChange={e => setBrand(e.target.value)}>
+                  {brandList.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                {brand !== 'All' && <button style={officeStyles.smallBtn} onClick={() => addBrand(brand)}>Add all {brand}</button>}
+                <label style={officeStyles.checkboxLabel}>
+                  <input type="checkbox" checked={inCatalogOnly} onChange={e => setInCatalogOnly(e.target.checked)} />
+                  In catalog only
+                </label>
+              </div>
+              {loading && <div style={catStyles.empty}>Loading…</div>}
+              {!loading && (
+                <div style={catStyles.tableWrap}>
+                  <table style={officeStyles.table}>
+                    <thead><tr>
+                      <th style={{ ...officeStyles.th, textAlign: 'center', width: 60 }}>Carry</th>
+                      <th style={officeStyles.th}>Item #</th>
+                      <th style={officeStyles.th}>Item</th>
+                      <th style={officeStyles.th}>Brand</th>
+                      <th style={{ ...officeStyles.th, textAlign: 'right' }}>Base /ea</th>
+                      <th style={{ ...officeStyles.th, textAlign: 'right' }}>This store /ea</th>
+                    </tr></thead>
+                    <tbody>
+                      {shownItems.slice(0, 400).map(it => {
+                        const inCat = catalog && catalog.itemIds.has(it.id);
+                        const custPrice = catalog && catalog.prices.get(it.id);
+                        return (
+                          <tr key={it.id} style={!inCat ? { opacity: 0.55 } : undefined}>
+                            <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                              <input type="checkbox" checked={!!inCat} onChange={e => toggleItem(it.id, e.target.checked)} />
+                            </td>
+                            <td style={officeStyles.td}>{displayCode(it.id)}</td>
+                            <td style={officeStyles.td}>{it.name}</td>
+                            <td style={officeStyles.td}>{it.brand}</td>
+                            <td style={{ ...officeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{formatMoney(it.price)}</td>
+                            <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                              {inCat ? (
+                                <CatalogPriceInput
+                                  key={it.id + ':' + (custPrice ?? '')}
+                                  value={custPrice}
+                                  basePrice={it.price}
+                                  onSave={v => savePrice(it.id, v)}
+                                />
+                              ) : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {shownItems.length > 400 && <div style={catStyles.empty}>Showing first 400 — narrow with search or brand.</div>}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Per-store price cell: shows the custom price (or a muted base-price placeholder).
+function CatalogPriceInput({ value, basePrice, onSave }) {
+  const [val, setVal] = useState(value == null ? '' : String(value));
+  const [focused, setFocused] = useState(false);
+  return (
+    <input
+      style={{ ...officeStyles.stockInput, width: 74, textAlign: 'right', ...(value == null ? { color: '#B9BDB2' } : {}) }}
+      value={focused ? val : (value == null ? '' : String(value))}
+      placeholder={formatMoney(basePrice).replace('$', '')}
+      onFocus={() => { setFocused(true); setVal(value == null ? '' : String(value)); }}
+      onChange={e => setVal(e.target.value.replace(/[^0-9.]/g, ''))}
+      onBlur={() => { setFocused(false); if (val !== (value == null ? '' : String(value))) onSave(val); }}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      inputMode="decimal"
+      title="Per-each price for this store (blank = base price)"
+    />
+  );
+}
+
+const catStyles = {
+  wrap: { display: 'flex', gap: 16, alignItems: 'flex-start' },
+  leftCol: { width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+  custList: { border: '1px solid #E3E1D6', borderRadius: 10, background: '#FFFFFF', maxHeight: '70vh', overflowY: 'auto' },
+  custRow: { display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '9px 12px', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', fontSize: 13.5, fontWeight: 500, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
+  custRowActive: { background: '#EAF1EE' },
+  onTag: { fontSize: 10.5, fontWeight: 800, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 8px' },
+  offTag: { fontSize: 10.5, fontWeight: 700, color: '#8A8F87', background: '#EFEDE4', border: '1px solid #E3E1D6', borderRadius: 20, padding: '1px 8px' },
+  rightCol: { flex: 1, minWidth: 0 },
+  empty: { fontSize: 13.5, color: '#8A8F87', padding: '30px 6px', fontStyle: 'italic' },
+  storeHead: { display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 10 },
+  storeName: { fontSize: 17, fontWeight: 800, color: '#14181F' },
+  controls: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 },
+  tableWrap: { border: '1px solid #E3E1D6', borderRadius: 10, overflow: 'hidden', maxHeight: '64vh', overflowY: 'auto' },
+};
 
 function OfficeCustomers({ customers, onRefresh }) {
   const [query, setQuery] = useState('');
