@@ -705,7 +705,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     'function newPage(){var pg=document.createElement("div");pg.className="page";' +
     'pg.innerHTML=\'<div class="pg-head">\'+HDR+\'</div><table class="sheet">\'+COLG+\'<thead>\'+COLH+\'</thead><tbody class="rowbody"></tbody></table><div class="pg-footer"></div>\';' +
     'pagesEl.appendChild(pg);return pg;}' +
-    'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=\'<div class="contd">Continued on next page</div>\'+TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
+    'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=\'<div class="contd">Continued</div>\'+TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
     'var footerH=probe.querySelector(".pg-footer").offsetHeight;pagesEl.removeChild(probe);' +
     'var RESERVE=footerH+16;' +
     'var pg=newPage(),tbody=pg.querySelector("tbody.rowbody");' +
@@ -719,7 +719,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     'if(prev)tbody.appendChild(prev);tbody.appendChild(r);}' +
     '}' +
     'var all=pagesEl.querySelectorAll(".page"),N=all.length;' +
-    'for(var p=0;p<N;p++){var cont=(p<N-1)?\'<div class="contd">Continued on next page \\u25B6</div>\':"";' +
+    'for(var p=0;p<N;p++){var cont=(p<N-1)?\'<div class="contd">Continued \\u25B6</div>\':"";' +
     'all[p].querySelector(".pg-footer").innerHTML=cont+TOT+SIG+\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';}' +
     '})();';
 
