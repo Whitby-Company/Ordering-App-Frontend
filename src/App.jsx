@@ -523,8 +523,8 @@ function printOrder(order, printSequence, options = {}) {
       }
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
-    <h1>Order #${order.id} — ${order.customer}</h1>
-    <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}${poNumber ? ` &nbsp;·&nbsp; PO# ${poNumber}` : ''}</div>
+    <h1>${poNumber ? `PO# ${poNumber}` : `Order #${order.id}`} — ${order.customer}</h1>
+    <div class="meta">${poNumber ? `Order #${order.id} &nbsp;·&nbsp; ` : ''}Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}</div>
     ${order.notes ? `<div class="notes"><span class="notesBody">${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></div>` : ''}
     <table>
       <thead><tr><th class="codeCol">Item #</th><th class="casesCol">Cs</th><th class="casesCol">Ea</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
