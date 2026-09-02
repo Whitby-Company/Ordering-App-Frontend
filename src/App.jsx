@@ -1538,16 +1538,6 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         )}
       </div>
 
-      {previousOrder && (
-        <button style={styles.repeatOrderBanner} onClick={addPreviousOrderQuantities}>
-          <ClipboardList size={15} color="#2B5D50" />
-          <span style={styles.repeatOrderText}>
-            Add their last order — {previousOrder.lines.length} item{previousOrder.lines.length === 1 ? '' : 's'}, {formatDate(previousOrder.deliveryDate)}
-          </span>
-          <span style={styles.repeatOrderCta}>Add</span>
-        </button>
-      )}
-
       <div style={desktop ? { ...styles.searchWrap, padding: '8px 16px 4px' } : styles.searchWrap}>
         <div style={styles.searchInputWrap}>
           <Search size={16} color="#8A8F87" style={styles.searchIconInner} />
