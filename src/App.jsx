@@ -667,7 +667,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     '.pobox td.val { border: 1px solid #000; padding: 8px 90px; font-size: 17px; font-weight: bold; text-align: center; }' +
     '.colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }' +
     '.colhdr th.r { text-align: right; } .colhdr th.ctr { text-align: center; }' +
-    'tbody td { padding: 3px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.25; }' +
+    'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.2; }' +
     'td.c-item { white-space: nowrap; } td.c-cs, td.c-each { text-align: center; }' +
     'td.c-upc { text-align: center; font-size: 11px; }' +
     'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 26px; width: auto; max-width: 100%; }' +
@@ -707,7 +707,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     'pagesEl.appendChild(pg);return pg;}' +
     'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=\'<div class="contd">Continued</div>\'+TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
     'var footerH=probe.querySelector(".pg-footer").offsetHeight;pagesEl.removeChild(probe);' +
-    'var RESERVE=footerH+16;' +
+    'var RESERVE=footerH-6;' +
     'var pg=newPage(),tbody=pg.querySelector("tbody.rowbody");' +
     'function over(){var tb=pg.querySelector("table.sheet").getBoundingClientRect(),pr=pg.getBoundingClientRect();return tb.bottom>(pr.bottom-(0.3*96)-RESERVE);}' +
     'for(var i=0;i<srcRows.length;i++){var r=srcRows[i];tbody.appendChild(r);' +
