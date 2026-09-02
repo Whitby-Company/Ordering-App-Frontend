@@ -679,7 +679,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.2; }' +
     'td.c-item { white-space: nowrap; } td.c-cs, td.c-each { text-align: center; }' +
     'td.c-upc { text-align: center; font-size: 11px; }' +
-    'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 26px; width: auto; max-width: 100%; }' +
+    'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 20px; width: auto; max-width: 100%; }' +
     'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
     'td.c-price, td.c-total { text-align: right; white-space: nowrap; }' +
     '.contd { text-align: center; font-size: 12px; font-weight: bold; margin: 14px 0 14px; }' +
