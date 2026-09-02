@@ -456,6 +456,14 @@ function barcodesForCell(rawUpc) {
 
 function printOrder(order, printSequence, options = {}) {
   const withUpc = options.withUpc !== false; // default: include the barcode column
+  const customer = options.customer || null;
+  // PO number = MMDDYY(delivery date) - customer abbreviation (same as the exports).
+  let poNumber = '';
+  const abbr = (customer && customer.abbreviation || '').trim();
+  if (abbr && order.deliveryDate) {
+    const [py, pm, pd] = String(order.deliveryDate).split('-');
+    poNumber = `${pm}${pd}${py.slice(2)}-${abbr}`;
+  }
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
@@ -516,7 +524,7 @@ function printOrder(order, printSequence, options = {}) {
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <h1>Order #${order.id} — ${order.customer}</h1>
-    <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}</div>
+    <div class="meta">Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}${poNumber ? ` &nbsp;·&nbsp; PO# ${poNumber}` : ''}</div>
     ${order.notes ? `<div class="notes"><span class="notesBody">${String(order.notes).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></div>` : ''}
     <table>
       <thead><tr><th class="codeCol">Item #</th><th class="casesCol">Cs</th><th class="casesCol">Ea</th><th>Item</th>${upcTh}<th style="text-align:right">Pack</th><th style="text-align:right">Price/ea</th><th style="text-align:right">Total</th></tr></thead>
@@ -2365,8 +2373,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                   )}
                   <div style={styles.orderCardActions}>
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false })}>Print</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: true })}>Print w/UPC</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
                   </div>
                 </div>
               )}
@@ -2736,7 +2743,8 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
 
   // Print an order, then auto-mark it processed. withUpc toggles the barcode column.
   async function handlePrint(order, withUpc = false) {
-    printOrder(order, printSequence, { withUpc });
+    const customer = customers.find(cc => cc.name === order.customer) || customers.find(cc => cc.id === order.customerId) || null;
+    printOrder(order, printSequence, { withUpc, customer });
     if (!order.processed) {
       try {
         await apiPatch(`/orders/${order.id}/processed`, { processed: true });
@@ -2910,7 +2918,6 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                         <>
                           <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, true)} title="Print an order sheet with scannable UPC barcodes for check-in">Print w/UPC</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items)} title="Print an invoice for this order">Invoice</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
