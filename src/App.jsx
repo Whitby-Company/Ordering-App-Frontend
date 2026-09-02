@@ -1140,6 +1140,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerDayFilter, setCustomerDayFilter] = useState(null); // 0-6, or null for all
+  // Mobile only: field reps see just the "show on mobile" customers unless they
+  // opt into all. Desktop always shows everyone.
+  const [showAllCustomers, setShowAllCustomers] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState(isEdit ? editOrder.deliveryDate : (savedDraft.deliveryDate || ''));
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -1222,10 +1225,12 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
     let active = customers.filter(c => c.active !== 0);
+    // On mobile, show only "show on mobile" customers unless the rep opted into all.
+    if (!desktop && !showAllCustomers) active = active.filter(c => c.showOnMobile !== false);
     if (customerDayFilter !== null) active = active.filter(c => c.deliveryDay === customerDayFilter);
     if (q) active = active.filter(c => c.name.toLowerCase().includes(q));
     return active;
-  }, [customers, customerQuery, customerDayFilter]);
+  }, [customers, customerQuery, customerDayFilter, desktop, showAllCustomers]);
   // Which weekdays actually have customers assigned (to only show useful chips).
   const daysInUse = useMemo(() => {
     const s = new Set();
@@ -1920,6 +1925,12 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                   ) : null
                 ))}
               </div>
+            )}
+            {!desktop && (
+              <label style={styles.showAllCustLabel}>
+                <input type="checkbox" checked={showAllCustomers} onChange={e => setShowAllCustomers(e.target.checked)} />
+                Show all customers
+              </label>
             )}
             <div style={styles.sheetLines}>
               {filteredCustomers.length === 0 && (
@@ -4515,11 +4526,12 @@ function OfficeCustomers({ customers, onRefresh }) {
             {editMode && <th style={officeStyles.th}>Abbrev. (PO)</th>}
             {editMode && <th style={officeStyles.th}>Short name (memo)</th>}
             {editMode && <th style={officeStyles.th}>Ship-to</th>}
+            <th style={{ ...officeStyles.th, textAlign: 'center' }}>Mobile</th>
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 6 : 2}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 7 : 3}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => {
               const shipOpen = shipToOpenId === c.id;
@@ -4568,6 +4580,14 @@ function OfficeCustomers({ customers, onRefresh }) {
                   </td>
                 )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={c.showOnMobile !== false}
+                    onChange={async e => { await apiPatch(`/customers/${c.id}`, { showOnMobile: e.target.checked }); await onRefresh(); }}
+                    title="Show this customer in the mobile field-rep picker"
+                  />
+                </td>
+                <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
                     onToggle={async next => { await apiPatch(`/customers/${c.id}`, { active: next }); await onRefresh(); }}
@@ -4576,7 +4596,7 @@ function OfficeCustomers({ customers, onRefresh }) {
               </tr>
               {editMode && shipOpen && (
                 <tr>
-                  <td colSpan={6} style={officeStyles.shipToCell}>
+                  <td colSpan={7} style={officeStyles.shipToCell}>
                     <div style={officeStyles.shipToTitle}>Bill-to address (invoice) for {c.name}</div>
                     <div style={officeStyles.shipToGrid}>
                       <CustomerTextField customer={c} field="billToLine1" value={c.billToLine1} placeholder="Bill-to line 1 (company)" width={220} onRefresh={onRefresh} />
@@ -4785,6 +4805,7 @@ const styles = {
   customerRowActive: { background: '#EAF1EE' },
   custDayTag: { marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 8px' },
   dayChipRow: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 0 10px' },
+  showAllCustLabel: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: '#5B6058', fontWeight: 600, padding: '2px 0 10px', cursor: 'pointer' },
   dayChip: { background: '#F0EEE4', border: '1px solid #E3E1D6', color: '#5B6058', borderRadius: 20, padding: '5px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   dayChipActive: { background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' },
   customerSearchWrap: { display: 'flex', alignItems: 'center', gap: 8, background: '#F0EEE4', borderRadius: 10, padding: '10px 12px', margin: '4px 0 10px' },
