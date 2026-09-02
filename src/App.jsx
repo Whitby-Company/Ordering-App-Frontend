@@ -1112,6 +1112,31 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     return map;
   }, [isEdit, editOrder]);
   const [customerId, setCustomerId] = useState(isEdit ? editOrder.customerId : (savedDraft.customerId ?? null));
+  // Per-store catalog: which items this customer carries + their per-each prices.
+  // catalog === null means "not loaded / no customer"; catalog.off means the
+  // store has no catalog set up (field shows nothing).
+  const [catalog, setCatalog] = useState(null);
+  useEffect(() => {
+    if (customerId == null) { setCatalog(null); return; }
+    const cust = customers.find(c => c.id === customerId);
+    // A customer with catalog_on = false shows nothing until configured.
+    if (cust && cust.catalogOn === false) { setCatalog({ off: true, ids: new Set(), prices: new Map() }); return; }
+    let cancelled = false;
+    apiGet(`/customers/${customerId}/catalog`)
+      .then(d => {
+        if (cancelled) return;
+        const prices = new Map();
+        for (const o of (d.overrides || [])) if (o.present && o.price != null) prices.set(o.item_id, o.price);
+        setCatalog({ off: !d.catalogOn, ids: new Set(d.itemIds || []), prices });
+      })
+      .catch(() => { if (!cancelled) setCatalog(null); });
+    return () => { cancelled = true; };
+  }, [customerId, customers]);
+  // Effective per-each price for an item for the selected customer.
+  const priceOf = React.useCallback((item) => {
+    if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
+    return Number(item.price) || 0;
+  }, [catalog]);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerDayFilter, setCustomerDayFilter] = useState(null); // 0-6, or null for all
@@ -1223,12 +1248,22 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     }
   }
 
-  const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))), [items]);
+  // In edit mode, keep the full item set. Otherwise, once a customer is chosen,
+  // restrict to their catalog and apply their per-each prices.
+  const catalogItems = useMemo(() => {
+    if (isEdit || !catalog) return items;
+    if (catalog.off) return [];
+    return items
+      .filter(i => catalog.ids.has(i.id))
+      .map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i));
+  }, [items, catalog, isEdit]);
+
+  const brandList = useMemo(() => Array.from(new Set(catalogItems.map(i => i.brand))), [catalogItems]);
   const brandCounts = useMemo(() => {
     const counts = {};
-    items.forEach(i => { counts[i.brand] = (counts[i.brand] || 0) + 1; });
+    catalogItems.forEach(i => { counts[i.brand] = (counts[i.brand] || 0) + 1; });
     return counts;
-  }, [items]);
+  }, [catalogItems]);
   const popularity = useMemo(() => computePopularity(orders), [orders]);
   const [sortBy, setSortBy] = useState(() => {
     try { return localStorage.getItem('orderSortBy') || 'name'; } catch { return 'name'; }
@@ -1242,23 +1277,25 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
 
   const filteredItems = useMemo(() => {
     const effectiveBrand = screen === 'brands' ? 'All' : brand;
-    const filtered = items.filter(i => {
+    const filtered = catalogItems.filter(i => {
       const brandMatch = effectiveBrand === 'All' || i.brand === effectiveBrand;
       const q = query.trim().toLowerCase();
       const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
       return brandMatch && queryMatch;
     });
     return sortItemsBy(filtered, sortBy, popularity, printSequence);
-  }, [items, brand, query, screen, sortBy, popularity, printSequence]);
+  }, [catalogItems, brand, query, screen, sortBy, popularity, printSequence]);
 
   const orderLines = useMemo(() => {
     const snap = {};
     if (isEdit) for (const l of editOrder.lines) snap[l.id] = l;
     return order.map(o => {
-      const item = items.find(i => i.id === o.id) || (isEdit ? snap[o.id] : null);
+      let item = catalogItems.find(i => i.id === o.id) || items.find(i => i.id === o.id) || (isEdit ? snap[o.id] : null);
+      // apply the customer's price to the order line even if item came from the base list
+      if (item && catalog && catalog.prices.has(o.id)) item = { ...item, price: catalog.prices.get(o.id) };
       return item ? { ...item, qty: o.qty, checkin: !!o.checkin } : null;
     }).filter(Boolean);
-  }, [order, items, isEdit, editOrder]);
+  }, [order, catalogItems, items, isEdit, editOrder, catalog]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
   const totalPrice = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -1531,14 +1568,20 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         </button>
       </div>
 
-      {screen === 'brands' && !searching && (
+      {!isEdit && customerId == null && (
+        <div style={styles.catalogNote}>Pick a customer to see the items they carry.</div>
+      )}
+      {!isEdit && customerId != null && catalog && catalog.off && (
+        <div style={styles.catalogNote}>This store has no catalog set up yet — set one up on the desktop (Catalogs tab) before ordering.</div>
+      )}
+      {screen === 'brands' && !searching && (customerId != null || isEdit) && !(catalog && catalog.off) && (
         <div style={{ ...styles.brandGrid, gridTemplateColumns: `repeat(auto-fill, minmax(${gridSizeMinWidth(gridSize)}px, 1fr))` }}>
           <button
             style={{ ...styles.brandTile, background: '#3C4132', ...styles.brandTileVariant[gridSize] }}
             onClick={() => { setBrand('All'); setScreen('items'); }}
           >
             <span style={{ ...styles.brandTileName, ...styles.brandTileNameVariant[gridSize] }}>All Items</span>
-            <span style={styles.brandTileCount}>{items.length} items</span>
+            <span style={styles.brandTileCount}>{catalogItems.length} items</span>
           </button>
           {brandList.map((b, idx) => (
             <button
@@ -4653,6 +4696,7 @@ const styles = {
   sortDirBtn: { flexShrink: 0, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, width: 30, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#5B6058', cursor: 'pointer' },
   list: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px' },
   emptyState: { textAlign: 'center', color: '#8A8F87', fontSize: 13.5, padding: '32px 0' },
+  catalogNote: { textAlign: 'center', color: '#5B6058', fontSize: 14, padding: '40px 20px', fontStyle: 'italic', background: '#F0EEE4', border: '1px solid #E3E1D6', borderRadius: 12, margin: '8px 0' },
   mobileIifError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', margin: '0 16px 12px', fontSize: 13 },
   mobileIifErrorDismiss: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
   itemRow: { display: 'flex', alignItems: 'center', gap: 14, padding: '8px 0', borderBottom: '1px solid #EAE8DD' },
