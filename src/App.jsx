@@ -542,7 +542,7 @@ function printInvoice(order, customer, printSequence) {
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const c = customer || {};
   const SALES_TAX_RATE = 0.005; // 0.5%
-  const money = n => (Number(n) || 0).toFixed(2); // no leading "$" — matches template
+  const money = n => (Number(n) || 0).toFixed(2);
 
   const ordered = sortLinesForPrint(order.lines, printSequence);
   const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
@@ -577,7 +577,6 @@ function printInvoice(order, customer, printSequence) {
     const pack = Number(l.pack) || 1;
     const each = cases * pack;
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
-    // UPC as scannable barcode(s); falls back to the raw text if unencodable.
     const upcCell = barcodesForCell(l.upc) || parseUpcList(l.upc).map(esc).join('<br>');
     return `<tr>
       <td class="c-item">${esc(displayCode(l.id))}</td>
@@ -596,8 +595,9 @@ function printInvoice(order, customer, printSequence) {
     <title>Invoice ${invoiceNumberFor(order)}</title>
     <style>
       * { box-sizing: border-box; }
-      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 26px 30px 170px; font-size: 12px; }
-      .printBtn { display: inline-block; margin-bottom: 14px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }
+      body { font-family: 'Times New Roman', Times, serif; color: #000; margin: 0; padding: 0; font-size: 12px; }
+      .printBtn { position: fixed; top: 10px; left: 10px; z-index: 20; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }
+      .sheetwrap { padding: 26px 30px 20px; }
       table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
       .hdr-top { width: 100%; border-collapse: collapse; }
       .hdr-top > tbody > tr > td { vertical-align: top; padding: 0; }
@@ -627,30 +627,28 @@ function printInvoice(order, customer, printSequence) {
       td.c-upc .barcode svg { display: block; margin: 0 auto; height: 30px; width: auto; max-width: 100%; }
       td.c-upc .barcode + .barcode { margin-top: 2px; }
       td.c-price, td.c-total { text-align: right; white-space: nowrap; }
-      /* Totals footer, pinned to the bottom of every printed page. */
-      .footer { position: fixed; left: 30px; right: 30px; bottom: 24px; }
-      .totals { width: 100%; }
-      .totals td { vertical-align: bottom; }
-      .totals .left { font-size: 14px; line-height: 1.9; }
-      .totals .right table { border-collapse: collapse; margin-left: auto; }
-      .totals .right td { padding: 4px 12px; font-size: 15px; }
-      .totals .right td.lbl { text-align: center; }
-      .totals .right td.amt { text-align: right; white-space: nowrap; }
-      .totals .right tr.grand td { font-weight: bold; }
-      .pnum { text-align: right; font-size: 10px; color: #444; font-family: Arial, sans-serif; margin-top: 4px; }
-      /* Signature only at the very end (last page). */
-      .sigrow { width: 100%; margin-top: 30px; }
+      /* Totals in tfoot: the browser repeats it at the bottom of every printed page. */
+      tfoot { display: table-footer-group; }
+      tfoot td { padding-top: 16px; vertical-align: bottom; }
+      .tf-left { font-size: 14px; line-height: 1.9; }
+      .tf-right table { border-collapse: collapse; margin-left: auto; }
+      .tf-right td { padding: 4px 12px; font-size: 15px; }
+      .tf-right td.lbl { text-align: center; }
+      .tf-right td.amt { text-align: right; white-space: nowrap; }
+      .tf-right tr.grand td { font-weight: bold; }
+      .sigrow { width: 100%; margin-top: 26px; }
       .sigrow td { text-align: center; font-size: 11px; color: #000; border-top: 1px solid #000; padding-top: 3px; }
       @media print {
-        body { padding: 16px 22px 160px; }
         .no-print { display: none; }
         thead { display: table-header-group; }
-        .footer { left: 22px; right: 22px; bottom: 14px; }
-        .barcode svg { image-rendering: pixelated; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        tfoot { display: table-footer-group; }
+        .barcode svg { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .sheetwrap { padding: 16px 22px; }
       }
-      @page { size: letter; margin: 0.35in; counter-increment: page; }
+      @page { size: letter; margin: 0.3in; }
     </style></head><body>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
+    <div class="sheetwrap">
     <table class="sheet">
       <colgroup>
         <col style="width:9%" /><col style="width:5%" /><col style="width:6%" />
@@ -681,37 +679,23 @@ function printInvoice(order, customer, printSequence) {
           <th>DESCRIPTION</th><th>UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th>
         </tr>
       </thead>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="tf-left">Total Case: ${totalCases}<br>Total Each: ${totalEach}</td>
+          <td colspan="4" class="tf-right"><table>
+            <tr><td class="lbl">Subtotal</td><td class="amt">${money(subtotal)}</td></tr>
+            <tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">${money(tax)}</td></tr>
+            <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">${money(grand)}</td></tr>
+          </table></td>
+        </tr>
+      </tfoot>
       <tbody>${rows}</tbody>
     </table>
     <table class="sigrow"><tr>
       <td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>
       <td style="width:30%">Signature</td><td style="width:20%">Date</td>
     </tr></table>
-    <div class="footer">
-      <table class="totals"><tr>
-        <td class="left">Total Case: ${totalCases}<br>Total Each: ${totalEach}</td>
-        <td class="right"><table>
-          <tr><td class="lbl">Subtotal</td><td class="amt">${money(subtotal)}</td></tr>
-          <tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">${money(tax)}</td></tr>
-          <tr class="grand"><td class="lbl">TOTAL AMOUNT</td><td class="amt">${money(grand)}</td></tr>
-        </table></td>
-      </tr></table>
-      <div class="pnum" id="pnum"></div>
     </div>
-    <script>
-      (function(){
-        // Estimate page count from content height vs. a Letter page's printable height.
-        function updatePages(){
-          var el = document.getElementById('pnum');
-          if(!el) return;
-          var PRINTABLE = 9.3 * 96; // ~9.3in usable height at 96dpi (Letter minus margins)
-          var pages = Math.max(1, Math.ceil(document.body.scrollHeight / PRINTABLE));
-          el.textContent = 'Page 1 of ' + pages;
-        }
-        updatePages();
-        window.addEventListener('beforeprint', updatePages);
-      })();
-    <\/script>
     </body></html>`);
   win.document.close();
   win.focus();
