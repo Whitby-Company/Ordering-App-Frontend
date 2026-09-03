@@ -1289,9 +1289,12 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
           {/* blank entry rows */}
           {drafts.map((text, rowIdx) => {
             const ms = activeRow === rowIdx ? matchesFor(text) : [];
+            const preview = (activeRow === rowIdx && text.trim() && ms.length > 0)
+              ? ms[Math.min(Math.max(hi, 0), ms.length - 1)]
+              : null;
             return (
-              <tr key={`draft-${rowIdx}`}>
-                <td style={qeStyles.td} colSpan={2}>
+              <tr key={`draft-${rowIdx}`} style={preview ? qeStyles.previewRow : undefined}>
+                <td style={qeStyles.td}>
                   <div style={{ position: 'relative' }}>
                     <input
                       ref={el => { codeRefs.current[rowIdx] = el; }}
@@ -1320,7 +1323,20 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     )}
                   </div>
                 </td>
-                <td style={qeStyles.td} colSpan={5} />
+                {/* live preview of the best-fitting item as you type */}
+                <td style={{ ...qeStyles.td, color: '#5B6058' }}>
+                  {preview ? (
+                    <span>
+                      <span style={{ color: '#8A8F87', fontWeight: 700, marginRight: 8 }}>{displayCode(preview.id)}</span>
+                      {preview.name}
+                      {!inCatalog(preview.id) && <span style={qeStyles.warnTag}>not in catalog</span>}
+                    </span>
+                  ) : null}
+                </td>
+                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? '—' : ''}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? (Number(preview.pack) || 1) : ''}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? formatMoney(preview.price) : ''}</td>
+                <td style={qeStyles.td} colSpan={2} />
               </tr>
             );
           })}
@@ -1345,6 +1361,7 @@ const qeStyles = {
   th: { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '6px 8px', borderBottom: '1px solid #E3E1D6' },
   td: { padding: '5px 8px', borderBottom: '1px solid #F0EEE6', color: '#14181F' },
   warnRow: { background: '#FDF6EC' },
+  previewRow: { background: '#F3F6F4' },
   warnTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FBEED9', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' },
   qtyInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 7px', fontSize: 13.5, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", outline: 'none' },
   codeInput: { width: '100%', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
