@@ -1492,15 +1492,15 @@ const qeStyles = {
 // jumps to the next); commits to an ISO date whenever all three are valid.
 function DateBoxes({ value, onChange, firstRef }) {
   const parts = value ? value.split('-') : ['', '', ''];
-  const [mm, setMm] = useState(value ? parts[1] : '');
-  const [dd, setDd] = useState(value ? parts[2] : '');
+  const [mm, setMm] = useState(value ? String(Number(parts[1])) : '');
+  const [dd, setDd] = useState(value ? String(Number(parts[2])) : '');
   const [yy, setYy] = useState(value ? parts[0].slice(2) : '');
   const mRef = useRef(null), dRef = useRef(null), yRef = useRef(null);
   useEffect(() => { if (firstRef) firstRef.current = mRef.current; }, [firstRef]);
+  // Only re-sync from `value` when it's cleared elsewhere; otherwise let the user
+  // type freely (don't clobber in-progress input with padded values).
   useEffect(() => {
-    // keep boxes in sync if the date is changed elsewhere (e.g. reset)
-    if (!value) { setMm(''); setDd(''); setYy(''); return; }
-    const p = value.split('-'); setMm(p[1]); setDd(p[2]); setYy(p[0].slice(2));
+    if (!value) { setMm(''); setDd(''); setYy(''); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
@@ -1511,20 +1511,24 @@ function DateBoxes({ value, onChange, firstRef }) {
     }
   }
   const digits = s => s.replace(/[^0-9]/g, '');
+  // When a box already has 2 digits and is fully selected, a new keystroke
+  // should start over. React's controlled input + select() handles most of it;
+  // we just take the last 2 digits typed so it never gets "stuck".
+  const take2 = raw => digits(raw).slice(-2);
   return (
     <div style={dateBoxStyles.wrap}>
-      <input ref={mRef} style={dateBoxStyles.box} placeholder="MM" value={mm} inputMode="numeric" maxLength={2}
+      <input ref={mRef} style={dateBoxStyles.box} placeholder="MM" value={mm} inputMode="numeric"
         onFocus={e => e.target.select()}
-        onChange={e => { const v = digits(e.target.value).slice(0, 2); setMm(v); commit(v, dd, yy); if (v.length === 2 && dRef.current) dRef.current.focus(); }} />
+        onChange={e => { const v = take2(e.target.value); setMm(v); commit(v, dd, yy); if (v.length === 2 && dRef.current) { dRef.current.focus(); dRef.current.select(); } }} />
       <span style={dateBoxStyles.sep}>/</span>
-      <input ref={dRef} style={dateBoxStyles.box} placeholder="DD" value={dd} inputMode="numeric" maxLength={2}
+      <input ref={dRef} style={dateBoxStyles.box} placeholder="DD" value={dd} inputMode="numeric"
         onFocus={e => e.target.select()}
-        onChange={e => { const v = digits(e.target.value).slice(0, 2); setDd(v); commit(mm, v, yy); if (v.length === 2 && yRef.current) yRef.current.focus(); }}
+        onChange={e => { const v = take2(e.target.value); setDd(v); commit(mm, v, yy); if (v.length === 2 && yRef.current) { yRef.current.focus(); yRef.current.select(); } }}
         onKeyDown={e => { if (e.key === 'Backspace' && !dd && mRef.current) mRef.current.focus(); }} />
       <span style={dateBoxStyles.sep}>/</span>
-      <input ref={yRef} style={dateBoxStyles.box} placeholder="YY" value={yy} inputMode="numeric" maxLength={2}
+      <input ref={yRef} style={dateBoxStyles.box} placeholder="YY" value={yy} inputMode="numeric"
         onFocus={e => e.target.select()}
-        onChange={e => { const v = digits(e.target.value).slice(0, 2); setYy(v); commit(mm, dd, v); }}
+        onChange={e => { const v = take2(e.target.value); setYy(v); commit(mm, dd, v); }}
         onKeyDown={e => { if (e.key === 'Backspace' && !yy && dRef.current) dRef.current.focus(); }} />
     </div>
   );
