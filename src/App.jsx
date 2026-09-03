@@ -1321,8 +1321,8 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                             onMouseEnter={() => setHi(mi)}
                             onMouseDown={e => { e.preventDefault(); pickForRow(rowIdx, it); }}
                           >
-                            <span style={{ fontWeight: 700, marginRight: 8 }}>{displayCode(it.id)}</span>
-                            <span>{it.name}</span>
+                            <span style={qeStyles.matchCode}>{displayCode(it.id)}</span>
+                            <span style={qeStyles.matchName}>{it.name}</span>
                             {(Number(it.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
                             {!inCatalog(it.id) && (Number(it.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
                           </button>
@@ -1376,9 +1376,11 @@ const qeStyles = {
   warnTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FBEED9', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' },
   qtyInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 7px', fontSize: 13.5, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", outline: 'none' },
   codeInput: { width: '100%', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
-  dropdown: { position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 2, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 30px rgba(20,24,31,0.2)', zIndex: 8, padding: 6, maxHeight: 280, overflowY: 'auto' },
-  matchRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '8px 6px', fontSize: 13, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 5 },
+  dropdown: { position: 'absolute', left: 0, top: '100%', marginTop: 3, minWidth: 480, width: 'max-content', maxWidth: '70vw', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 10, boxShadow: '0 14px 36px rgba(20,24,31,0.22)', zIndex: 8, padding: 6, maxHeight: 340, overflowY: 'auto' },
+  matchRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '10px 12px', fontSize: 13.5, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 7, whiteSpace: 'nowrap' },
   matchRowHi: { background: '#EAF1EE' },
+  matchCode: { fontWeight: 800, color: '#2B5D50', minWidth: 84, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace" },
+  matchName: { overflow: 'hidden', textOverflow: 'ellipsis' },
   rm: { width: 26, height: 26, borderRadius: 6, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 15, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
   tfoot: { padding: '9px 8px', borderTop: '2px solid #14181F', fontWeight: 800, fontSize: 14, color: '#14181F' },
 };
