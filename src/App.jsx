@@ -1470,6 +1470,11 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   }, [catalog, unitOf]);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
+  // Desktop keyboard flow: type-to-filter customer, Tab to accept + go to date.
+  const [comboText, setComboText] = useState('');
+  const [comboOpen, setComboOpen] = useState(false);
+  const [comboHi, setComboHi] = useState(0);
+  const dateInputRef = useRef(null);
   const [customerDayFilter, setCustomerDayFilter] = useState(null); // 0-6, or null for all
   // Mobile only: field reps see just the "show on mobile" customers unless they
   // opt into all. Desktop always shows everyone.
@@ -1563,6 +1568,13 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     if (q) active = active.filter(c => c.name.toLowerCase().includes(q));
     return active;
   }, [customers, customerQuery, customerDayFilter, desktop, showAllCustomers]);
+  // Desktop combobox: filter customers by the typed text (all customers on desktop).
+  const comboMatches = useMemo(() => {
+    const q = comboText.trim().toLowerCase();
+    const pool = customers.filter(c => c.active !== 0);
+    if (!q) return pool;
+    return pool.filter(c => c.name.toLowerCase().includes(q));
+  }, [customers, comboText]);
   // Which weekdays actually have customers assigned (to only show useful chips).
   const daysInUse = useMemo(() => {
     const s = new Set();
@@ -1874,20 +1886,81 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         )}
         {pickersExpanded ? (
           <>
-            <button style={desktop ? { ...styles.customerBtn, flex: 1, marginTop: 0 } : styles.customerBtn} onClick={() => { setCustomerQuery(''); setCustomerDayFilter(null); setCustomerOpen(true); }}>
-              <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
-              <span style={{ ...styles.customerBtnText, color: customerId ? '#14181F' : '#8A8F87' }}>
-                {customerName || 'Select customer'}
-              </span>
-              <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
-            </button>
-            <button style={desktop ? { ...styles.dateBtn, flex: 1, marginTop: 0 } : styles.dateBtn} onClick={() => setDateOpen(true)}>
-              <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
-              <span style={{ ...styles.customerBtnText, color: deliveryDate ? '#14181F' : '#8A8F87' }}>
-                {deliveryDate ? formatDate(deliveryDate) : 'Delivery date'}
-              </span>
-              <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
-            </button>
+            {desktop ? (
+              <div style={{ position: 'relative', flex: 1 }}>
+                <div style={{ ...styles.customerBtn, marginTop: 0 }}>
+                  <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
+                  <input
+                    style={styles.comboInput}
+                    placeholder="Type a customer…"
+                    value={comboOpen ? comboText : (customerName || '')}
+                    onChange={e => { setComboText(e.target.value); setComboOpen(true); setComboHi(0); }}
+                    onFocus={e => { setComboText(customerId ? '' : comboText); setComboOpen(true); setComboHi(0); e.target.select(); }}
+                    onKeyDown={e => {
+                      const matches = comboMatches;
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setComboOpen(true); setComboHi(h => Math.min(h + 1, matches.length - 1)); return; }
+                      if (e.key === 'ArrowUp') { e.preventDefault(); setComboHi(h => Math.max(h - 1, 0)); return; }
+                      if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+                        if (comboText.trim() && matches.length > 0) {
+                          e.preventDefault();
+                          const pick = matches[Math.min(comboHi, matches.length - 1)];
+                          setCustomerId(pick.id);
+                          if (!isEdit && pick.deliveryDay != null) { /* leave date to user */ }
+                          setComboOpen(false); setComboText('');
+                          setTimeout(() => { if (dateInputRef.current) dateInputRef.current.focus(); }, 20);
+                        }
+                        return;
+                      }
+                      if (e.key === 'Escape') { setComboOpen(false); }
+                    }}
+                  />
+                  <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
+                </div>
+                {comboOpen && comboText.trim() && comboMatches.length > 0 && (
+                  <div style={styles.comboDropdown}>
+                    {comboMatches.slice(0, 50).map((c, ci) => (
+                      <button
+                        key={c.id}
+                        ref={ci === Math.min(comboHi, comboMatches.length - 1) ? (el => { if (el) el.scrollIntoView({ block: 'nearest' }); }) : undefined}
+                        style={{ ...styles.comboRow, ...(ci === Math.min(comboHi, comboMatches.length - 1) ? styles.comboRowHi : {}) }}
+                        onMouseEnter={() => setComboHi(ci)}
+                        onMouseDown={e => { e.preventDefault(); setCustomerId(c.id); setComboOpen(false); setComboText(''); setTimeout(() => { if (dateInputRef.current) dateInputRef.current.focus(); }, 20); }}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button style={styles.customerBtn} onClick={() => { setCustomerQuery(''); setCustomerDayFilter(null); setCustomerOpen(true); }}>
+                <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
+                <span style={{ ...styles.customerBtnText, color: customerId ? '#14181F' : '#8A8F87' }}>
+                  {customerName || 'Select customer'}
+                </span>
+                <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
+              </button>
+            )}
+            {desktop ? (
+              <div style={{ ...styles.dateBtn, flex: 1, marginTop: 0 }}>
+                <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  style={styles.comboInput}
+                  value={deliveryDate || ''}
+                  onChange={e => setDeliveryDate(e.target.value)}
+                />
+              </div>
+            ) : (
+              <button style={styles.dateBtn} onClick={() => setDateOpen(true)}>
+                <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
+                <span style={{ ...styles.customerBtnText, color: deliveryDate ? '#14181F' : '#8A8F87' }}>
+                  {deliveryDate ? formatDate(deliveryDate) : 'Delivery date'}
+                </span>
+                <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
+              </button>
+            )}
           </>
         ) : (
           <button style={styles.pickersSummary} onClick={() => setPickersExpanded(true)}>
@@ -5067,6 +5140,10 @@ const styles = {
   headerTitle: { color: '#EDEBE3', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em' },
   customerBtn: { width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#EDEBE3', border: 'none', borderRadius: 10, padding: '11px 12px', cursor: 'pointer', fontFamily: 'inherit' },
   customerBtnText: { fontSize: 14, fontWeight: 500 },
+  comboInput: { flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: 500, color: '#14181F', fontFamily: 'inherit' },
+  comboDropdown: { position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 10, boxShadow: '0 14px 36px rgba(20,24,31,0.22)', zIndex: 30, padding: 6, maxHeight: 320, overflowY: 'auto' },
+  comboRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '9px 10px', fontSize: 13.5, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  comboRowHi: { background: '#EAF1EE' },
   dateBtn: { position: 'relative', width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#EDEBE3', border: 'none', borderRadius: 10, padding: '11px 12px', cursor: 'pointer', marginTop: 8, boxSizing: 'border-box', fontFamily: 'inherit' },
   pickersSummary: { width: '100%', display: 'flex', alignItems: 'center', gap: 7, background: '#2A2E23', border: '1px solid #3C4132', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' },
   pickersSummaryText: { fontSize: 12.5, fontWeight: 600, color: '#EDEBE3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
