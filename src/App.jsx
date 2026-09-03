@@ -563,9 +563,11 @@ function printOrder(order, printSequence, options = {}) {
   win.focus();
 }
 
-// Printed-invoice number: the order number offset so numbering starts at 30000.
-const INVOICE_BASE = 30000;
-function invoiceNumberFor(order) { return INVOICE_BASE + Number(order.id || 0); }
+// Printed-invoice number: the order number plus an admin-set offset (so the
+// sequence can be aligned to QuickBooks). Default 30000 until the app loads the
+// live offset. invoiceNumberFor uses whatever the module has fetched.
+let INVOICE_OFFSET = 30000;
+function invoiceNumberFor(order) { return INVOICE_OFFSET + Number(order.id || 0); }
 
 // Build a printable invoice that matches the Hawken Group template, using the
 // same data as the TP export (customer bill-to/ship-to, PO, line items with
@@ -1077,6 +1079,8 @@ export default function App() {
         apiGet('/print-order'),
         apiGet('/brand-settings').catch(() => ({})),
       ]);
+      // Load the invoice-number offset (aligns printed # + QuickBooks RefNumber).
+      apiGet('/orders/invoice-offset').then(d => { if (d && typeof d.offset === 'number') INVOICE_OFFSET = d.offset; }).catch(() => {});
       setItems(itemsData);
       setCustomers(customersData);
       setItemsAll(itemsAllData);
