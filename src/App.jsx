@@ -4143,6 +4143,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
             <option value="brand">Edit: Brand</option>
             <option value="pack">Edit: Pack</option>
             <option value="price">Edit: Price</option>
+            <option value="cost">Edit: Cost</option>
             <option value="stock">Edit: Stock</option>
             <option value="active">Edit: Active</option>
             <option value="upc">Edit: UPC</option>
@@ -4274,7 +4275,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 )}
                 {isItems && (
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  {canEdit('price') ? (
+                  {canEdit('cost') ? (
                     <NumberFieldEditor item={item} field="cost" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} placeholder="—" />
                   ) : (item.cost != null ? formatMoney(item.cost) : <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
