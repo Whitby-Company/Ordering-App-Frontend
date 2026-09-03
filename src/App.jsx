@@ -5056,7 +5056,7 @@ const styles = {
   tabBar: { display: 'flex', borderTop: '1px solid #E3E1D6', background: '#FFFFFF', padding: '10px 0 calc(12px + env(safe-area-inset-bottom, 0px))', flexShrink: 0, position: 'relative', zIndex: 10 },
   tabBtn: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0' },
   tabBtnLabel: { fontSize: 11, fontWeight: 700 },
-  header: { background: '#14181F', padding: '18px 16px 16px' },
+  header: { background: '#14181F', padding: 'calc(18px + env(safe-area-inset-top, 0px)) 16px 16px' },
   headerDesktop: { background: '#14181F', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' },
   headerTop: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 },
   officeLinkBtn: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: '#B7BCB2', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 6px' },
