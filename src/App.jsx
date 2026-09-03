@@ -592,7 +592,8 @@ function printInvoice(order, customer, printSequence, items = []) {
   const lines = [...positive, ...zeros];
 
   const totalCases = positive.reduce((s, l) => s + (Number(l.qty) || 0), 0);
-  const totalEach = positive.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+  // Total Each counts only box-unit lines; case lines don't break into eaches.
+  const totalEach = positive.reduce((s, l) => s + (l.unit === 'case' ? 0 : (Number(l.qty) || 0) * (Number(l.pack) || 1)), 0);
   const subtotal = positive.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const tax = Math.round(subtotal * SALES_TAX_RATE * 100) / 100;
   const grand = Math.round((subtotal + tax) * 100) / 100;
@@ -620,7 +621,10 @@ function printInvoice(order, customer, printSequence, items = []) {
   const rows = lines.map(l => {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
-    const each = cases * pack;
+    const isCase = l.unit === 'case';
+    // For case lines: show the case price (per-each × pack) and leave EACH blank.
+    const each = isCase ? '' : cases * pack;
+    const priceShown = isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0);
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
     const upcCell = barcodesForCell(l.upc) || parseUpcList(l.upc).map(esc).join('<br>');
     let row = '<tr class="itemrow">' +
@@ -629,7 +633,7 @@ function printInvoice(order, customer, printSequence, items = []) {
       '<td class="c-each">' + each + '</td>' +
       '<td class="c-desc">' + desc + '</td>' +
       '<td class="c-upc">' + upcCell + '</td>' +
-      '<td class="c-price">' + money(l.price) + '</td>' +
+      '<td class="c-price">' + money(priceShown) + '</td>' +
       '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
     '</tr>';
     // Shipper "Contains below" sub-lines (from the item's `contains` list).
