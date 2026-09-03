@@ -1099,7 +1099,7 @@ function TicketQtyInput({ qty, onSet, disabled }) {
 // Desktop bulk entry: a QuickBooks-style grid. Type an item # (or search),
 // enter cases, and it builds the order. Uses the store's catalog prices and
 // warns (amber) on items not in the store's catalog.
-function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, removeLine, desktop }) {
+function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, removeLine, desktop }) {
   const BLANK_ROWS = 8;
   // Each entry row has its own draft text + dropdown highlight index.
   const [drafts, setDrafts] = useState(() => Array.from({ length: BLANK_ROWS }, () => ''));
@@ -1190,7 +1190,10 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, remove
                     value={l.qty}
                     inputMode="numeric"
                     onFocus={e => e.target.select()}
-                    onChange={e => setQty(l.id, parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0)}
+                    onChange={e => {
+                      const n = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
+                      onSetQty(l.id, n);
+                    }}
                     onKeyDown={e => onQtyKey(e, l.id, i === orderLines.length - 1)}
                   />
                 </td>
@@ -1519,6 +1522,20 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     });
   }
 
+  // Like setQty, but going to 0 keeps the line on the order at qty 0 (a $0
+  // placeholder) instead of removing it — used by the Quick entry grid.
+  function setQtyKeepZero(id, qty) {
+    const item = itemById[id];
+    if (!item) return;
+    const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
+    const clamped = Math.max(0, Math.min(qty, maxQty));
+    setOrder(prev => {
+      const exists = prev.find(o => o.id === id);
+      if (!exists) return [...prev, { id, qty: clamped, checkin: clamped === 0 }];
+      return prev.map(o => (o.id === id ? { ...o, qty: clamped, checkin: clamped === 0 ? true : false } : o));
+    });
+  }
+
   // Add an item to the order at qty 0 so its UPC/barcode prints for check-in.
   function addCheckin(id) {
     const item = items.find(i => i.id === id);
@@ -1776,6 +1793,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
           priceOf={priceOf}
           orderLines={orderLines}
           setQty={setQty}
+          onSetQty={setQtyKeepZero}
           removeLine={removeLine}
           desktop={desktop}
         />
