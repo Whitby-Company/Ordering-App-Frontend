@@ -1096,6 +1096,143 @@ function TicketQtyInput({ qty, onSet, disabled }) {
   );
 }
 
+// Desktop bulk entry: a QuickBooks-style grid. Type an item # (or search),
+// enter cases, and it builds the order. Uses the store's catalog prices and
+// warns (amber) on items not in the store's catalog.
+function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, removeLine, desktop }) {
+  const [draftCode, setDraftCode] = useState('');
+  const [openMatch, setOpenMatch] = useState(false);
+
+  const inCatalog = (id) => !catalog || !catalog.ids || catalog.ids.has(id);
+  const findItem = (code) => {
+    const c = code.trim().toLowerCase();
+    if (!c) return null;
+    // exact SKU match (with/without trailing brand prefix or 'c')
+    return allItems.find(i => displayCode(i.id).toLowerCase() === c)
+        || allItems.find(i => i.id.toLowerCase() === c)
+        || allItems.find(i => displayCode(i.id).toLowerCase() === c + 'c');
+  };
+  const matches = useMemo(() => {
+    const c = draftCode.trim().toLowerCase();
+    if (!c) return [];
+    return allItems.filter(i =>
+      displayCode(i.id).toLowerCase().includes(c) || i.name.toLowerCase().includes(c)
+    ).slice(0, 8);
+  }, [draftCode, allItems]);
+
+  function addDraft(item) {
+    if (!item) return;
+    if (!orderLines.some(l => l.id === item.id)) setQty(item.id, 1);
+    setDraftCode(''); setOpenMatch(false);
+  }
+  function submitDraft() {
+    const exact = findItem(draftCode);
+    if (exact) return addDraft(exact);
+    if (matches.length === 1) return addDraft(matches[0]);
+    setOpenMatch(true);
+  }
+
+  const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  const totalEach = orderLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+  const totalAmt = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+
+  return (
+    <div style={qeStyles.wrap}>
+      <table style={qeStyles.table}>
+        <thead><tr>
+          <th style={{ ...qeStyles.th, width: 130 }}>Item #</th>
+          <th style={qeStyles.th}>Description</th>
+          <th style={{ ...qeStyles.th, textAlign: 'right', width: 90 }}>Cases</th>
+          <th style={{ ...qeStyles.th, textAlign: 'right', width: 70 }}>Each</th>
+          <th style={{ ...qeStyles.th, textAlign: 'right', width: 90 }}>Price/ea</th>
+          <th style={{ ...qeStyles.th, textAlign: 'right', width: 100 }}>Total</th>
+          <th style={{ ...qeStyles.th, width: 34 }} />
+        </tr></thead>
+        <tbody>
+          {orderLines.map(l => {
+            const warn = !inCatalog(l.id);
+            const pack = Number(l.pack) || 1;
+            return (
+              <tr key={l.id} style={warn ? qeStyles.warnRow : undefined}>
+                <td style={qeStyles.td}>{displayCode(l.id)}</td>
+                <td style={qeStyles.td}>
+                  {l.name}
+                  {warn && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
+                </td>
+                <td style={{ ...qeStyles.td, textAlign: 'right' }}>
+                  <input
+                    style={qeStyles.qtyInput}
+                    value={l.qty}
+                    inputMode="numeric"
+                    onChange={e => setQty(l.id, parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0)}
+                  />
+                </td>
+                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{(Number(l.qty) || 0) * pack}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{formatMoney(l.price)}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineTotal(l, l.qty))}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'center' }}>
+                  <button style={qeStyles.rm} onClick={() => removeLine(l.id)} title="Remove">×</button>
+                </td>
+              </tr>
+            );
+          })}
+          {/* entry row */}
+          <tr>
+            <td style={qeStyles.td} colSpan={2}>
+              <div style={{ position: 'relative' }}>
+                <input
+                  style={qeStyles.codeInput}
+                  placeholder="Type item # or name, then Enter…"
+                  value={draftCode}
+                  onChange={e => { setDraftCode(e.target.value); setOpenMatch(true); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitDraft(); } if (e.key === 'Escape') { setDraftCode(''); setOpenMatch(false); } }}
+                />
+                {openMatch && draftCode.trim() && matches.length > 0 && (
+                  <div style={qeStyles.dropdown}>
+                    {matches.map(it => (
+                      <button key={it.id} style={qeStyles.matchRow} onClick={() => addDraft(it)}>
+                        <span style={{ fontWeight: 700, marginRight: 8 }}>{displayCode(it.id)}</span>
+                        <span>{it.name}</span>
+                        {!inCatalog(it.id) && <span style={qeStyles.warnTag}>not in catalog</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </td>
+            <td style={qeStyles.td} colSpan={5}>
+              <span style={{ fontSize: 12, color: '#8A8F87' }}>Enter an item to add a row</span>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot><tr>
+          <td style={qeStyles.tfoot} colSpan={2}>Totals</td>
+          <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalCases}</td>
+          <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalEach}</td>
+          <td style={qeStyles.tfoot} />
+          <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{formatMoney(totalAmt)}</td>
+          <td style={qeStyles.tfoot} />
+        </tr></tfoot>
+      </table>
+    </div>
+  );
+}
+
+const qeStyles = {
+  wrap: { padding: '4px 16px 16px' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 },
+  th: { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '6px 8px', borderBottom: '1px solid #E3E1D6' },
+  td: { padding: '5px 8px', borderBottom: '1px solid #F0EEE6', color: '#14181F' },
+  warnRow: { background: '#FDF6EC' },
+  warnTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FBEED9', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' },
+  qtyInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 7px', fontSize: 13.5, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", outline: 'none' },
+  codeInput: { width: '100%', background: '#FFFFFF', border: '1px solid #C4DDD2', borderRadius: 7, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
+  dropdown: { position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 2, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 30px rgba(20,24,31,0.2)', zIndex: 8, padding: 6, maxHeight: 280, overflowY: 'auto' },
+  matchRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '8px 6px', fontSize: 13, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
+  rm: { width: 26, height: 26, borderRadius: 6, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 15, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
+  tfoot: { padding: '9px 8px', borderTop: '2px solid #14181F', fontWeight: 800, fontSize: 14, color: '#14181F' },
+};
+
 function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
   const isEdit = !!editOrder;
   // Restore an in-progress order draft (customer, delivery date, quantities)
@@ -1153,6 +1290,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
   const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
+  const [quickEntry, setQuickEntry] = useState(false); // desktop: QuickBooks-style grid entry
   const [order, setOrder] = useState(isEdit ? editInitLines : (Array.isArray(savedDraft.order) ? savedDraft.order : []));
   const [notes, setNotes] = useState(isEdit ? (editOrder.notes || '') : (savedDraft.notes || ''));
   const [ticketOpen, setTicketOpen] = useState(false);
@@ -1575,6 +1713,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             {showAllItems ? 'All items ✓' : 'All items'}
           </button>
         )}
+        {desktop && !isEdit && (
+          <button
+            style={{ ...styles.allItemsChip, ...(quickEntry ? styles.allItemsChipOn : {}) }}
+            onClick={() => setQuickEntry(v => !v)}
+            title="Bulk entry: type item numbers and cases, QuickBooks-style"
+          >
+            {quickEntry ? 'Quick entry ✓' : 'Quick entry'}
+          </button>
+        )}
       </div>
 
       {!isEdit && customerId == null && (
@@ -1583,7 +1730,21 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       {!isEdit && customerId != null && catalog && catalog.off && !showAllItems && (
         <div style={styles.catalogNote}>This store has no catalog set up yet — set one up on the desktop (Catalogs tab), or tap "All items" to browse everything.</div>
       )}
-      {screen === 'brands' && !searching && (customerId != null || isEdit) && !(catalog && catalog.off && !showAllItems) && (
+      {quickEntry && !isEdit && (customerId != null) && (
+        <QuickEntryGrid
+          allItems={showAllItems ? items.map(i => (catalog && catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)) : catalogItems}
+          catalog={catalog}
+          priceOf={priceOf}
+          orderLines={orderLines}
+          setQty={setQty}
+          removeLine={removeLine}
+          desktop={desktop}
+        />
+      )}
+      {quickEntry && !isEdit && customerId == null && (
+        <div style={styles.catalogNote}>Pick a customer to start bulk entry.</div>
+      )}
+      {!quickEntry && screen === 'brands' && !searching && (customerId != null || isEdit) && !(catalog && catalog.off && !showAllItems) && (
         <div style={{ ...styles.brandGrid, gridTemplateColumns: `repeat(auto-fill, minmax(${gridSizeMinWidth(gridSize)}px, 1fr))` }}>
           <button
             style={{ ...styles.brandTile, background: '#3C4132', ...styles.brandTileVariant[gridSize] }}
@@ -1605,7 +1766,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         </div>
       )}
 
-      {screen === 'items' && !searching && (
+      {!quickEntry && screen === 'items' && !searching && (
         <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <button style={styles.backBtnBig} onClick={goBackToBrands}>
@@ -1619,7 +1780,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
           </select>
         </div>
       )}
-      {searching && (
+      {!quickEntry && searching && (
         <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
           <span style={styles.itemsSubHeaderBrand}>
             <LayoutGrid size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
@@ -1631,7 +1792,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         </div>
       )}
 
-      {(screen === 'items' || searching) && (
+      {!quickEntry && (screen === 'items' || searching) && (
         <div style={listStyle}>
           {filteredItems.length === 0 && (
             <div style={styles.emptyState}>No items match "{query}"</div>
