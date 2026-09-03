@@ -1557,7 +1557,7 @@ function DateBoxes({ value, onChange, firstRef }) {
   );
 }
 const dateBoxStyles = {
-  wrap: { display: 'inline-flex', alignItems: 'center', gap: 2, flex: 1 },
+  wrap: { display: 'inline-flex', alignItems: 'center', gap: 1 },
   box: { width: 30, textAlign: 'center', background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: 600, color: '#14181F', fontFamily: 'inherit' },
   sep: { color: '#8A8F87', fontSize: 14 },
 };
@@ -2197,18 +2197,16 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               </button>
             )}
             {desktop ? (
-              <div style={{ ...styles.dateBtn, flex: '0 0 auto', marginTop: 0, position: 'relative', paddingRight: 4 }}>
-                <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
-                <DateBoxes value={deliveryDate} onChange={setDeliveryDate} firstRef={dateInputRef} />
+              <div style={{ ...styles.dateBtn, width: 'auto', flex: '0 0 auto', marginTop: 0, marginLeft: 'auto', padding: '9px 8px 9px 10px', position: 'relative' }}>
                 <button
-                  style={styles.calDropBtn}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                   tabIndex={-1}
                   onClick={() => setCalOpen(o => !o)}
                   title="Open calendar"
                 >
-                  <Calendar size={12} color="#5B6058" />
-                  <ChevronDown size={13} color="#5B6058" />
+                  <Calendar size={17} color={deliveryDate ? '#2B5D50' : '#8A8F87'} />
                 </button>
+                <DateBoxes value={deliveryDate} onChange={setDeliveryDate} firstRef={dateInputRef} />
                 {calOpen && (
                   <MiniCalendar
                     value={deliveryDate}
