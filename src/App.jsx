@@ -73,6 +73,13 @@ function sortItemsBy(items, sortBy, popularity, printSequence) {
   }
   return arr;
 }
+// QuickBooks payment terms (from the QB terms list).
+const TERMS_OPTIONS = [
+  '1% 10 Net 11', '1% 10 Net 15', '1% 10 Net 30', '2% 10 Net 30',
+  'CIA', 'COD', 'Consignment', 'Due on receipt',
+  'Net 10', 'Net 11', 'Net 15', 'Net 21', 'Net 30', 'Net 30 ROG', 'Net 60',
+];
+
 const SORT_OPTIONS = [
   { id: 'name', label: 'Name (A–Z)' },
   { id: 'popularity', label: 'Most ordered' },
@@ -5775,7 +5782,14 @@ function OfficeCustomers({ customers, onRefresh }) {
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
-                    <CustomerTextField customer={c} field="terms" value={c.terms} placeholder="1% 10 Net 11" width={130} onRefresh={onRefresh} />
+                    <select
+                      style={{ ...officeStyles.select, minWidth: 130 }}
+                      value={c.terms || ''}
+                      onChange={async e => { await apiPatch(`/customers/${c.id}`, { terms: e.target.value || null }); await onRefresh(); }}
+                    >
+                      <option value="">Default (1% 10 Net 11)</option>
+                      {TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </td>
                 )}
                 {editMode && (
