@@ -4889,11 +4889,13 @@ function CustomerTextField({ customer, field, value: initial, placeholder, width
 // New reports get added to REPORT_LIST and rendered in the switch below.
 const REPORT_LIST = [
   { id: 'sales-by-month', name: 'Sales by month', desc: 'Sales for every item, broken out by month across a period you choose.' },
+  { id: 'margin', name: 'Margin', desc: 'Sell vs. landed cost per customer & item — exact margin $ and %.' },
   // Add more reports here as they\u2019re built.
 ];
 function OfficeReports() {
   const [active, setActive] = useState(null);
   if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
+  if (active === 'margin') return <MarginReport onBack={() => setActive(null)} />;
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
@@ -5058,6 +5060,109 @@ const repStyles = {
   tdNum: { padding: '7px 12px', borderBottom: '1px solid #F0EEE6', textAlign: 'right', whiteSpace: 'nowrap', color: '#14181F', fontFamily: "'JetBrains Mono', monospace" },
   tfoot: { padding: '9px 12px', textAlign: 'right', whiteSpace: 'nowrap', background: '#14181F', color: '#F7F8F4', fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", position: 'sticky', bottom: 0 },
 };
+
+// Margin report: per customer + item, sell vs landed cost, margin $ and %.
+function MarginReport({ onBack }) {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [from, setFrom] = useState(thisMonth);
+  const [to, setTo] = useState(thisMonth);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [custFilter, setCustFilter] = useState('All');
+
+  async function run() {
+    setLoading(true); setErr('');
+    try { setData(await apiGet(`/orders/margin-report?from=${from}&to=${to}`)); }
+    catch (e) { setErr(e.message || 'Could not load the report'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
+
+  const money = n => (n == null ? '—' : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  const pct = n => (n == null ? '—' : `${n}%`);
+  const pctColor = n => (n == null ? '#8A8F87' : n < 0 ? '#B5493B' : n < 15 ? '#B5793B' : '#2B5D50');
+
+  const customers = useMemo(() => data ? ['All', ...Array.from(new Set(data.items.map(x => x.customer))).sort()] : ['All'], [data]);
+  const shown = useMemo(() => data ? data.items.filter(x => custFilter === 'All' || x.customer === custFilter) : [], [data, custFilter]);
+
+  function downloadCSV() {
+    if (!data) return;
+    const cols = ['Customer', 'Item #', 'Item', 'Brand', 'Eaches', 'Sell $', 'Cost $', 'Margin $', 'Margin %'];
+    const lines = [cols, ...shown.map(x => [x.customer, displayCode(x.itemId), x.item, x.brand, x.eaches, x.sell, x.cost ?? '', x.marginD ?? '', x.marginPct ?? ''])];
+    const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    downloadTextFile(`margin-${from}_to_${to}.csv`, csv);
+  }
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Margin</div>
+      </div>
+      <div style={repStyles.controls}>
+        <label style={repStyles.ctrlLabel}>From<input style={repStyles.monthInput} type="month" value={from} onChange={e => setFrom(e.target.value)} /></label>
+        <label style={repStyles.ctrlLabel}>To<input style={repStyles.monthInput} type="month" value={to} onChange={e => setTo(e.target.value)} /></label>
+        <label style={repStyles.ctrlLabel}>Customer
+          <select style={repStyles.monthInput} value={custFilter} onChange={e => setCustFilter(e.target.value)}>
+            {customers.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <button style={officeStyles.smallBtn} onClick={run} disabled={loading}>{loading ? 'Loading…' : 'Run'}</button>
+        <button style={officeStyles.smallBtn} onClick={downloadCSV} disabled={!data || !shown.length}>Download CSV</button>
+      </div>
+      {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      {data && data.missingCost > 0 && (
+        <div style={{ fontSize: 12.5, color: '#B5793B', marginBottom: 10 }}>
+          {data.missingCost} line(s) have no cost set (shown as “—”); those are excluded from totals. Costs are landed (incl. Taiyo 6% + Oahu freight); neighbor-island freight isn’t included yet.
+        </div>
+      )}
+      {data && (
+        <div style={repStyles.tableWrap}>
+          <table style={repStyles.table}>
+            <thead><tr>
+              <th style={{ ...repStyles.th, textAlign: 'left', position: 'sticky', left: 0, background: '#F0EEE4' }}>Customer / Item</th>
+              <th style={repStyles.th}>Eaches</th>
+              <th style={repStyles.th}>Sell</th>
+              <th style={repStyles.th}>Cost</th>
+              <th style={repStyles.th}>Margin $</th>
+              <th style={repStyles.th}>Margin %</th>
+            </tr></thead>
+            <tbody>
+              {shown.map((x, i) => (
+                <tr key={x.customer + x.itemId + i}>
+                  <td style={{ ...repStyles.tdItem, position: 'sticky', left: 0, background: '#FFFFFF' }}>
+                    <span style={{ color: '#8A8F87' }}>{x.customer}</span>
+                    <span style={{ margin: '0 6px', color: '#D6D3C6' }}>·</span>
+                    <span style={{ color: '#2B5D50', fontWeight: 700, marginRight: 6, fontFamily: "'JetBrains Mono', monospace" }}>{displayCode(x.itemId)}</span>
+                    {x.item}
+                  </td>
+                  <td style={repStyles.tdNum}>{x.eaches}</td>
+                  <td style={repStyles.tdNum}>{money(x.sell)}</td>
+                  <td style={{ ...repStyles.tdNum, color: x.cost == null ? '#B5793B' : '#14181F' }}>{money(x.cost)}</td>
+                  <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct) }}>{money(x.marginD)}</td>
+                  <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct), fontWeight: 700 }}>{pct(x.marginPct)}</td>
+                </tr>
+              ))}
+              {shown.length === 0 && <tr><td colSpan={6} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No sales in this period.</td></tr>}
+            </tbody>
+            {shown.length > 0 && (
+              <tfoot><tr>
+                <td style={{ ...repStyles.tfoot, textAlign: 'left', position: 'sticky', left: 0, background: '#14181F' }}>Totals{custFilter !== 'All' ? ` — ${custFilter}` : ''}</td>
+                <td style={repStyles.tfoot} />
+                <td style={repStyles.tfoot}>{money(Math.round(shown.reduce((s, x) => s + x.sell, 0) * 100) / 100)}</td>
+                <td style={repStyles.tfoot}>{money(Math.round(shown.filter(x => x.cost != null).reduce((s, x) => s + x.cost, 0) * 100) / 100)}</td>
+                <td style={repStyles.tfoot}>{money(Math.round(shown.filter(x => x.cost != null).reduce((s, x) => s + x.marginD, 0) * 100) / 100)}</td>
+                <td style={repStyles.tfoot}>{(() => { const wc = shown.filter(x => x.cost != null); const sell = wc.reduce((s, x) => s + x.sell, 0); const marg = wc.reduce((s, x) => s + x.marginD, 0); return sell ? `${Math.round(marg / sell * 1000) / 10}%` : '—'; })()}</td>
+              </tr></tfoot>
+            )}
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Desktop per-store catalog manager: pick a store, toggle its catalog, see the
 // items it carries with per-customer prices, add/remove items, and apply the
