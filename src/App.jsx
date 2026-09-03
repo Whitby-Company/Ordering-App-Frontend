@@ -1364,7 +1364,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
 }
 
 const qeStyles = {
-  wrap: { padding: '4px 16px 120px' },
+  wrap: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px 120px' },
   hint: { fontSize: 12, color: '#8A8F87', padding: '2px 2px 8px' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 },
   th: { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '6px 8px', borderBottom: '1px solid #E3E1D6' },
