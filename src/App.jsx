@@ -3337,6 +3337,12 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
           >
             Catalogs
           </button>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'reports' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('reports')}
+          >
+            Reports
+          </button>
         </div>
         {isManualOverride && (
           <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
@@ -3372,6 +3378,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
+        {section === 'reports' && <OfficeReports />}
       </div>
     </div>
   );
@@ -4877,6 +4884,144 @@ function CustomerTextField({ customer, field, value: initial, placeholder, width
     />
   );
 }
+
+// Reports tab. For now: Sales by month — pick a month range, choose the metric
+// (dollars / quantity / both), and see an items x months matrix with totals.
+function OfficeReports() {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const sixAgo = (() => { const d = new Date(now.getFullYear(), now.getMonth() - 5, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+  const [from, setFrom] = useState(sixAgo);
+  const [to, setTo] = useState(thisMonth);
+  const [metric, setMetric] = useState('dollars'); // dollars | qty | both
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run() {
+    setLoading(true); setErr('');
+    try {
+      const d = await apiGet(`/orders/sales-by-month?from=${from}&to=${to}`);
+      setData(d);
+    } catch (e) { setErr(e.message || 'Could not load the report'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
+
+  const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }); };
+  const cellDollars = c => c ? `$${c.dollars.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '';
+  const cellQty = c => c ? String(c.qty) : '';
+
+  function downloadCSV() {
+    if (!data) return;
+    const cols = ['Item #', 'Item', 'Brand', ...data.months.map(monthLabel), 'Total'];
+    const lines = [cols];
+    for (const it of data.items) {
+      const row = [displayCode(it.itemId), it.name, it.brand];
+      for (const m of data.months) {
+        const c = it.byMonth[m];
+        row.push(metric === 'qty' ? (c ? c.qty : '') : (metric === 'both' ? (c ? `${c.qty} / $${c.dollars.toFixed(2)}` : '') : (c ? c.dollars.toFixed(2) : '')));
+      }
+      row.push(metric === 'qty' ? it.totalQty : (metric === 'both' ? `${it.totalQty} / $${it.totalDollars.toFixed(2)}` : it.totalDollars.toFixed(2)));
+      lines.push(row);
+    }
+    const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    downloadTextFile(`sales-by-month-${from}_to_${to}.csv`, csv);
+  }
+
+  const grandByMonth = {};
+  let grandTotalD = 0, grandTotalQ = 0;
+  if (data) for (const it of data.items) { grandTotalD += it.totalDollars; grandTotalQ += it.totalQty; for (const m of data.months) { const c = it.byMonth[m]; if (c) { grandByMonth[m] = grandByMonth[m] || { qty: 0, dollars: 0 }; grandByMonth[m].qty += c.qty; grandByMonth[m].dollars += c.dollars; } } }
+
+  const showD = metric !== 'qty', showQ = metric !== 'dollars';
+  const cellText = c => {
+    if (!c) return '';
+    if (metric === 'dollars') return cellDollars(c);
+    if (metric === 'qty') return cellQty(c);
+    return `${c.qty} · ${cellDollars(c)}`;
+  };
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Sales by month</div>
+      </div>
+      <div style={repStyles.controls}>
+        <label style={repStyles.ctrlLabel}>From
+          <input style={repStyles.monthInput} type="month" value={from} onChange={e => setFrom(e.target.value)} />
+        </label>
+        <label style={repStyles.ctrlLabel}>To
+          <input style={repStyles.monthInput} type="month" value={to} onChange={e => setTo(e.target.value)} />
+        </label>
+        <div style={repStyles.metricToggle}>
+          {[['dollars', 'Dollars'], ['qty', 'Quantity'], ['both', 'Both']].map(([id, label]) => (
+            <button key={id} style={{ ...repStyles.metricBtn, ...(metric === id ? repStyles.metricBtnOn : {}) }} onClick={() => setMetric(id)}>{label}</button>
+          ))}
+        </div>
+        <button style={officeStyles.smallBtn} onClick={run} disabled={loading}>{loading ? 'Loading…' : 'Run'}</button>
+        <button style={officeStyles.smallBtn} onClick={downloadCSV} disabled={!data || !data.items.length}>Download CSV</button>
+      </div>
+      {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      {data && (
+        <div style={repStyles.tableWrap}>
+          <table style={repStyles.table}>
+            <thead>
+              <tr>
+                <th style={{ ...repStyles.th, textAlign: 'left', position: 'sticky', left: 0, background: '#F0EEE4' }}>Item</th>
+                {data.months.map(m => <th key={m} style={repStyles.th}>{monthLabel(m)}</th>)}
+                <th style={{ ...repStyles.th, fontWeight: 800 }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map(it => (
+                <tr key={it.itemId}>
+                  <td style={{ ...repStyles.tdItem, position: 'sticky', left: 0, background: '#FFFFFF' }}>
+                    <span style={{ color: '#2B5D50', fontWeight: 700, marginRight: 6, fontFamily: "'JetBrains Mono', monospace" }}>{displayCode(it.itemId)}</span>
+                    {it.name}
+                  </td>
+                  {data.months.map(m => <td key={m} style={repStyles.tdNum}>{cellText(it.byMonth[m])}</td>)}
+                  <td style={{ ...repStyles.tdNum, fontWeight: 800 }}>
+                    {metric === 'qty' ? it.totalQty : metric === 'both' ? `${it.totalQty} · $${it.totalDollars.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${it.totalDollars.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                  </td>
+                </tr>
+              ))}
+              {data.items.length === 0 && (
+                <tr><td colSpan={data.months.length + 2} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No sales in this period.</td></tr>
+              )}
+            </tbody>
+            {data.items.length > 0 && (
+              <tfoot>
+                <tr>
+                  <td style={{ ...repStyles.tfoot, textAlign: 'left', position: 'sticky', left: 0, background: '#14181F' }}>Grand total</td>
+                  {data.months.map(m => (
+                    <td key={m} style={repStyles.tfoot}>
+                      {grandByMonth[m] ? (metric === 'qty' ? grandByMonth[m].qty : metric === 'both' ? `${grandByMonth[m].qty} · $${Math.round(grandByMonth[m].dollars).toLocaleString()}` : `$${Math.round(grandByMonth[m].dollars).toLocaleString()}`) : ''}
+                    </td>
+                  ))}
+                  <td style={repStyles.tfoot}>{metric === 'qty' ? grandTotalQ : metric === 'both' ? `${grandTotalQ} · $${Math.round(grandTotalD).toLocaleString()}` : `$${Math.round(grandTotalD).toLocaleString()}`}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+const repStyles = {
+  controls: { display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 },
+  ctrlLabel: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  monthInput: { background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, padding: '7px 9px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  metricToggle: { display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 8, overflow: 'hidden' },
+  metricBtn: { background: '#FFFFFF', border: 'none', padding: '8px 12px', fontSize: 13, fontWeight: 700, color: '#8A8F87', cursor: 'pointer', fontFamily: 'inherit' },
+  metricBtnOn: { background: '#2B5D50', color: '#F7F8F4' },
+  tableWrap: { border: '1px solid #E3E1D6', borderRadius: 10, overflow: 'auto', maxHeight: '70vh', background: '#FFFFFF' },
+  table: { borderCollapse: 'collapse', fontSize: 13, minWidth: '100%' },
+  th: { position: 'sticky', top: 0, background: '#F0EEE4', textAlign: 'right', fontSize: 11, fontWeight: 700, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '8px 12px', whiteSpace: 'nowrap', borderBottom: '1px solid #E3E1D6', zIndex: 1 },
+  tdItem: { padding: '7px 12px', borderBottom: '1px solid #F0EEE6', whiteSpace: 'nowrap', color: '#14181F' },
+  tdNum: { padding: '7px 12px', borderBottom: '1px solid #F0EEE6', textAlign: 'right', whiteSpace: 'nowrap', color: '#14181F', fontFamily: "'JetBrains Mono', monospace" },
+  tfoot: { padding: '9px 12px', textAlign: 'right', whiteSpace: 'nowrap', background: '#14181F', color: '#F7F8F4', fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", position: 'sticky', bottom: 0 },
+};
 
 // Desktop per-store catalog manager: pick a store, toggle its catalog, see the
 // items it carries with per-customer prices, add/remove items, and apply the
