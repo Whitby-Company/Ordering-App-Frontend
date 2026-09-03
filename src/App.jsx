@@ -103,6 +103,7 @@ function inventorySortValue(item, field, popularity, printPos) {
     case 'upc': return (item.upc || '').toLowerCase();
     case 'pack': return Number(item.pack) || 1;
     case 'price': return Number(item.price) || 0;
+    case 'cost': return item.cost == null ? -1 : Number(item.cost);
     case 'casePrice': return casePrice(item);
     case 'stock': return Number(item.stock) || 0;
     case 'active': return item.active ? 1 : 0;
@@ -4198,6 +4199,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="upc" label="UPC" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />}
               {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
+              {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
@@ -4268,6 +4270,13 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   {canEdit('price') ? (
                     <NumberFieldEditor item={item} field="price" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} />
                   ) : formatMoney(item.price)}
+                </td>
+                )}
+                {isItems && (
+                <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                  {canEdit('price') ? (
+                    <NumberFieldEditor item={item} field="cost" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} placeholder="—" />
+                  ) : (item.cost != null ? formatMoney(item.cost) : <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
                 )}
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
