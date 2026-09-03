@@ -94,8 +94,9 @@ const INVENTORY_SORT_COLUMNS = [
   { id: 'stock', label: 'Stock' },
   { id: 'active', label: 'Active' },
   { id: 'popularity', label: 'Most ordered' },
+  { id: 'printOrder', label: 'Inventory order' },
 ];
-function inventorySortValue(item, field, popularity) {
+function inventorySortValue(item, field, popularity, printPos) {
   switch (field) {
     case 'id': return item.id.toLowerCase();
     case 'brand': return (item.brand || '').toLowerCase();
@@ -106,16 +107,19 @@ function inventorySortValue(item, field, popularity) {
     case 'stock': return Number(item.stock) || 0;
     case 'active': return item.active ? 1 : 0;
     case 'popularity': return popularity[item.id] || 0;
+    case 'printOrder': return (printPos && printPos[item.id] != null) ? printPos[item.id] : Number.MAX_SAFE_INTEGER;
     case 'name':
     default: return (item.name || '').toLowerCase();
   }
 }
-function sortInventoryItems(items, field, dir, popularity) {
+function sortInventoryItems(items, field, dir, popularity, printSequence) {
   const mult = dir === 'desc' ? -1 : 1;
+  const printPos = {};
+  if (Array.isArray(printSequence)) printSequence.forEach((id, i) => { printPos[id] = i; });
   const arr = [...items];
   arr.sort((a, b) => {
-    const va = inventorySortValue(a, field, popularity);
-    const vb = inventorySortValue(b, field, popularity);
+    const va = inventorySortValue(a, field, popularity, printPos);
+    const vb = inventorySortValue(b, field, popularity, printPos);
     let cmp;
     if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
     else cmp = String(va).localeCompare(String(vb));
@@ -2727,7 +2731,7 @@ function InventoryTab({ items, orders, brandColors }) {
       const lowMatch = !lowOnly || i.stock <= 5;
       return brandMatch && queryMatch && lowMatch;
     });
-    return sortInventoryItems(filtered, sortField, sortDir, popularity);
+    return sortInventoryItems(filtered, sortField, sortDir, popularity, printSequence);
   }, [items, brand, query, screen, lowOnly, sortField, sortDir, popularity]);
 
   return (
@@ -3784,8 +3788,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
       return brandMatch && queryMatch;
     });
-    return sortInventoryItems(matches, sortField, sortDir, popularity);
-  }, [items, query, brand, showInactive, sortField, sortDir, popularity]);
+    return sortInventoryItems(matches, sortField, sortDir, popularity, printSequence);
+  }, [items, query, brand, showInactive, sortField, sortDir, popularity, printSequence]);
 
   const brandAllActive = brand !== 'All' && items.filter(i => i.brand === brand).every(i => !!i.active);
 
