@@ -1204,7 +1204,12 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
   }
   function pickForRow(rowIdx, item) {
     if (!item) return;
-    if (!orderLines.some(l => l.id === item.id)) setQty(item.id, 1);
+    if (!orderLines.some(l => l.id === item.id)) {
+      // Out-of-stock items still go on the order, but at 0 (a placeholder);
+      // in-stock items start at 1.
+      if ((Number(item.stock) || 0) <= 0) onSetQty(item.id, 0);
+      else setQty(item.id, 1);
+    }
     setDrafts(prev => { const n = [...prev]; n[rowIdx] = ''; return n; });
     setActiveRow(null); setHi(0);
     focusQty(item.id); // focus the new line's Cases field once it renders
@@ -1255,13 +1260,15 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
         <tbody>
           {orderLines.map((l, i) => {
             const warn = !inCatalog(l.id);
+            const oos = (Number(l.stock) || 0) <= 0;
             const pack = Number(l.pack) || 1;
             return (
-              <tr key={l.id} style={warn ? qeStyles.warnRow : undefined}>
+              <tr key={l.id} style={oos ? qeStyles.oosRow : (warn ? qeStyles.warnRow : undefined)}>
                 <td style={qeStyles.td}>{displayCode(l.id)}</td>
                 <td style={qeStyles.td}>
                   {l.name}
-                  {warn && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
+                  {oos && <span style={qeStyles.oosTag} title="Out of stock — added at 0 as a backorder placeholder">out of stock</span>}
+                  {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'right' }}>
                   <input
@@ -1316,7 +1323,8 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                           >
                             <span style={{ fontWeight: 700, marginRight: 8 }}>{displayCode(it.id)}</span>
                             <span>{it.name}</span>
-                            {!inCatalog(it.id) && <span style={qeStyles.warnTag}>not in catalog</span>}
+                            {(Number(it.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
+                            {!inCatalog(it.id) && (Number(it.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
                           </button>
                         ))}
                       </div>
@@ -1329,7 +1337,8 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     <span>
                       <span style={{ color: '#8A8F87', fontWeight: 700, marginRight: 8 }}>{displayCode(preview.id)}</span>
                       {preview.name}
-                      {!inCatalog(preview.id) && <span style={qeStyles.warnTag}>not in catalog</span>}
+                      {(Number(preview.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
+                      {!inCatalog(preview.id) && (Number(preview.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
                     </span>
                   ) : null}
                 </td>
@@ -1362,6 +1371,8 @@ const qeStyles = {
   td: { padding: '5px 8px', borderBottom: '1px solid #F0EEE6', color: '#14181F' },
   warnRow: { background: '#FDF6EC' },
   previewRow: { background: '#F3F6F4' },
+  oosRow: { background: '#FBEEE7' },
+  oosTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5493B', background: '#F8DCD2', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 7px' },
   warnTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FBEED9', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' },
   qtyInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 7px', fontSize: 13.5, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", outline: 'none' },
   codeInput: { width: '100%', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
