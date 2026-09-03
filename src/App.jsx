@@ -772,8 +772,54 @@ function formatMoney(n) {
 // that's the real DB key used for API calls, matching, and cart ops. For
 // DISPLAY ONLY, strip the brand prefix so users just see the bare code
 // ("2146"). Never use this where the value is used as a key.
-function displayCode(id) {
-  const s = String(id ?? '');
+// Tolerant match score of query vs text: higher = better. Handles exact,
+// prefix, substring, per-word matches, subsequence (typos/skips), and small
+// edit-distance so misspellings still surface the best customer.
+function fuzzyScore(q, text) {
+  q = q.trim(); if (!q) return 0;
+  if (text === q) return 1000;
+  if (text.startsWith(q)) return 800 - text.length;
+  if (text.includes(q)) return 600 - text.indexOf(q);
+  // every query word appears somewhere (any order)
+  const words = q.split(/\s+/).filter(Boolean);
+  if (words.length > 1 && words.every(w => text.includes(w))) return 500 - text.length;
+  // subsequence: query chars appear in order (tolerates missing letters)
+  let ti = 0, hits = 0;
+  for (let i = 0; i < q.length; i++) {
+    const idx = text.indexOf(q[i], ti);
+    if (idx >= 0) { hits++; ti = idx + 1; }
+  }
+  if (hits === q.length) return 300 - (ti - q.length);
+  // fall back to a light edit-distance for typos (per word and whole string)
+  let best = 0;
+  for (const w of text.split(/\s+/)) {
+    const d = editDistance(q, w.slice(0, q.length + 2));
+    const sim = 1 - d / Math.max(q.length, 1);
+    if (sim > best) best = sim;
+  }
+  // whole-string comparison catches multi-word typos (e.g. "coast gaurd" vs
+  // "coast guard exchange system") by comparing against the leading words only.
+  const textWords = text.split(/\s+/);
+  const lead = textWords.slice(0, Math.max(1, words.length)).join(' ');
+  const dw = editDistance(q, lead);
+  const simw = 1 - dw / Math.max(q.length, 1);
+  if (simw > best) best = simw;
+  return best >= 0.55 ? Math.round(100 * best) : 0;
+}
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function displayCode(id) {  const s = String(id ?? '');
   const i = s.indexOf(':');
   return i >= 0 ? s.slice(i + 1) : s;
 }
@@ -1646,7 +1692,12 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     const q = comboText.trim().toLowerCase();
     const pool = customers.filter(c => c.active !== 0);
     if (!q) return pool;
-    return pool.filter(c => c.name.toLowerCase().includes(q));
+    // Score each customer; keep anything with a reasonable score, best first.
+    const scored = pool
+      .map(c => ({ c, s: fuzzyScore(q, c.name.toLowerCase()) }))
+      .filter(x => x.s > 0)
+      .sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name));
+    return scored.map(x => x.c);
   }, [customers, comboText]);
   // Which weekdays actually have customers assigned (to only show useful chips).
   const daysInUse = useMemo(() => {
