@@ -1794,7 +1794,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       )}
       {quickEntry && !isEdit && (customerId != null) && (
         <QuickEntryGrid
-          allItems={showAllItems ? items.map(i => (catalog && catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)) : catalogItems}
+          allItems={items.map(i => (catalog && catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i))}
           catalog={catalog}
           priceOf={priceOf}
           orderLines={orderLines}
