@@ -604,7 +604,7 @@ function printInvoice(order, customer, printSequence, items = []) {
   const now = new Date();
   const poDate = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getFullYear()).slice(2)}`;
   const abbr = (c.abbreviation || '').trim();
-  const autoPoNum = abbr ? `${poDate}-${abbr}` : '';
+  const autoPoNum = abbr ? `${poDate}-${abbr}` : poDate;
   const poNumber = (order.poNumber && String(order.poNumber).trim()) ? String(order.poNumber).trim() : autoPoNum;
   let dateStr;
   if (order.deliveryDate) {
@@ -1779,11 +1779,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     || '';
   // Auto PO# = MMDDYY(delivery date)-<customer abbreviation>.
   const autoPo = useMemo(() => {
+    // Fill in as soon as a customer is chosen. Use MMDDYY of the delivery date
+    // (or today if none), plus the customer's abbreviation when they have one.
+    if (customerId == null) return '';
     const cust = customers.find(c => c.id === customerId);
     const abbr = (cust && cust.abbreviation || '').trim();
-    if (!abbr || !deliveryDate) return '';
-    const [y, m, d] = deliveryDate.split('-');
-    return `${m}${d}${y.slice(2)}-${abbr}`;
+    const iso = deliveryDate || todayISODate();
+    const [y, m, d] = iso.split('-');
+    const mmddyy = `${m}${d}${y.slice(2)}`;
+    return abbr ? `${mmddyy}-${abbr}` : mmddyy;
   }, [customers, customerId, deliveryDate]);
   const poValue = poEdited ? poNumber : autoPo;
   // Next invoice number = (highest existing order id + 1) + offset. In edit mode
