@@ -600,7 +600,8 @@ function printInvoice(order, customer, printSequence, items = []) {
   const now = new Date();
   const poDate = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getFullYear()).slice(2)}`;
   const abbr = (c.abbreviation || '').trim();
-  const poNumber = abbr ? `${poDate}-${abbr}` : '';
+  const autoPoNum = abbr ? `${poDate}-${abbr}` : '';
+  const poNumber = (order.poNumber && String(order.poNumber).trim()) ? String(order.poNumber).trim() : autoPoNum;
   let dateStr;
   if (order.deliveryDate) {
     const [dy, dm, dd] = String(order.deliveryDate).split('-').map(Number);
@@ -1676,6 +1677,10 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // opt into all. Desktop always shows everyone.
   const [showAllCustomers, setShowAllCustomers] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState(isEdit ? editOrder.deliveryDate : (savedDraft.deliveryDate || todayISODate()));
+  // Custom PO# override. Empty string means "use the auto value"; once the user
+  // edits it, poEdited flips and we keep their value.
+  const [poNumber, setPoNumber] = useState(isEdit ? (editOrder.poNumber || '') : '');
+  const [poEdited, setPoEdited] = useState(isEdit && !!editOrder.poNumber);
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -1755,6 +1760,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const customerName = customers.find(c => c.id === customerId)?.name
     || (isEdit && editOrder.customerId === customerId ? editOrder.customer : '')
     || '';
+  // Auto PO# = MMDDYY(delivery date)-<customer abbreviation>.
+  const autoPo = useMemo(() => {
+    const cust = customers.find(c => c.id === customerId);
+    const abbr = (cust && cust.abbreviation || '').trim();
+    if (!abbr || !deliveryDate) return '';
+    const [y, m, d] = deliveryDate.split('-');
+    return `${m}${d}${y.slice(2)}-${abbr}`;
+  }, [customers, customerId, deliveryDate]);
+  const poValue = poEdited ? poNumber : autoPo;
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
     let active = customers.filter(c => c.active !== 0);
@@ -1952,6 +1966,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         deliveryDate,
         notes: notes.trim() || undefined,
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
+        poNumber: poEdited ? (poNumber || null) : null,
       });
       await onOrderSubmitted();
       if (onClose) onClose();
@@ -1995,6 +2010,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         submittedBy: submitterName || undefined,
         status: pending ? 'pending' : 'submitted',
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
+        poNumber: poEdited ? (poNumber || null) : null,
       });
       if (pending) {
         // Pending drafts just go to the Orders list; no confirmation screen.
@@ -2171,6 +2187,24 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 </span>
                 <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
               </button>
+            )}
+            {desktop && (
+              <div style={{ ...styles.dateBtn, flex: '0 0 200px', marginTop: 0 }} title="PO number — auto-filled; edit to override">
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#8A8F87' }}>PO#</span>
+                <input
+                  style={styles.comboInput}
+                  placeholder="PO #"
+                  value={poValue}
+                  onChange={e => { setPoEdited(true); setPoNumber(e.target.value); }}
+                />
+                {poEdited && (
+                  <button
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8A8F87', fontSize: 12, padding: 2 }}
+                    title="Reset to the auto PO#"
+                    onClick={() => { setPoEdited(false); setPoNumber(''); }}
+                  >↺</button>
+                )}
+              </div>
             )}
           </>
         ) : (
