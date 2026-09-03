@@ -1162,7 +1162,7 @@ function TicketQtyInput({ qty, onSet, disabled }) {
 // Desktop bulk entry: a QuickBooks-style grid. Type an item # (or search),
 // enter cases, and it builds the order. Uses the store's catalog prices and
 // warns (amber) on items not in the store's catalog.
-function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, removeLine, desktop }) {
+function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, desktop }) {
   const BLANK_ROWS = 8;
   // Each entry row has its own draft text + dropdown highlight index.
   const [drafts, setDrafts] = useState(() => Array.from({ length: BLANK_ROWS }, () => ''));
@@ -1251,7 +1251,8 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
         <thead><tr>
           <th style={{ ...qeStyles.th, width: 130 }}>Item #</th>
           <th style={qeStyles.th}>Description</th>
-          <th style={{ ...qeStyles.th, textAlign: 'right', width: 90 }}>Cases</th>
+          <th style={{ ...qeStyles.th, textAlign: 'center', width: 90 }}>Unit</th>
+          <th style={{ ...qeStyles.th, textAlign: 'right', width: 80 }}>Qty</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 70 }}>Each</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 90 }}>Price/ea</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 100 }}>Total</th>
@@ -1269,6 +1270,22 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   {l.name}
                   {oos && <span style={qeStyles.oosTag} title="Out of stock — added at 0 as a backorder placeholder">out of stock</span>}
                   {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
+                </td>
+                <td style={{ ...qeStyles.td, textAlign: 'center' }}>
+                  {l.caseSize ? (
+                    <div style={qeStyles.unitToggle}>
+                      <button
+                        style={{ ...qeStyles.unitBtn, ...((l.unit || 'box') === 'box' ? qeStyles.unitBtnOn : {}) }}
+                        tabIndex={-1}
+                        onClick={() => setUnit(l.id, 'box')}
+                      >Box</button>
+                      <button
+                        style={{ ...qeStyles.unitBtn, ...(l.unit === 'case' ? qeStyles.unitBtnOn : {}) }}
+                        tabIndex={-1}
+                        onClick={() => setUnit(l.id, 'case')}
+                      >Case</button>
+                    </div>
+                  ) : <span style={{ fontSize: 12, color: '#B9BDB2' }}>ea</span>}
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'right' }}>
                   <input
@@ -1342,6 +1359,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     </span>
                   ) : null}
                 </td>
+                <td style={qeStyles.td} />
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? '—' : ''}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? (Number(preview.pack) || 1) : ''}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? formatMoney(preview.price) : ''}</td>
@@ -1351,7 +1369,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
           })}
         </tbody>
         <tfoot><tr>
-          <td style={qeStyles.tfoot} colSpan={2}>Totals</td>
+          <td style={qeStyles.tfoot} colSpan={3}>Totals</td>
           <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalCases}</td>
           <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalEach}</td>
           <td style={qeStyles.tfoot} />
@@ -1373,6 +1391,9 @@ const qeStyles = {
   previewRow: { background: '#F3F6F4' },
   oosRow: { background: '#FBEEE7' },
   oosTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5493B', background: '#F8DCD2', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 7px' },
+  unitToggle: { display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 7, overflow: 'hidden' },
+  unitBtn: { background: '#FFFFFF', border: 'none', padding: '4px 9px', fontSize: 12, fontWeight: 700, color: '#8A8F87', cursor: 'pointer', fontFamily: 'inherit' },
+  unitBtnOn: { background: '#2B5D50', color: '#F7F8F4' },
   warnTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FBEED9', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' },
   qtyInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 7px', fontSize: 13.5, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", outline: 'none' },
   codeInput: { width: '100%', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
@@ -1409,23 +1430,40 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     if (customerId == null) { setCatalog(null); return; }
     const cust = customers.find(c => c.id === customerId);
     // A customer with catalog_on = false shows nothing until configured.
-    if (cust && cust.catalogOn === false) { setCatalog({ off: true, ids: new Set(), prices: new Map() }); return; }
+    if (cust && cust.catalogOn === false) { setCatalog({ off: true, ids: new Set(), prices: new Map(), units: new Map() }); return; }
     let cancelled = false;
     apiGet(`/customers/${customerId}/catalog`)
       .then(d => {
         if (cancelled) return;
         const prices = new Map();
-        for (const o of (d.overrides || [])) if (o.present && o.price != null) prices.set(o.item_id, o.price);
-        setCatalog({ off: !d.catalogOn, ids: new Set(d.itemIds || []), prices });
+        const units = new Map();
+        for (const o of (d.overrides || [])) {
+          if (o.present && o.price != null) prices.set(o.item_id, o.price);
+          if (o.present && o.unit) units.set(o.item_id, o.unit);
+        }
+        setCatalog({ off: !d.catalogOn, ids: new Set(d.itemIds || []), prices, units });
       })
       .catch(() => { if (!cancelled) setCatalog(null); });
     return () => { cancelled = true; };
   }, [customerId, customers]);
-  // Effective per-each price for an item for the selected customer.
-  const priceOf = React.useCallback((item) => {
-    if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
-    return Number(item.price) || 0;
+  // The store's default unit for an item ('box' | 'case'), fallback 'box'.
+  const unitOf = React.useCallback((item) => {
+    if (catalog && catalog.units && catalog.units.has(item.id)) return catalog.units.get(item.id);
+    return 'box';
   }, [catalog]);
+  // Eaches per ordered unit for an item at a given unit.
+  const packFor = React.useCallback((item, unit) => {
+    if (unit === 'case' && item.caseSize) return (Number(item.pack) || 1) * item.caseSize;
+    return Number(item.pack) || 1;
+  }, []);
+  // Effective per-each price for an item at a given unit for the selected customer.
+  const priceOf = React.useCallback((item, unit) => {
+    const u = unit || unitOf(item);
+    // The store's catalog price applies to their default unit.
+    if (catalog && catalog.prices.has(item.id) && unitOf(item) === u) return catalog.prices.get(item.id);
+    if (u === 'case') return Number(item.casePrice != null ? item.casePrice : item.price) || 0;
+    return Number(item.price) || 0;
+  }, [catalog, unitOf]);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   const [customerDayFilter, setCustomerDayFilter] = useState(null); // 0-6, or null for all
@@ -1591,11 +1629,14 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     if (isEdit) for (const l of editOrder.lines) snap[l.id] = l;
     return order.map(o => {
       let item = catalogItems.find(i => i.id === o.id) || items.find(i => i.id === o.id) || (isEdit ? snap[o.id] : null);
-      // apply the customer's price to the order line even if item came from the base list
-      if (item && catalog && catalog.prices.has(o.id)) item = { ...item, price: catalog.prices.get(o.id) };
-      return item ? { ...item, qty: o.qty, checkin: !!o.checkin } : null;
+      if (!item) return null;
+      // Ordering unit for this line: chosen on the line, else the store's default.
+      const unit = o.unit || unitOf(item);
+      const pack = packFor(item, unit);
+      const price = priceOf(item, unit);
+      return { ...item, qty: o.qty, checkin: !!o.checkin, unit, pack, price };
     }).filter(Boolean);
-  }, [order, catalogItems, items, isEdit, editOrder, catalog]);
+  }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
   const totalPrice = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -1659,6 +1700,10 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   function removeLine(id) {
     setOrder(prev => prev.filter(o => o.id !== id));
   }
+  // Switch a line between 'box' and 'case'.
+  function setUnit(id, unit) {
+    setOrder(prev => prev.map(o => (o.id === id ? { ...o, unit } : o)));
+  }
 
   function resetForm() {
     setOrder([]);
@@ -1688,7 +1733,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         customerId,
         deliveryDate,
         notes: notes.trim() || undefined,
-        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty })),
+        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
       });
       await onOrderSubmitted();
       if (onClose) onClose();
@@ -1731,7 +1776,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         notes: notes.trim() || undefined,
         submittedBy: submitterName || undefined,
         status: pending ? 'pending' : 'submitted',
-        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty })),
+        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
       });
       if (pending) {
         // Pending drafts just go to the Orders list; no confirmation screen.
@@ -1904,6 +1949,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
           orderLines={orderLines}
           setQty={setQty}
           onSetQty={setQtyKeepZero}
+          setUnit={setUnit}
           removeLine={removeLine}
           desktop={desktop}
         />
