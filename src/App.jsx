@@ -4885,9 +4885,43 @@ function CustomerTextField({ customer, field, value: initial, placeholder, width
   );
 }
 
-// Reports tab. For now: Sales by month — pick a month range, choose the metric
-// (dollars / quantity / both), and see an items x months matrix with totals.
+// Reports tab shell: a list of available reports; picking one opens it.
+// New reports get added to REPORT_LIST and rendered in the switch below.
+const REPORT_LIST = [
+  { id: 'sales-by-month', name: 'Sales by month', desc: 'Sales for every item, broken out by month across a period you choose.' },
+  // Add more reports here as they\u2019re built.
+];
 function OfficeReports() {
+  const [active, setActive] = useState(null);
+  if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Reports</div>
+      </div>
+      <div style={reportPickStyles.grid}>
+        {REPORT_LIST.map(r => (
+          <button key={r.id} style={reportPickStyles.card} onClick={() => setActive(r.id)}>
+            <div style={reportPickStyles.cardName}>{r.name}</div>
+            <div style={reportPickStyles.cardDesc}>{r.desc}</div>
+            <div style={reportPickStyles.cardCta}>Open →</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+const reportPickStyles = {
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 },
+  card: { textAlign: 'left', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 12, padding: '16px 18px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', gap: 6 },
+  cardName: { fontSize: 15.5, fontWeight: 800, color: '#14181F' },
+  cardDesc: { fontSize: 13, color: '#5B6058', lineHeight: 1.4 },
+  cardCta: { marginTop: 4, fontSize: 13, fontWeight: 700, color: '#2B5D50' },
+};
+
+// Sales by month — pick a month range, choose the metric (dollars / quantity /
+// both), and see an items x months matrix with totals.
+function SalesByMonthReport({ onBack }) {
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const sixAgo = (() => { const d = new Date(now.getFullYear(), now.getMonth() - 5, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
@@ -4944,6 +4978,7 @@ function OfficeReports() {
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
         <div style={officeStyles.sectionTitle}>Sales by month</div>
       </div>
       <div style={repStyles.controls}>
@@ -5009,6 +5044,7 @@ function OfficeReports() {
   );
 }
 const repStyles = {
+  backBtn: { background: '#EDEBE3', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700, color: '#5B6058', cursor: 'pointer', fontFamily: 'inherit', marginRight: 12 },
   controls: { display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 },
   ctrlLabel: { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em' },
   monthInput: { background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, padding: '7px 9px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
