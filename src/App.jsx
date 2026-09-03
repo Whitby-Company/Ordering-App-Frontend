@@ -5072,6 +5072,7 @@ function MarginReport({ onBack }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [custFilter, setCustFilter] = useState('All');
+  const [perEach, setPerEach] = useState(false);
 
   async function run() {
     setLoading(true); setErr('');
@@ -5090,10 +5091,18 @@ function MarginReport({ onBack }) {
 
   function downloadCSV() {
     if (!data) return;
-    const cols = ['Customer', 'Item #', 'Item', 'Brand', 'Eaches', 'Sell $', 'Cost $', 'Margin $', 'Margin %'];
-    const lines = [cols, ...shown.map(x => [x.customer, displayCode(x.itemId), x.item, x.brand, x.eaches, x.sell, x.cost ?? '', x.marginD ?? '', x.marginPct ?? ''])];
+    const suffix = perEach ? '/ea' : '';
+    const cols = ['Customer', 'Item #', 'Item', 'Brand', 'Eaches', `Sell${suffix}`, `Cost${suffix}`, `Margin${suffix}`, 'Margin %'];
+    const lines = [cols, ...shown.map(x => {
+      const ea = x.eaches || 0;
+      const sellEa = ea ? Math.round(x.sell / ea * 10000) / 10000 : '';
+      const costEa = x.unitCost != null ? x.unitCost : (x.cost != null && ea ? Math.round(x.cost / ea * 10000) / 10000 : '');
+      const marginEa = (sellEa !== '' && costEa !== '') ? Math.round((sellEa - costEa) * 10000) / 10000 : '';
+      return [x.customer, displayCode(x.itemId), x.item, x.brand, x.eaches,
+        perEach ? sellEa : x.sell, perEach ? costEa : (x.cost ?? ''), perEach ? marginEa : (x.marginD ?? ''), x.marginPct ?? ''];
+    })];
     const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-    downloadTextFile(`margin-${from}_to_${to}.csv`, csv);
+    downloadTextFile(`margin${perEach ? '-perEach' : ''}-${from}_to_${to}.csv`, csv);
   }
 
   return (
@@ -5110,6 +5119,11 @@ function MarginReport({ onBack }) {
             {customers.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
+        <div style={repStyles.metricToggle}>
+          {[[false, 'Totals'], [true, 'Per each']].map(([id, label]) => (
+            <button key={String(id)} style={{ ...repStyles.metricBtn, ...(perEach === id ? repStyles.metricBtnOn : {}) }} onClick={() => setPerEach(id)}>{label}</button>
+          ))}
+        </div>
         <button style={officeStyles.smallBtn} onClick={run} disabled={loading}>{loading ? 'Loading…' : 'Run'}</button>
         <button style={officeStyles.smallBtn} onClick={downloadCSV} disabled={!data || !shown.length}>Download CSV</button>
       </div>
@@ -5125,13 +5139,21 @@ function MarginReport({ onBack }) {
             <thead><tr>
               <th style={{ ...repStyles.th, textAlign: 'left', position: 'sticky', left: 0, background: '#F0EEE4' }}>Customer / Item</th>
               <th style={repStyles.th}>Eaches</th>
-              <th style={repStyles.th}>Sell</th>
-              <th style={repStyles.th}>Cost</th>
-              <th style={repStyles.th}>Margin $</th>
+              <th style={repStyles.th}>Sell{perEach ? '/ea' : ''}</th>
+              <th style={repStyles.th}>Cost{perEach ? '/ea' : ''}</th>
+              <th style={repStyles.th}>Margin{perEach ? '/ea' : ' $'}</th>
               <th style={repStyles.th}>Margin %</th>
             </tr></thead>
             <tbody>
-              {shown.map((x, i) => (
+              {shown.map((x, i) => {
+                const ea = x.eaches || 0;
+                const sellEa = ea ? x.sell / ea : null;
+                const costEa = x.unitCost != null ? x.unitCost : (x.cost != null && ea ? x.cost / ea : null);
+                const marginEa = (sellEa != null && costEa != null) ? sellEa - costEa : null;
+                const sellShow = perEach ? sellEa : x.sell;
+                const costShow = perEach ? costEa : x.cost;
+                const marginShow = perEach ? marginEa : x.marginD;
+                return (
                 <tr key={x.customer + x.itemId + i}>
                   <td style={{ ...repStyles.tdItem, position: 'sticky', left: 0, background: '#FFFFFF' }}>
                     <span style={{ color: '#8A8F87' }}>{x.customer}</span>
@@ -5140,18 +5162,19 @@ function MarginReport({ onBack }) {
                     {x.item}
                   </td>
                   <td style={repStyles.tdNum}>{x.eaches}</td>
-                  <td style={repStyles.tdNum}>{money(x.sell)}</td>
-                  <td style={{ ...repStyles.tdNum, color: x.cost == null ? '#B5793B' : '#14181F' }}>{money(x.cost)}</td>
-                  <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct) }}>{money(x.marginD)}</td>
+                  <td style={repStyles.tdNum}>{money(sellShow)}</td>
+                  <td style={{ ...repStyles.tdNum, color: costShow == null ? '#B5793B' : '#14181F' }}>{money(costShow)}</td>
+                  <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct) }}>{money(marginShow)}</td>
                   <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct), fontWeight: 700 }}>{pct(x.marginPct)}</td>
                 </tr>
-              ))}
+                );
+              })}
               {shown.length === 0 && <tr><td colSpan={6} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No sales in this period.</td></tr>}
             </tbody>
             {shown.length > 0 && (
               <tfoot><tr>
-                <td style={{ ...repStyles.tfoot, textAlign: 'left', position: 'sticky', left: 0, background: '#14181F' }}>Totals{custFilter !== 'All' ? ` — ${custFilter}` : ''}</td>
-                <td style={repStyles.tfoot} />
+                <td style={{ ...repStyles.tfoot, textAlign: 'left', position: 'sticky', left: 0, background: '#14181F' }}>Totals ($){custFilter !== 'All' ? ` — ${custFilter}` : ''}</td>
+                <td style={repStyles.tfoot}>{shown.reduce((s, x) => s + (x.eaches || 0), 0)}</td>
                 <td style={repStyles.tfoot}>{money(Math.round(shown.reduce((s, x) => s + x.sell, 0) * 100) / 100)}</td>
                 <td style={repStyles.tfoot}>{money(Math.round(shown.filter(x => x.cost != null).reduce((s, x) => s + x.cost, 0) * 100) / 100)}</td>
                 <td style={repStyles.tfoot}>{money(Math.round(shown.filter(x => x.cost != null).reduce((s, x) => s + x.marginD, 0) * 100) / 100)}</td>
