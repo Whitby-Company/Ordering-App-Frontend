@@ -1192,7 +1192,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
     let tries = 0;
     const tryFocus = () => {
       const q = qtyRefs.current[itemId];
-      if (q) { q.focus(); q.select && q.select(); return; }
+      if (q) { q.focus(); q.select && q.select(); q.scrollIntoView({ block: 'center' }); return; }
       if (tries++ < 10) requestAnimationFrame(tryFocus);
     };
     requestAnimationFrame(tryFocus);
@@ -1200,7 +1200,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
   function focusFirstEmptyCode() {
     const idx = drafts.findIndex(d => !d.trim());
     const ref = codeRefs.current[idx >= 0 ? idx : 0];
-    if (ref) ref.focus();
+    if (ref) { ref.focus(); ref.scrollIntoView({ block: 'center' }); }
   }
   function pickForRow(rowIdx, item) {
     if (!item) return;
@@ -1309,7 +1309,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                       placeholder={rowIdx === 0 && orderLines.length === 0 ? 'Type item # or name…' : ''}
                       value={text}
                       onChange={e => setDraft(rowIdx, e.target.value)}
-                      onFocus={() => { setActiveRow(rowIdx); setHi(0); }}
+                      onFocus={e => { setActiveRow(rowIdx); setHi(0); e.currentTarget.scrollIntoView({ block: 'center' }); }}
                       onKeyDown={e => onCodeKey(e, rowIdx)}
                     />
                     {activeRow === rowIdx && text.trim() && ms.length > 0 && (
