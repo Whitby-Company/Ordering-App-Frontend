@@ -1133,13 +1133,19 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
     setTimeout(() => { const q = qtyRefs.current[item ? item.id : null]; if (q) q.focus(); }, 30);
   }
   function onCodeKey(e, rowIdx) {
-    const ms = matchesFor(drafts[rowIdx]);
+    // Always match against the CURRENT input value (avoids stale state on fast typing).
+    const text = e.currentTarget.value;
+    const ms = matchesFor(text);
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveRow(rowIdx); setHi(h => Math.min(h + 1, ms.length - 1)); return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); return; }
-    // Tab or Enter selects the highlighted match, then jumps to Cases.
+    // Tab or Enter: if anything was typed and there's any match, take the
+    // highlighted one (default: the closest/top match), then jump to Cases.
     if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
-      if (ms.length > 0) { e.preventDefault(); pickForRow(rowIdx, ms[Math.min(hi, ms.length - 1)]); }
-      // empty row + Tab → let it fall through to the next field normally
+      if (text.trim() && ms.length > 0) {
+        e.preventDefault();
+        pickForRow(rowIdx, ms[Math.min(hi, ms.length - 1)]);
+      }
+      // truly empty row → let Tab fall through to the next field normally
       return;
     }
     if (e.key === 'Escape') { setActiveRow(null); }
