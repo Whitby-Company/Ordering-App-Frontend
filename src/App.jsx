@@ -3961,6 +3961,13 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
             {brandList.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
         )}
+        {!renamingBrand && (
+          <select style={officeStyles.select} value={sortField} onChange={e => handleSortClick(e.target.value)} title="Sort items">
+            {INVENTORY_SORT_COLUMNS.filter(o => isItems || o.id !== 'casePrice').map(o => (
+              <option key={o.id} value={o.id}>Sort: {o.label}{sortField === o.id ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}</option>
+            ))}
+          </select>
+        )}
         {renamingBrand && (
           <>
             <input
