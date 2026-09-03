@@ -4890,12 +4890,14 @@ function CustomerTextField({ customer, field, value: initial, placeholder, width
 const REPORT_LIST = [
   { id: 'sales-by-month', name: 'Sales by month', desc: 'Sales for every item, broken out by month across a period you choose.' },
   { id: 'margin', name: 'Margin', desc: 'Sell vs. landed cost per customer & item — exact margin $ and %.' },
+  { id: 'order-margin', name: 'Order margin', desc: 'Pick any order and see the margin per item and total profit instantly.' },
   // Add more reports here as they\u2019re built.
 ];
 function OfficeReports() {
   const [active, setActive] = useState(null);
   if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
   if (active === 'margin') return <MarginReport onBack={() => setActive(null)} />;
+  if (active === 'order-margin') return <OrderMarginReport onBack={() => setActive(null)} />;
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
@@ -5188,7 +5190,133 @@ function MarginReport({ onBack }) {
   );
 }
 
-// Desktop per-store catalog manager: pick a store, toggle its catalog, see the
+// Order margin: pick any order, see per-item margin and total profit.
+function OrderMarginReport({ onBack }) {
+  const [orders, setOrders] = useState([]);
+  const [q, setQ] = useState('');
+  const [selId, setSelId] = useState(null);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { apiGet('/orders').then(setOrders).catch(() => setOrders([])); }, []);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    const list = [...orders].sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
+    if (!s) return list.slice(0, 60);
+    return list.filter(o =>
+      String(o.id).includes(s) ||
+      (o.customer || '').toLowerCase().includes(s) ||
+      (o.deliveryDate || '').includes(s)
+    ).slice(0, 60);
+  }, [orders, q]);
+
+  async function pick(id) {
+    setSelId(id); setLoading(true); setData(null);
+    try { setData(await apiGet(`/orders/${id}/margin`)); }
+    catch { setData(null); }
+    finally { setLoading(false); }
+  }
+
+  const money = n => (n == null ? '—' : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  const pct = n => (n == null ? '—' : `${n}%`);
+  const pctColor = n => (n == null ? '#8A8F87' : n < 0 ? '#B5493B' : n < 15 ? '#B5793B' : '#2B5D50');
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Order margin</div>
+      </div>
+      <div style={omStyles.wrap}>
+        <div style={omStyles.leftCol}>
+          <input style={officeStyles.search} placeholder="Search orders (customer, #, date)…" value={q} onChange={e => setQ(e.target.value)} />
+          <div style={omStyles.orderList}>
+            {filtered.map(o => (
+              <button key={o.id} style={{ ...omStyles.orderRow, ...(o.id === selId ? omStyles.orderRowActive : {}) }} onClick={() => pick(o.id)}>
+                <span style={{ fontWeight: 700 }}>#{o.id + (INVOICE_OFFSET || 0)}</span>
+                <span style={{ flex: 1, margin: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.customer}</span>
+                <span style={{ color: '#8A8F87', fontSize: 11.5 }}>{o.deliveryDate ? formatDate(o.deliveryDate) : ''}</span>
+              </button>
+            ))}
+            {filtered.length === 0 && <div style={{ padding: 14, color: '#8A8F87', fontSize: 13, fontStyle: 'italic' }}>No orders match.</div>}
+          </div>
+        </div>
+        <div style={omStyles.rightCol}>
+          {!selId && <div style={{ padding: '40px 6px', color: '#8A8F87', fontStyle: 'italic' }}>Pick an order to see its margin.</div>}
+          {loading && <div style={{ padding: '40px 6px', color: '#8A8F87' }}>Loading…</div>}
+          {data && !loading && (
+            <>
+              <div style={omStyles.orderHead}>
+                <div>
+                  <div style={omStyles.orderTitle}>#{data.order.id + (INVOICE_OFFSET || 0)} · {data.order.customer}</div>
+                  <div style={{ fontSize: 12.5, color: '#8A8F87' }}>Delivery {data.order.deliveryDate ? formatDate(data.order.deliveryDate) : '—'}</div>
+                </div>
+                <div style={omStyles.profitCard}>
+                  <div style={omStyles.profitLabel}>Total profit</div>
+                  <div style={{ ...omStyles.profitVal, color: pctColor(data.totals.marginPct) }}>{money(data.totals.profit)}</div>
+                  <div style={{ fontSize: 12.5, color: pctColor(data.totals.marginPct), fontWeight: 700 }}>{pct(data.totals.marginPct)} margin</div>
+                </div>
+              </div>
+              {data.missingCost > 0 && <div style={{ fontSize: 12.5, color: '#B5793B', margin: '4px 0 8px' }}>{data.missingCost} item(s) have no cost set — shown as “—” and excluded from profit.</div>}
+              <div style={repStyles.tableWrap}>
+                <table style={repStyles.table}>
+                  <thead><tr>
+                    <th style={{ ...repStyles.th, textAlign: 'left' }}>Item</th>
+                    <th style={repStyles.th}>Qty</th>
+                    <th style={repStyles.th}>Ea</th>
+                    <th style={repStyles.th}>Sell</th>
+                    <th style={repStyles.th}>Cost</th>
+                    <th style={repStyles.th}>Margin $</th>
+                    <th style={repStyles.th}>Margin %</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.items.map(x => (
+                      <tr key={x.itemId}>
+                        <td style={repStyles.tdItem}>
+                          <span style={{ color: '#2B5D50', fontWeight: 700, marginRight: 6, fontFamily: "'JetBrains Mono', monospace" }}>{displayCode(x.itemId)}</span>
+                          {x.item}
+                        </td>
+                        <td style={repStyles.tdNum}>{x.qty}{x.unit === 'case' ? ' cs' : ''}</td>
+                        <td style={repStyles.tdNum}>{x.eaches}</td>
+                        <td style={repStyles.tdNum}>{money(x.sell)}</td>
+                        <td style={{ ...repStyles.tdNum, color: x.cost == null ? '#B5793B' : '#14181F' }}>{money(x.cost)}</td>
+                        <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct) }}>{money(x.marginD)}</td>
+                        <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct), fontWeight: 700 }}>{pct(x.marginPct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr>
+                    <td style={{ ...repStyles.tfoot, textAlign: 'left' }}>Order total</td>
+                    <td style={repStyles.tfoot} />
+                    <td style={repStyles.tfoot} />
+                    <td style={repStyles.tfoot}>{money(data.totals.sell)}</td>
+                    <td style={repStyles.tfoot}>{money(data.totals.cost)}</td>
+                    <td style={repStyles.tfoot}>{money(data.totals.profit)}</td>
+                    <td style={repStyles.tfoot}>{pct(data.totals.marginPct)}</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+const omStyles = {
+  wrap: { display: 'flex', gap: 16, alignItems: 'flex-start' },
+  leftCol: { width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 },
+  orderList: { border: '1px solid #E3E1D6', borderRadius: 10, background: '#FFFFFF', maxHeight: '70vh', overflowY: 'auto' },
+  orderRow: { display: 'flex', alignItems: 'center', width: '100%', padding: '9px 12px', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', fontSize: 13, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
+  orderRowActive: { background: '#EAF1EE' },
+  rightCol: { flex: 1, minWidth: 0 },
+  orderHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 12 },
+  orderTitle: { fontSize: 17, fontWeight: 800, color: '#14181F' },
+  profitCard: { textAlign: 'right', background: '#F0EEE4', border: '1px solid #E3E1D6', borderRadius: 12, padding: '10px 16px', minWidth: 140 },
+  profitLabel: { fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  profitVal: { fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.1 },
+};
 // items it carries with per-customer prices, add/remove items, and apply the
 // QuickBooks-derived catalogs in bulk.
 function OfficeCatalogs({ customers, items, onRefresh }) {
