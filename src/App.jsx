@@ -1779,16 +1779,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     || '';
   // Auto PO# = MMDDYY(delivery date)-<customer abbreviation>.
   const autoPo = useMemo(() => {
-    // Fill in as soon as a customer is chosen. Use MMDDYY of the delivery date
-    // (or today if none), plus the customer's abbreviation when they have one.
+    // Fill in as soon as a customer is chosen. Uses TODAY's date (MMDDYY) plus
+    // the customer's abbreviation when they have one.
     if (customerId == null) return '';
     const cust = customers.find(c => c.id === customerId);
     const abbr = (cust && cust.abbreviation || '').trim();
-    const iso = deliveryDate || todayISODate();
-    const [y, m, d] = iso.split('-');
+    const [y, m, d] = todayISODate().split('-');
     const mmddyy = `${m}${d}${y.slice(2)}`;
     return abbr ? `${mmddyy}-${abbr}` : mmddyy;
-  }, [customers, customerId, deliveryDate]);
+  }, [customers, customerId]);
   const poValue = poEdited ? poNumber : autoPo;
   // Next invoice number = (highest existing order id + 1) + offset. In edit mode
   // it's the order's own number.
@@ -2191,16 +2190,17 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               </button>
             )}
             {desktop ? (
-              <div style={{ ...styles.dateBtn, flex: 1, marginTop: 0, position: 'relative' }}>
+              <div style={{ ...styles.dateBtn, flex: '0 0 auto', marginTop: 0, position: 'relative', paddingRight: 4 }}>
                 <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
                 <DateBoxes value={deliveryDate} onChange={setDeliveryDate} firstRef={dateInputRef} />
                 <button
-                  style={styles.calToggleBtn}
+                  style={styles.calDropBtn}
                   tabIndex={-1}
                   onClick={() => setCalOpen(o => !o)}
-                  title="Pick a date from a calendar"
+                  title="Open calendar"
                 >
-                  <ChevronDown size={16} color="#8A8F87" />
+                  <Calendar size={12} color="#5B6058" />
+                  <ChevronDown size={13} color="#5B6058" />
                 </button>
                 {calOpen && (
                   <MiniCalendar
@@ -5896,6 +5896,7 @@ const styles = {
   comboRowHi: { background: '#EAF1EE' },
   dateBtn: { position: 'relative', width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#EDEBE3', border: 'none', borderRadius: 10, padding: '11px 12px', cursor: 'pointer', marginTop: 8, boxSizing: 'border-box', fontFamily: 'inherit' },
   calToggleBtn: { marginLeft: 'auto', background: 'none', border: 'none', padding: 2, cursor: 'pointer', display: 'flex', alignItems: 'center' },
+  calDropBtn: { marginLeft: 6, display: 'flex', alignItems: 'center', gap: 1, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '4px 5px', cursor: 'pointer' },
   pickersSummary: { width: '100%', display: 'flex', alignItems: 'center', gap: 7, background: '#2A2E23', border: '1px solid #3C4132', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' },
   pickersSummaryText: { fontSize: 12.5, fontWeight: 600, color: '#EDEBE3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   pickersSummaryDot: { color: '#5B6058' },
