@@ -5198,6 +5198,7 @@ function OrderMarginReport({ onBack }) {
   const [selId, setSelId] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [perEach, setPerEach] = useState(false);
 
   useEffect(() => { apiGet('/orders').then(setOrders).catch(() => setOrders([])); }, []);
 
@@ -5253,10 +5254,17 @@ function OrderMarginReport({ onBack }) {
                   <div style={omStyles.orderTitle}>#{data.order.id + (INVOICE_OFFSET || 0)} · {data.order.customer}</div>
                   <div style={{ fontSize: 12.5, color: '#8A8F87' }}>Delivery {data.order.deliveryDate ? formatDate(data.order.deliveryDate) : '—'}</div>
                 </div>
-                <div style={omStyles.profitCard}>
-                  <div style={omStyles.profitLabel}>Total profit</div>
-                  <div style={{ ...omStyles.profitVal, color: pctColor(data.totals.marginPct) }}>{money(data.totals.profit)}</div>
-                  <div style={{ fontSize: 12.5, color: pctColor(data.totals.marginPct), fontWeight: 700 }}>{pct(data.totals.marginPct)} margin</div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={repStyles.metricToggle}>
+                    {[[false, 'Totals'], [true, 'Per each']].map(([id, label]) => (
+                      <button key={String(id)} style={{ ...repStyles.metricBtn, ...(perEach === id ? repStyles.metricBtnOn : {}) }} onClick={() => setPerEach(id)}>{label}</button>
+                    ))}
+                  </div>
+                  <div style={omStyles.profitCard}>
+                    <div style={omStyles.profitLabel}>Total profit</div>
+                    <div style={{ ...omStyles.profitVal, color: pctColor(data.totals.marginPct) }}>{money(data.totals.profit)}</div>
+                    <div style={{ fontSize: 12.5, color: pctColor(data.totals.marginPct), fontWeight: 700 }}>{pct(data.totals.marginPct)} margin</div>
+                  </div>
                 </div>
               </div>
               {data.missingCost > 0 && <div style={{ fontSize: 12.5, color: '#B5793B', margin: '4px 0 8px' }}>{data.missingCost} item(s) have no cost set — shown as “—” and excluded from profit.</div>}
@@ -5266,13 +5274,17 @@ function OrderMarginReport({ onBack }) {
                     <th style={{ ...repStyles.th, textAlign: 'left' }}>Item</th>
                     <th style={repStyles.th}>Qty</th>
                     <th style={repStyles.th}>Ea</th>
-                    <th style={repStyles.th}>Sell</th>
-                    <th style={repStyles.th}>Cost</th>
-                    <th style={repStyles.th}>Margin $</th>
+                    <th style={repStyles.th}>Sell{perEach ? '/ea' : ''}</th>
+                    <th style={repStyles.th}>Cost{perEach ? '/ea' : ''}</th>
+                    <th style={repStyles.th}>Margin{perEach ? '/ea' : ' $'}</th>
                     <th style={repStyles.th}>Margin %</th>
                   </tr></thead>
                   <tbody>
-                    {data.items.map(x => (
+                    {data.items.map(x => {
+                      const sellShow = perEach ? x.priceEa : x.sell;
+                      const costShow = perEach ? x.costEa : x.cost;
+                      const marginShow = perEach ? (x.costEa == null ? null : Math.round((x.priceEa - x.costEa) * 10000) / 10000) : x.marginD;
+                      return (
                       <tr key={x.itemId}>
                         <td style={repStyles.tdItem}>
                           <span style={{ color: '#2B5D50', fontWeight: 700, marginRight: 6, fontFamily: "'JetBrains Mono', monospace" }}>{displayCode(x.itemId)}</span>
@@ -5280,12 +5292,13 @@ function OrderMarginReport({ onBack }) {
                         </td>
                         <td style={repStyles.tdNum}>{x.qty}{x.unit === 'case' ? ' cs' : ''}</td>
                         <td style={repStyles.tdNum}>{x.eaches}</td>
-                        <td style={repStyles.tdNum}>{money(x.sell)}</td>
-                        <td style={{ ...repStyles.tdNum, color: x.cost == null ? '#B5793B' : '#14181F' }}>{money(x.cost)}</td>
-                        <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct) }}>{money(x.marginD)}</td>
+                        <td style={repStyles.tdNum}>{money(sellShow)}</td>
+                        <td style={{ ...repStyles.tdNum, color: costShow == null ? '#B5793B' : '#14181F' }}>{money(costShow)}</td>
+                        <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct) }}>{money(marginShow)}</td>
                         <td style={{ ...repStyles.tdNum, color: pctColor(x.marginPct), fontWeight: 700 }}>{pct(x.marginPct)}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   <tfoot><tr>
                     <td style={{ ...repStyles.tfoot, textAlign: 'left' }}>Order total</td>
