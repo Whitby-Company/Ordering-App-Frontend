@@ -5231,7 +5231,7 @@ function OrderMarginReport({ onBack }) {
       </div>
       <div style={omStyles.wrap}>
         <div style={omStyles.leftCol}>
-          <input style={officeStyles.search} placeholder="Search orders (customer, #, date)…" value={q} onChange={e => setQ(e.target.value)} />
+          <input style={officeStyles.searchSlim} placeholder="Search orders (customer, #, date)…" value={q} onChange={e => setQ(e.target.value)} />
           <div style={omStyles.orderList}>
             {filtered.map(o => (
               <button key={o.id} style={{ ...omStyles.orderRow, ...(o.id === selId ? omStyles.orderRowActive : {}) }} onClick={() => pick(o.id)}>
@@ -5405,7 +5405,7 @@ function OfficeCatalogs({ customers, items, onRefresh }) {
       <div style={catStyles.wrap}>
         {/* Left: customer list */}
         <div style={catStyles.leftCol}>
-          <input style={officeStyles.search} placeholder="Search stores…" value={custQuery} onChange={e => setCustQuery(e.target.value)} />
+          <input style={officeStyles.searchSlim} placeholder="Search stores…" value={custQuery} onChange={e => setCustQuery(e.target.value)} />
           <div style={catStyles.custList}>
             {filteredCustomers.map(c => (
               <button key={c.id} style={{ ...catStyles.custRow, ...(c.id === selId ? catStyles.custRowActive : {}) }} onClick={() => selectCustomer(c.id)}>
@@ -5433,7 +5433,7 @@ function OfficeCatalogs({ customers, items, onRefresh }) {
                 <div style={officeStyles.countPill}>{catalogCount} items</div>
               </div>
               <div style={catStyles.controls}>
-                <input style={officeStyles.search} placeholder="Search items…" value={itemQuery} onChange={e => setItemQuery(e.target.value)} />
+                <input style={officeStyles.searchSlim} placeholder="Search items…" value={itemQuery} onChange={e => setItemQuery(e.target.value)} />
                 <select style={officeStyles.sortSelect} value={brand} onChange={e => setBrand(e.target.value)}>
                   {brandList.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
@@ -5999,6 +5999,7 @@ const officeStyles = {
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  searchSlim: { width: '100%', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontFamily: 'inherit', color: '#14181F', outline: 'none', boxSizing: 'border-box' },
   select: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   smallBtn: { background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 600, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   primarySmallBtn: { background: '#2B5D50', border: '1px solid #2B5D50', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, color: '#F7F8F4', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
