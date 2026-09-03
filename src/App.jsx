@@ -2189,7 +2189,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               </button>
             )}
             {desktop && (
-              <div style={{ ...styles.dateBtn, flex: '0 0 200px', marginTop: 0 }} title="PO number — auto-filled; edit to override">
+              <div style={{ ...styles.dateBtn, flex: '1 1 100%', marginTop: 0 }} title="PO number — auto-filled; edit to override">
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#8A8F87' }}>PO#</span>
                 <input
                   style={styles.comboInput}
@@ -5844,7 +5844,7 @@ const styles = {
   tabBtn: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0' },
   tabBtnLabel: { fontSize: 11, fontWeight: 700 },
   header: { background: '#14181F', padding: 'calc(18px + env(safe-area-inset-top, 0px)) 16px 16px' },
-  headerDesktop: { background: '#14181F', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' },
+  headerDesktop: { background: '#14181F', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
   headerTop: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 },
   officeLinkBtn: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: '#B7BCB2', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 6px' },
   headerTitle: { color: '#EDEBE3', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em' },
