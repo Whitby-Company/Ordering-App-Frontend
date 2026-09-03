@@ -899,6 +899,67 @@ function useIsDesktop() {
 // ============================================================
 // ROOT APP — owns shared data, fetched live from the backend
 // ============================================================
+// One-time "app was updated" notice. The build bakes in __BUILD_ID__; this polls
+// /version.json and, when the deployed id differs (a new deploy happened), shows
+// a dismissible refresh prompt. Won't nag again for the same version once dismissed.
+const APP_BUILD_ID = (typeof __BUILD_ID__ !== 'undefined') ? __BUILD_ID__ : 'dev';
+function UpdateNotice() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let stopped = false;
+    async function check() {
+      try {
+        const r = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const { buildId } = await r.json();
+        if (stopped || !buildId) return;
+        if (buildId !== APP_BUILD_ID) {
+          let dismissed = null;
+          try { dismissed = localStorage.getItem('updateDismissed'); } catch { /* ignore */ }
+          if (dismissed !== buildId) setShow(true);
+        }
+      } catch { /* offline or not deployed yet — ignore */ }
+    }
+    check();
+    const iv = setInterval(check, 120000); // every 2 min
+    const onFocus = () => check();
+    window.addEventListener('focus', onFocus);
+    return () => { stopped = true; clearInterval(iv); window.removeEventListener('focus', onFocus); };
+  }, []);
+
+  async function dismiss() {
+    try {
+      const r = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+      const { buildId } = await r.json();
+      if (buildId) localStorage.setItem('updateDismissed', buildId);
+    } catch { /* ignore */ }
+    setShow(false);
+  }
+
+  if (!show) return null;
+  return (
+    <div style={updateStyles.wrap}>
+      <div style={updateStyles.card}>
+        <div style={updateStyles.title}>App updated</div>
+        <div style={updateStyles.body}>A new version is available. Refresh to get the latest.</div>
+        <div style={updateStyles.actions}>
+          <button style={updateStyles.later} onClick={dismiss}>Later</button>
+          <button style={updateStyles.refresh} onClick={() => window.location.reload(true)}>Refresh now</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const updateStyles = {
+  wrap: { position: 'fixed', left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', padding: 16, zIndex: 200, pointerEvents: 'none' },
+  card: { pointerEvents: 'auto', background: '#14181F', color: '#F7F8F4', borderRadius: 14, padding: '14px 18px', boxShadow: '0 12px 40px rgba(20,24,31,0.45)', maxWidth: 440, width: '100%', fontFamily: "'Inter', system-ui, sans-serif" },
+  title: { fontSize: 15, fontWeight: 800 },
+  body: { fontSize: 13.5, color: '#C7CBC1', marginTop: 3 },
+  actions: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 },
+  later: { background: 'transparent', color: '#C7CBC1', border: '1px solid #3A3F49', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  refresh: { background: '#5B9A86', color: '#0F1A16', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
+};
+
 export default function App() {
   const [items, setItems] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -1009,6 +1070,7 @@ export default function App() {
           isManualOverride={!!viewOverride}
           onResetToAuto={() => setOverride(null)}
         />
+        <UpdateNotice />
       </div>
     );
   }
@@ -1038,6 +1100,7 @@ export default function App() {
         )}
       </div>
       <TabBar active={tab} onChange={setTab} />
+      <UpdateNotice />
     </div>
   );
 }
