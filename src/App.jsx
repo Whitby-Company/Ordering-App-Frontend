@@ -1434,6 +1434,53 @@ const qeStyles = {
   tfoot: { padding: '9px 8px', borderTop: '2px solid #14181F', fontWeight: 800, fontSize: 14, color: '#14181F' },
 };
 
+// Three-box date entry: MM / DD / YY. Typing auto-advances (2 digits in a box
+// jumps to the next); commits to an ISO date whenever all three are valid.
+function DateBoxes({ value, onChange, firstRef }) {
+  const parts = value ? value.split('-') : ['', '', ''];
+  const [mm, setMm] = useState(value ? parts[1] : '');
+  const [dd, setDd] = useState(value ? parts[2] : '');
+  const [yy, setYy] = useState(value ? parts[0].slice(2) : '');
+  const mRef = useRef(null), dRef = useRef(null), yRef = useRef(null);
+  useEffect(() => { if (firstRef) firstRef.current = mRef.current; }, [firstRef]);
+  useEffect(() => {
+    // keep boxes in sync if the date is changed elsewhere (e.g. reset)
+    if (!value) { setMm(''); setDd(''); setYy(''); return; }
+    const p = value.split('-'); setMm(p[1]); setDd(p[2]); setYy(p[0].slice(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  function commit(m, d, y) {
+    const mo = Number(m), day = Number(d);
+    if (m && d && y && y.length === 2 && mo >= 1 && mo <= 12 && day >= 1 && day <= 31) {
+      onChange(`20${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    }
+  }
+  const digits = s => s.replace(/[^0-9]/g, '');
+  return (
+    <div style={dateBoxStyles.wrap}>
+      <input ref={mRef} style={dateBoxStyles.box} placeholder="MM" value={mm} inputMode="numeric" maxLength={2}
+        onFocus={e => e.target.select()}
+        onChange={e => { const v = digits(e.target.value).slice(0, 2); setMm(v); commit(v, dd, yy); if (v.length === 2 && dRef.current) dRef.current.focus(); }} />
+      <span style={dateBoxStyles.sep}>/</span>
+      <input ref={dRef} style={dateBoxStyles.box} placeholder="DD" value={dd} inputMode="numeric" maxLength={2}
+        onFocus={e => e.target.select()}
+        onChange={e => { const v = digits(e.target.value).slice(0, 2); setDd(v); commit(mm, v, yy); if (v.length === 2 && yRef.current) yRef.current.focus(); }}
+        onKeyDown={e => { if (e.key === 'Backspace' && !dd && mRef.current) mRef.current.focus(); }} />
+      <span style={dateBoxStyles.sep}>/</span>
+      <input ref={yRef} style={dateBoxStyles.box} placeholder="YY" value={yy} inputMode="numeric" maxLength={2}
+        onFocus={e => e.target.select()}
+        onChange={e => { const v = digits(e.target.value).slice(0, 2); setYy(v); commit(mm, dd, v); }}
+        onKeyDown={e => { if (e.key === 'Backspace' && !yy && dRef.current) dRef.current.focus(); }} />
+    </div>
+  );
+}
+const dateBoxStyles = {
+  wrap: { display: 'inline-flex', alignItems: 'center', gap: 2, flex: 1 },
+  box: { width: 30, textAlign: 'center', background: 'transparent', border: 'none', outline: 'none', fontSize: 14, fontWeight: 600, color: '#14181F', fontFamily: 'inherit' },
+  sep: { color: '#8A8F87', fontSize: 14 },
+};
+
 function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
   const isEdit = !!editOrder;
   // Restore an in-progress order draft (customer, delivery date, quantities)
@@ -1970,16 +2017,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             {desktop ? (
               <div style={{ ...styles.dateBtn, flex: 1, marginTop: 0 }}>
                 <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
-                <input
-                  ref={dateInputRef}
-                  style={styles.comboInput}
-                  placeholder="mm/dd/yy"
-                  value={dateFocused ? dateText : formatDateMMDDYY(deliveryDate)}
-                  onFocus={e => { setDateFocused(true); setDateText(formatDateMMDDYY(deliveryDate)); e.target.select(); }}
-                  onChange={e => setDateText(e.target.value)}
-                  onBlur={() => { setDateFocused(false); const iso = parseTypedDate(dateText); if (iso) setDeliveryDate(iso); }}
-                  onKeyDown={e => { if (e.key === 'Enter') { const iso = parseTypedDate(dateText); if (iso) setDeliveryDate(iso); e.currentTarget.blur(); } }}
-                />
+                <DateBoxes value={deliveryDate} onChange={setDeliveryDate} firstRef={dateInputRef} />
               </div>
             ) : (
               <button style={styles.dateBtn} onClick={() => setDateOpen(true)}>
