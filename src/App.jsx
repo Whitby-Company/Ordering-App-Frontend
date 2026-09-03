@@ -2234,17 +2234,17 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
 
       <div style={desktop ? { ...styles.searchWrap, padding: '8px 16px 4px' } : styles.searchWrap}>
         {desktop && quickEntry && !isEdit ? (
-          <div style={{ ...styles.searchInputWrap, alignItems: 'center', gap: 8, paddingLeft: 12 }}>
+          <div style={{ ...styles.searchInputWrap, flex: 1, alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 12 }}>
             <span style={{ fontSize: 12, fontWeight: 800, color: '#8A8F87', letterSpacing: '0.03em' }}>PO#</span>
             <input
-              style={{ ...styles.searchInputInner, flex: '1 1 45%' }}
+              style={{ ...styles.searchInputInner, flex: '1 1 40%', minWidth: 100 }}
               placeholder="PO number"
               value={poValue}
               onChange={e => { setPoEdited(true); setPoNumber(e.target.value); }}
             />
             <span style={{ fontSize: 12, fontWeight: 800, color: '#8A8F87', letterSpacing: '0.03em', borderLeft: '1px solid #E3E1D6', paddingLeft: 12 }}>INV#</span>
             <input
-              style={{ ...styles.searchInputInner, flex: '0 0 110px' }}
+              style={{ ...styles.searchInputInner, flex: '0 0 130px', minWidth: 130, textAlign: 'left', paddingRight: 6 }}
               placeholder="Invoice #"
               inputMode="numeric"
               value={invValue}
@@ -2277,7 +2277,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
           <GridSizeIcon variant={gridSize} size={16} color="#5B6058" />
         </button>
         )}
-        {!isEdit && customerId != null && (
+        {!isEdit && customerId != null && !(desktop && quickEntry) && (
           <button
             style={{ ...styles.allItemsChip, ...(showAllItems ? styles.allItemsChipOn : {}) }}
             onClick={() => setShowAllItems(v => !v)}
