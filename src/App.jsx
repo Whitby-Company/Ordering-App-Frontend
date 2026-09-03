@@ -1198,7 +1198,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, remove
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{formatMoney(l.price)}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineTotal(l, l.qty))}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
-                  <button style={qeStyles.rm} onClick={() => removeLine(l.id)} title="Remove">×</button>
+                  <button style={qeStyles.rm} tabIndex={-1} onClick={() => removeLine(l.id)} title="Remove">×</button>
                 </td>
               </tr>
             );
