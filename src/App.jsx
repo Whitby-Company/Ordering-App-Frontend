@@ -169,6 +169,30 @@ function formatDate(iso) {
   const date = new Date(y, m - 1, d);
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
+// Today's date as ISO yyyy-mm-dd (local).
+function todayISODate() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+// ISO yyyy-mm-dd -> mm/dd/yy (2-digit year) for the compact date field.
+function formatDateMMDDYY(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${m}/${d}/${y.slice(2)}`;
+}
+// Parse a typed date like "9/18", "9/18/26", "09/18/2026" -> ISO (assumes
+// current year if year omitted). Returns '' if unparseable.
+function parseTypedDate(text) {
+  const t = (text || '').trim();
+  const m = t.match(/^(\d{1,2})\D+(\d{1,2})(?:\D+(\d{2,4}))?$/);
+  if (!m) return '';
+  let [, mm, dd, yy] = m;
+  let year = yy ? Number(yy) : new Date().getFullYear();
+  if (yy && yy.length === 2) year = 2000 + Number(yy);
+  const mo = Number(mm), day = Number(dd);
+  if (mo < 1 || mo > 12 || day < 1 || day > 31) return '';
+  return `${year}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 function formatDateTime(iso) {
   const date = new Date(iso);
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -1475,11 +1499,13 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [comboOpen, setComboOpen] = useState(false);
   const [comboHi, setComboHi] = useState(0);
   const dateInputRef = useRef(null);
+  const [dateText, setDateText] = useState('');
+  const [dateFocused, setDateFocused] = useState(false);
   const [customerDayFilter, setCustomerDayFilter] = useState(null); // 0-6, or null for all
   // Mobile only: field reps see just the "show on mobile" customers unless they
   // opt into all. Desktop always shows everyone.
   const [showAllCustomers, setShowAllCustomers] = useState(false);
-  const [deliveryDate, setDeliveryDate] = useState(isEdit ? editOrder.deliveryDate : (savedDraft.deliveryDate || ''));
+  const [deliveryDate, setDeliveryDate] = useState(isEdit ? editOrder.deliveryDate : (savedDraft.deliveryDate || todayISODate()));
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -1946,10 +1972,13 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
                 <input
                   ref={dateInputRef}
-                  type="date"
                   style={styles.comboInput}
-                  value={deliveryDate || ''}
-                  onChange={e => setDeliveryDate(e.target.value)}
+                  placeholder="mm/dd/yy"
+                  value={dateFocused ? dateText : formatDateMMDDYY(deliveryDate)}
+                  onFocus={e => { setDateFocused(true); setDateText(formatDateMMDDYY(deliveryDate)); e.target.select(); }}
+                  onChange={e => setDateText(e.target.value)}
+                  onBlur={() => { setDateFocused(false); const iso = parseTypedDate(dateText); if (iso) setDeliveryDate(iso); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { const iso = parseTypedDate(dateText); if (iso) setDeliveryDate(iso); e.currentTarget.blur(); } }}
                 />
               </div>
             ) : (
