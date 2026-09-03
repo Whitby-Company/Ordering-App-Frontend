@@ -1810,7 +1810,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const comboMatches = useMemo(() => {
     const q = comboText.trim().toLowerCase();
     const pool = customers.filter(c => c.active !== 0);
-    if (!q) return pool;
+    if (!q) return [...pool].sort((a, b) => a.name.localeCompare(b.name));
     // Score each customer; keep anything with a reasonable score, best first.
     const scored = pool
       .map(c => ({ c, s: fuzzyScore(q, c.name.toLowerCase()) }))
@@ -2164,9 +2164,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                   />
                   <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
                 </div>
-                {comboOpen && comboText.trim() && comboMatches.length > 0 && (
+                {comboOpen && comboMatches.length > 0 && (
                   <div style={styles.comboDropdown}>
-                    {comboMatches.slice(0, 50).map((c, ci) => (
+                    {comboMatches.slice(0, 60).map((c, ci) => (
                       <button
                         key={c.id}
                         ref={ci === Math.min(comboHi, comboMatches.length - 1) ? (el => { if (el) el.scrollIntoView({ block: 'nearest' }); }) : undefined}
