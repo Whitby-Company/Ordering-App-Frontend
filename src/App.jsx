@@ -1139,11 +1139,12 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveRow(rowIdx); setHi(h => Math.min(h + 1, ms.length - 1)); return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); return; }
     // Tab or Enter: if anything was typed and there's any match, take the
-    // highlighted one (default: the closest/top match), then jump to Cases.
+    // highlighted match for THIS row (or the closest/first) and jump to Cases.
     if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
       if (text.trim() && ms.length > 0) {
         e.preventDefault();
-        pickForRow(rowIdx, ms[Math.min(hi, ms.length - 1)]);
+        const idx = (activeRow === rowIdx) ? Math.min(Math.max(hi, 0), ms.length - 1) : 0;
+        pickForRow(rowIdx, ms[idx]);
       }
       // truly empty row → let Tab fall through to the next field normally
       return;
@@ -1151,14 +1152,13 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
     if (e.key === 'Escape') { setActiveRow(null); }
   }
   function onQtyKey(e, itemId, isLastLine) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
       e.preventDefault();
-      // jump to the first empty entry row's code field
+      // focus the first empty entry row's code field
       const idx = drafts.findIndex(d => !d.trim());
       const ref = codeRefs.current[idx >= 0 ? idx : 0];
       if (ref) ref.focus();
     }
-    // Tab from Cases naturally moves to the next focusable (next row) — default behavior.
   }
 
   const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
