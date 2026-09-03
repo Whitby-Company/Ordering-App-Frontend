@@ -2199,24 +2199,6 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
               </button>
             )}
-            {desktop && (
-              <div style={{ ...styles.dateBtn, flex: '1 1 100%', marginTop: 0 }} title="PO number — auto-filled; edit to override">
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#8A8F87' }}>PO#</span>
-                <input
-                  style={styles.comboInput}
-                  placeholder="PO #"
-                  value={poValue}
-                  onChange={e => { setPoEdited(true); setPoNumber(e.target.value); }}
-                />
-                {poEdited && (
-                  <button
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8A8F87', fontSize: 12, padding: 2 }}
-                    title="Reset to the auto PO#"
-                    onClick={() => { setPoEdited(false); setPoNumber(''); }}
-                  >↺</button>
-                )}
-              </div>
-            )}
           </>
         ) : (
           <button style={styles.pickersSummary} onClick={() => setPickersExpanded(true)}>
@@ -2231,6 +2213,22 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       </div>
 
       <div style={desktop ? { ...styles.searchWrap, padding: '8px 16px 4px' } : styles.searchWrap}>
+        {desktop && quickEntry && !isEdit ? (
+          <div style={{ ...styles.searchInputWrap, alignItems: 'center', gap: 8, paddingLeft: 12 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#8A8F87', letterSpacing: '0.03em' }}>PO#</span>
+            <input
+              style={styles.searchInputInner}
+              placeholder="PO number"
+              value={poValue}
+              onChange={e => { setPoEdited(true); setPoNumber(e.target.value); }}
+            />
+            {poEdited && (
+              <button style={styles.clearSearchBtnInner} title="Reset to auto PO#" onClick={() => { setPoEdited(false); setPoNumber(''); }}>
+                <X size={14} color="#8A8F87" />
+              </button>
+            )}
+          </div>
+        ) : (
         <div style={styles.searchInputWrap}>
           <Search size={16} color="#8A8F87" style={styles.searchIconInner} />
           <input
@@ -2245,9 +2243,12 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             </button>
           )}
         </div>
+        )}
+        {!(desktop && quickEntry && !isEdit) && (
         <button style={styles.gridSizeBtn} onClick={toggleGridSize} title={`Tile size: ${gridSize} (tap to change)`}>
           <GridSizeIcon variant={gridSize} size={16} color="#5B6058" />
         </button>
+        )}
         {!isEdit && customerId != null && (
           <button
             style={{ ...styles.allItemsChip, ...(showAllItems ? styles.allItemsChipOn : {}) }}
@@ -5855,7 +5856,7 @@ const styles = {
   tabBtn: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0' },
   tabBtnLabel: { fontSize: 11, fontWeight: 700 },
   header: { background: '#14181F', padding: 'calc(18px + env(safe-area-inset-top, 0px)) 16px 16px' },
-  headerDesktop: { background: '#14181F', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+  headerDesktop: { background: '#14181F', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' },
   headerTop: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 },
   officeLinkBtn: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: '#B7BCB2', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 6px' },
   headerTitle: { color: '#EDEBE3', fontSize: 15, fontWeight: 600, letterSpacing: '0.01em' },
