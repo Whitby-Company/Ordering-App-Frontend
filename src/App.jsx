@@ -1539,6 +1539,69 @@ const dateBoxStyles = {
   sep: { color: '#8A8F87', fontSize: 14 },
 };
 
+// Compact month calendar that drops down from the date field. Click a day to pick.
+function MiniCalendar({ value, onPick, onClose }) {
+  const today = new Date();
+  const initial = value ? (() => { const [y, m] = value.split('-').map(Number); return { y, m: m - 1 }; })() : { y: today.getFullYear(), m: today.getMonth() };
+  const [view, setView] = useState(initial);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    function onDoc(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) onClose(); }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [onClose]);
+
+  const first = new Date(view.y, view.m, 1);
+  const startDow = first.getDay();
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const monthName = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const selISO = value;
+  const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const shift = delta => setView(v => { const dt = new Date(v.y, v.m + delta, 1); return { y: dt.getFullYear(), m: dt.getMonth() }; });
+
+  return (
+    <div ref={wrapRef} style={calStyles.pop}>
+      <div style={calStyles.head}>
+        <button style={calStyles.nav} tabIndex={-1} onClick={() => shift(-1)}>‹</button>
+        <span style={calStyles.month}>{monthName}</span>
+        <button style={calStyles.nav} tabIndex={-1} onClick={() => shift(1)}>›</button>
+      </div>
+      <div style={calStyles.grid}>
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={'h' + i} style={calStyles.dow}>{d}</div>)}
+        {cells.map((d, i) => {
+          if (d == null) return <div key={'e' + i} />;
+          const iso = `${view.y}-${String(view.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const isSel = iso === selISO, isToday = iso === todayISO;
+          return (
+            <button
+              key={iso}
+              tabIndex={-1}
+              style={{ ...calStyles.day, ...(isSel ? calStyles.daySel : (isToday ? calStyles.dayToday : {})) }}
+              onClick={() => onPick(iso)}
+            >{d}</button>
+          );
+        })}
+      </div>
+      <button style={calStyles.todayBtn} tabIndex={-1} onClick={() => onPick(todayISO)}>Today</button>
+    </div>
+  );
+}
+const calStyles = {
+  pop: { position: 'absolute', top: '100%', right: 0, marginTop: 6, width: 250, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 12, boxShadow: '0 16px 40px rgba(20,24,31,0.22)', zIndex: 40, padding: 10, fontFamily: "'Inter', system-ui, sans-serif" },
+  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  nav: { background: '#F0EEE4', border: '1px solid #E3E1D6', borderRadius: 8, width: 28, height: 28, fontSize: 16, cursor: 'pointer', color: '#14181F', lineHeight: 1 },
+  month: { fontSize: 13.5, fontWeight: 700, color: '#14181F' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 },
+  dow: { textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '2px 0' },
+  day: { aspectRatio: '1', border: 'none', background: 'none', borderRadius: 8, fontSize: 12.5, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
+  daySel: { background: '#2B5D50', color: '#F7F8F4', fontWeight: 700 },
+  dayToday: { border: '1px solid #C4DDD2', fontWeight: 700, color: '#2B5D50' },
+  todayBtn: { marginTop: 8, width: '100%', background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '6px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+};
+
 function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
   const isEdit = !!editOrder;
   // Restore an in-progress order draft (customer, delivery date, quantities)
@@ -1606,6 +1669,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const dateInputRef = useRef(null);
   const [dateText, setDateText] = useState('');
   const [dateFocused, setDateFocused] = useState(false);
+  const [calOpen, setCalOpen] = useState(false);
   const [customerDayFilter, setCustomerDayFilter] = useState(null); // 0-6, or null for all
   // Mobile only: field reps see just the "show on mobile" customers unless they
   // opt into all. Desktop always shows everyone.
@@ -2078,9 +2142,24 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
               </button>
             )}
             {desktop ? (
-              <div style={{ ...styles.dateBtn, flex: 1, marginTop: 0 }}>
+              <div style={{ ...styles.dateBtn, flex: 1, marginTop: 0, position: 'relative' }}>
                 <Calendar size={16} color={deliveryDate ? '#14181F' : '#8A8F87'} />
                 <DateBoxes value={deliveryDate} onChange={setDeliveryDate} firstRef={dateInputRef} />
+                <button
+                  style={styles.calToggleBtn}
+                  tabIndex={-1}
+                  onClick={() => setCalOpen(o => !o)}
+                  title="Pick a date from a calendar"
+                >
+                  <ChevronDown size={16} color="#8A8F87" />
+                </button>
+                {calOpen && (
+                  <MiniCalendar
+                    value={deliveryDate}
+                    onPick={iso => { setDeliveryDate(iso); setCalOpen(false); }}
+                    onClose={() => setCalOpen(false)}
+                  />
+                )}
               </div>
             ) : (
               <button style={styles.dateBtn} onClick={() => setDateOpen(true)}>
@@ -5280,6 +5359,7 @@ const styles = {
   comboRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '9px 10px', fontSize: 13.5, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   comboRowHi: { background: '#EAF1EE' },
   dateBtn: { position: 'relative', width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: '#EDEBE3', border: 'none', borderRadius: 10, padding: '11px 12px', cursor: 'pointer', marginTop: 8, boxSizing: 'border-box', fontFamily: 'inherit' },
+  calToggleBtn: { marginLeft: 'auto', background: 'none', border: 'none', padding: 2, cursor: 'pointer', display: 'flex', alignItems: 'center' },
   pickersSummary: { width: '100%', display: 'flex', alignItems: 'center', gap: 7, background: '#2A2E23', border: '1px solid #3C4132', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' },
   pickersSummaryText: { fontSize: 12.5, fontWeight: 600, color: '#EDEBE3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   pickersSummaryDot: { color: '#5B6058' },
