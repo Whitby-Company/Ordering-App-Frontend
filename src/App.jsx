@@ -1182,7 +1182,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
       if (code.startsWith(c) || i.name.toLowerCase().startsWith(c)) starts.push(i);
       else if (code.includes(c) || i.name.toLowerCase().includes(c)) contains.push(i);
     }
-    return [...starts, ...contains].slice(0, 8);
+    return [...starts, ...contains].slice(0, 50);
   };
   function setDraft(rowIdx, text) {
     setDrafts(prev => { const n = [...prev]; n[rowIdx] = text; return n; });
@@ -1331,10 +1331,13 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     />
                     {activeRow === rowIdx && text.trim() && ms.length > 0 && (
                       <div style={qeStyles.dropdown}>
-                        {ms.map((it, mi) => (
+                        {ms.map((it, mi) => {
+                          const isHi = mi === Math.min(hi, ms.length - 1);
+                          return (
                           <button
                             key={it.id}
-                            style={{ ...qeStyles.matchRow, ...(mi === Math.min(hi, ms.length - 1) ? qeStyles.matchRowHi : {}) }}
+                            ref={isHi ? (el => { if (el) el.scrollIntoView({ block: 'nearest' }); }) : undefined}
+                            style={{ ...qeStyles.matchRow, ...(isHi ? qeStyles.matchRowHi : {}) }}
                             onMouseEnter={() => setHi(mi)}
                             onMouseDown={e => { e.preventDefault(); pickForRow(rowIdx, it); }}
                           >
@@ -1343,7 +1346,8 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                             {(Number(it.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
                             {!inCatalog(it.id) && (Number(it.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
