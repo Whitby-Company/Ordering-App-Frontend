@@ -1188,12 +1188,26 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
     setDrafts(prev => { const n = [...prev]; n[rowIdx] = text; return n; });
     setActiveRow(rowIdx); setHi(0);
   }
+  function focusQty(itemId) {
+    let tries = 0;
+    const tryFocus = () => {
+      const q = qtyRefs.current[itemId];
+      if (q) { q.focus(); q.select && q.select(); return; }
+      if (tries++ < 10) requestAnimationFrame(tryFocus);
+    };
+    requestAnimationFrame(tryFocus);
+  }
+  function focusFirstEmptyCode() {
+    const idx = drafts.findIndex(d => !d.trim());
+    const ref = codeRefs.current[idx >= 0 ? idx : 0];
+    if (ref) ref.focus();
+  }
   function pickForRow(rowIdx, item) {
-    if (item && !orderLines.some(l => l.id === item.id)) setQty(item.id, 1);
+    if (!item) return;
+    if (!orderLines.some(l => l.id === item.id)) setQty(item.id, 1);
     setDrafts(prev => { const n = [...prev]; n[rowIdx] = ''; return n; });
     setActiveRow(null); setHi(0);
-    // move focus to that row's Cases field once it renders
-    setTimeout(() => { const q = qtyRefs.current[item ? item.id : null]; if (q) q.focus(); }, 30);
+    focusQty(item.id); // focus the new line's Cases field once it renders
   }
   function onCodeKey(e, rowIdx) {
     // Always match against the CURRENT input value (avoids stale state on fast typing).
@@ -1217,10 +1231,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
   function onQtyKey(e, itemId, isLastLine) {
     if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
       e.preventDefault();
-      // focus the first empty entry row's code field
-      const idx = drafts.findIndex(d => !d.trim());
-      const ref = codeRefs.current[idx >= 0 ? idx : 0];
-      if (ref) ref.focus();
+      focusFirstEmptyCode();
     }
   }
 
@@ -1288,7 +1299,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                       placeholder={rowIdx === 0 && orderLines.length === 0 ? 'Type item # or name…' : ''}
                       value={text}
                       onChange={e => setDraft(rowIdx, e.target.value)}
-                      onFocus={() => { if (text.trim()) { setActiveRow(rowIdx); setHi(0); } }}
+                      onFocus={() => { setActiveRow(rowIdx); setHi(0); }}
                       onKeyDown={e => onCodeKey(e, rowIdx)}
                     />
                     {activeRow === rowIdx && text.trim() && ms.length > 0 && (
