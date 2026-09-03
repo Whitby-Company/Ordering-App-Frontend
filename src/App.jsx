@@ -1338,7 +1338,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
   const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
-  const [quickEntry, setQuickEntry] = useState(false); // desktop: QuickBooks-style grid entry
+  const [quickEntry, setQuickEntry] = useState(desktop && !editOrder); // desktop default: QuickBooks-style grid entry
   const [order, setOrder] = useState(isEdit ? editInitLines : (Array.isArray(savedDraft.order) ? savedDraft.order : []));
   const [notes, setNotes] = useState(isEdit ? (editOrder.notes || '') : (savedDraft.notes || ''));
   const [ticketOpen, setTicketOpen] = useState(false);
