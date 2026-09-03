@@ -665,7 +665,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     '<td style="width:36%"><table class="metabox">' +
     '<tr class="boxrow"><td class="lbl">DATE:</td><td class="val">' + (esc(dateStr) || '&nbsp;') + '</td></tr>' +
     '<tr class="boxrow"><td class="lbl">INVOICE #</td><td class="val">' + invoiceNumberFor(order) + '</td></tr>' +
-    '<tr class="termsrow"><td class="lbl">TERMS:</td><td class="val">1% 10 Net 11</td></tr></table></td></tr></table>' +
+    '<tr class="termsrow"><td class="lbl">TERMS:</td><td class="val">' + esc((c.terms && String(c.terms).trim()) || '1% 10 Net 11') + '</td></tr></table></td></tr></table>' +
     '<table class="addrs"><tr>' +
     '<td><div class="addr-lbl">BILL TO:</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></td>' +
     '<td class="shipcol"><div class="addr-lbl">SHIP TO:</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></td></tr></table>' +
@@ -5728,13 +5728,14 @@ function OfficeCustomers({ customers, onRefresh }) {
             {editMode && <th style={officeStyles.th}>Usual delivery day</th>}
             {editMode && <th style={officeStyles.th}>Abbrev. (PO)</th>}
             {editMode && <th style={officeStyles.th}>Short name (memo)</th>}
+            {editMode && <th style={officeStyles.th}>Terms</th>}
             {editMode && <th style={officeStyles.th}>Ship-to</th>}
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Mobile</th>
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 7 : 3}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 8 : 3}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => {
               const shipOpen = shipToOpenId === c.id;
@@ -5774,6 +5775,11 @@ function OfficeCustomers({ customers, onRefresh }) {
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
+                    <CustomerTextField customer={c} field="terms" value={c.terms} placeholder="1% 10 Net 11" width={130} onRefresh={onRefresh} />
+                  </td>
+                )}
+                {editMode && (
+                  <td style={officeStyles.td}>
                     <button
                       style={{ ...officeStyles.smallBtn, ...(shipOpen ? officeStyles.editModeBtnActive : {}) }}
                       onClick={() => setShipToOpenId(shipOpen ? null : c.id)}
@@ -5799,7 +5805,7 @@ function OfficeCustomers({ customers, onRefresh }) {
               </tr>
               {editMode && shipOpen && (
                 <tr>
-                  <td colSpan={7} style={officeStyles.shipToCell}>
+                  <td colSpan={8} style={officeStyles.shipToCell}>
                     <div style={officeStyles.shipToTitle}>Bill-to address (invoice) for {c.name}</div>
                     <div style={officeStyles.shipToGrid}>
                       <CustomerTextField customer={c} field="billToLine1" value={c.billToLine1} placeholder="Bill-to line 1 (company)" width={220} onRefresh={onRefresh} />
