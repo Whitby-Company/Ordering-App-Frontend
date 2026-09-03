@@ -5065,7 +5065,8 @@ const repStyles = {
 function MarginReport({ onBack }) {
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const [from, setFrom] = useState(thisMonth);
+  const sixAgo = (() => { const d = new Date(now.getFullYear(), now.getMonth() - 5, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+  const [from, setFrom] = useState(sixAgo);
   const [to, setTo] = useState(thisMonth);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
