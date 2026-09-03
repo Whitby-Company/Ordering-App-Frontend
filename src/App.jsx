@@ -572,7 +572,10 @@ function printOrder(order, printSequence, options = {}) {
 // sequence can be aligned to QuickBooks). Default 30000 until the app loads the
 // live offset. invoiceNumberFor uses whatever the module has fetched.
 let INVOICE_OFFSET = 30000;
-function invoiceNumberFor(order) { return INVOICE_OFFSET + Number(order.id || 0); }
+function invoiceNumberFor(order) {
+  if (order && order.invoiceNumber != null && order.invoiceNumber !== '') return Number(order.invoiceNumber);
+  return INVOICE_OFFSET + Number(order.id || 0);
+}
 
 // Build a printable invoice that matches the Hawken Group template, using the
 // same data as the TP export (customer bill-to/ship-to, PO, line items with
@@ -1692,6 +1695,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // edits it, poEdited flips and we keep their value.
   const [poNumber, setPoNumber] = useState(isEdit ? (editOrder.poNumber || '') : '');
   const [poEdited, setPoEdited] = useState(isEdit && !!editOrder.poNumber);
+  // Editable invoice number. Auto = next id + offset; override saves on the order.
+  const [invNumber, setInvNumber] = useState(isEdit ? (editOrder.invoiceNumber != null ? String(editOrder.invoiceNumber) : '') : '');
+  const [invEdited, setInvEdited] = useState(isEdit && editOrder.invoiceNumber != null);
   const [dateOpen, setDateOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -1780,6 +1786,14 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     return `${m}${d}${y.slice(2)}-${abbr}`;
   }, [customers, customerId, deliveryDate]);
   const poValue = poEdited ? poNumber : autoPo;
+  // Next invoice number = (highest existing order id + 1) + offset. In edit mode
+  // it's the order's own number.
+  const autoInv = useMemo(() => {
+    if (isEdit) return invoiceNumberFor(editOrder);
+    const maxId = (orders && orders.length) ? Math.max(...orders.map(o => Number(o.id) || 0)) : 0;
+    return (maxId + 1) + (INVOICE_OFFSET || 0);
+  }, [orders, isEdit, editOrder]);
+  const invValue = invEdited ? invNumber : String(autoInv);
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
     let active = customers.filter(c => c.active !== 0);
@@ -1978,6 +1992,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         notes: notes.trim() || undefined,
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
         poNumber: poEdited ? (poNumber || null) : null,
+        invoiceNumber: invEdited ? (invNumber || null) : null,
       });
       await onOrderSubmitted();
       if (onClose) onClose();
@@ -2022,6 +2037,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         status: pending ? 'pending' : 'submitted',
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
         poNumber: poEdited ? (poNumber || null) : null,
+        invoiceNumber: invEdited ? (invNumber || null) : null,
       });
       if (pending) {
         // Pending drafts just go to the Orders list; no confirmation screen.
@@ -2217,13 +2233,21 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
           <div style={{ ...styles.searchInputWrap, alignItems: 'center', gap: 8, paddingLeft: 12 }}>
             <span style={{ fontSize: 12, fontWeight: 800, color: '#8A8F87', letterSpacing: '0.03em' }}>PO#</span>
             <input
-              style={styles.searchInputInner}
+              style={{ ...styles.searchInputInner, flex: '1 1 45%' }}
               placeholder="PO number"
               value={poValue}
               onChange={e => { setPoEdited(true); setPoNumber(e.target.value); }}
             />
-            {poEdited && (
-              <button style={styles.clearSearchBtnInner} title="Reset to auto PO#" onClick={() => { setPoEdited(false); setPoNumber(''); }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#8A8F87', letterSpacing: '0.03em', borderLeft: '1px solid #E3E1D6', paddingLeft: 12 }}>INV#</span>
+            <input
+              style={{ ...styles.searchInputInner, flex: '0 0 110px' }}
+              placeholder="Invoice #"
+              inputMode="numeric"
+              value={invValue}
+              onChange={e => { setInvEdited(true); setInvNumber(e.target.value.replace(/[^0-9]/g, '')); }}
+            />
+            {(poEdited || invEdited) && (
+              <button style={styles.clearSearchBtnInner} title="Reset PO# and Invoice# to auto" onClick={() => { setPoEdited(false); setPoNumber(''); setInvEdited(false); setInvNumber(''); }}>
                 <X size={14} color="#8A8F87" />
               </button>
             )}
