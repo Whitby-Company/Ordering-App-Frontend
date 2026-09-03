@@ -618,6 +618,9 @@ function printInvoice(order, customer, printSequence, items = []) {
   const itemById = {};
   for (const it of items) itemById[it.id] = it;
 
+  // If every ordered (positive-qty) line is a case, drop the EACH column entirely.
+  const allCases = positive.length > 0 && positive.every(l => l.unit === 'case');
+
   const rows = lines.map(l => {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
@@ -630,7 +633,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     let row = '<tr class="itemrow">' +
       '<td class="c-item">' + esc(displayCode(l.id)) + '</td>' +
       '<td class="c-cs">' + cases + '</td>' +
-      '<td class="c-each">' + each + '</td>' +
+      (allCases ? '' : '<td class="c-each">' + each + '</td>') +
       '<td class="c-desc">' + desc + '</td>' +
       '<td class="c-upc">' + upcCell + '</td>' +
       '<td class="c-price">' + money(priceShown) + '</td>' +
@@ -639,7 +642,7 @@ function printInvoice(order, customer, printSequence, items = []) {
     // Shipper "Contains below" sub-lines (from the item's `contains` list).
     const contains = (itemById[l.id] && itemById[l.id].contains) || [];
     if (Array.isArray(contains) && contains.length) {
-      row += '<tr class="containrow"><td></td><td></td><td></td>' +
+      row += '<tr class="containrow"><td></td><td></td>' + (allCases ? '' : '<td></td>') +
         '<td class="c-contains"><div class="contains-lbl">Contains below:</div>' +
         contains.map(x => {
           const bc = barcodeSVG(x.upc);
@@ -678,8 +681,12 @@ function printInvoice(order, customer, printSequence, items = []) {
     '<table class="sigrow"><tr><td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>' +
     '<td style="width:30%">Signature</td><td style="width:20%">Date</td></tr></table>';
 
-  const COLG = '<colgroup><col style="width:9%"/><col style="width:5%"/><col style="width:6%"/><col style="width:39%"/><col style="width:20%"/><col style="width:8%"/><col style="width:13%"/></colgroup>';
-  const COLH = '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th><th>DESCRIPTION</th><th class="ctr">UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>';
+  const COLG = allCases
+    ? '<colgroup><col style="width:10%"/><col style="width:6%"/><col style="width:42%"/><col style="width:21%"/><col style="width:9%"/><col style="width:12%"/></colgroup>'
+    : '<colgroup><col style="width:9%"/><col style="width:5%"/><col style="width:6%"/><col style="width:39%"/><col style="width:20%"/><col style="width:8%"/><col style="width:13%"/></colgroup>';
+  const COLH = allCases
+    ? '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th>DESCRIPTION</th><th class="ctr">UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>'
+    : '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th><th>DESCRIPTION</th><th class="ctr">UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>';
 
   const win = window.open('', '_blank', 'width=880,height=1000');
   if (!win) return;
