@@ -1873,9 +1873,10 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     const item = itemById[id];
     if (!item) return;
     // In edit mode the item's current qty was already reserved, so it can go up
-    // to current stock + whatever this order originally held.
+    // to current stock + whatever this order originally held. On desktop we allow
+    // ordering beyond stock (stock can go negative — orders placed before restock).
     const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
-    const clamped = Math.max(0, Math.min(qty, maxQty));
+    const clamped = desktop ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
       // Going to 0 removes a normal line, but a "check-in" line (added on
@@ -1895,7 +1896,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     const item = itemById[id];
     if (!item) return;
     const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
-    const clamped = Math.max(0, Math.min(qty, maxQty));
+    const clamped = desktop ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
       if (!exists) return [...prev, { id, qty: clamped, checkin: clamped === 0 }];
