@@ -1100,36 +1100,59 @@ function TicketQtyInput({ qty, onSet, disabled }) {
 // enter cases, and it builds the order. Uses the store's catalog prices and
 // warns (amber) on items not in the store's catalog.
 function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, removeLine, desktop }) {
-  const [draftCode, setDraftCode] = useState('');
-  const [openMatch, setOpenMatch] = useState(false);
+  const BLANK_ROWS = 8;
+  // Each entry row has its own draft text + dropdown highlight index.
+  const [drafts, setDrafts] = useState(() => Array.from({ length: BLANK_ROWS }, () => ''));
+  const [activeRow, setActiveRow] = useState(null);   // which entry row's dropdown is open
+  const [hi, setHi] = useState(0);                     // highlighted match index
+  const codeRefs = useRef([]);
+  const qtyRefs = useRef([]);
 
   const inCatalog = (id) => !catalog || !catalog.ids || catalog.ids.has(id);
-  const findItem = (code) => {
-    const c = code.trim().toLowerCase();
-    if (!c) return null;
-    // exact SKU match (with/without trailing brand prefix or 'c')
-    return allItems.find(i => displayCode(i.id).toLowerCase() === c)
-        || allItems.find(i => i.id.toLowerCase() === c)
-        || allItems.find(i => displayCode(i.id).toLowerCase() === c + 'c');
-  };
-  const matches = useMemo(() => {
-    const c = draftCode.trim().toLowerCase();
+  const matchesFor = (text) => {
+    const c = (text || '').trim().toLowerCase();
     if (!c) return [];
-    return allItems.filter(i =>
-      displayCode(i.id).toLowerCase().includes(c) || i.name.toLowerCase().includes(c)
-    ).slice(0, 8);
-  }, [draftCode, allItems]);
-
-  function addDraft(item) {
-    if (!item) return;
-    if (!orderLines.some(l => l.id === item.id)) setQty(item.id, 1);
-    setDraftCode(''); setOpenMatch(false);
+    const starts = [], contains = [];
+    for (const i of allItems) {
+      const code = displayCode(i.id).toLowerCase();
+      if (code === c) return [i]; // exact code → single match
+      if (code.startsWith(c) || i.name.toLowerCase().startsWith(c)) starts.push(i);
+      else if (code.includes(c) || i.name.toLowerCase().includes(c)) contains.push(i);
+    }
+    return [...starts, ...contains].slice(0, 8);
+  };
+  function setDraft(rowIdx, text) {
+    setDrafts(prev => { const n = [...prev]; n[rowIdx] = text; return n; });
+    setActiveRow(rowIdx); setHi(0);
   }
-  function submitDraft() {
-    const exact = findItem(draftCode);
-    if (exact) return addDraft(exact);
-    if (matches.length === 1) return addDraft(matches[0]);
-    setOpenMatch(true);
+  function pickForRow(rowIdx, item) {
+    if (item && !orderLines.some(l => l.id === item.id)) setQty(item.id, 1);
+    setDrafts(prev => { const n = [...prev]; n[rowIdx] = ''; return n; });
+    setActiveRow(null); setHi(0);
+    // move focus to that row's Cases field once it renders
+    setTimeout(() => { const q = qtyRefs.current[item ? item.id : null]; if (q) q.focus(); }, 30);
+  }
+  function onCodeKey(e, rowIdx) {
+    const ms = matchesFor(drafts[rowIdx]);
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveRow(rowIdx); setHi(h => Math.min(h + 1, ms.length - 1)); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); return; }
+    // Tab or Enter selects the highlighted match, then jumps to Cases.
+    if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
+      if (ms.length > 0) { e.preventDefault(); pickForRow(rowIdx, ms[Math.min(hi, ms.length - 1)]); }
+      // empty row + Tab → let it fall through to the next field normally
+      return;
+    }
+    if (e.key === 'Escape') { setActiveRow(null); }
+  }
+  function onQtyKey(e, itemId, isLastLine) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // jump to the first empty entry row's code field
+      const idx = drafts.findIndex(d => !d.trim());
+      const ref = codeRefs.current[idx >= 0 ? idx : 0];
+      if (ref) ref.focus();
+    }
+    // Tab from Cases naturally moves to the next focusable (next row) — default behavior.
   }
 
   const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
@@ -1138,6 +1161,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, remove
 
   return (
     <div style={qeStyles.wrap}>
+      <div style={qeStyles.hint}>Type an item # or name, press <b>Tab</b> to pick the highlighted match and jump to Cases, then <b>Tab</b> to the next row.</div>
       <table style={qeStyles.table}>
         <thead><tr>
           <th style={{ ...qeStyles.th, width: 130 }}>Item #</th>
@@ -1149,7 +1173,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, remove
           <th style={{ ...qeStyles.th, width: 34 }} />
         </tr></thead>
         <tbody>
-          {orderLines.map(l => {
+          {orderLines.map((l, i) => {
             const warn = !inCatalog(l.id);
             const pack = Number(l.pack) || 1;
             return (
@@ -1161,10 +1185,13 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, remove
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'right' }}>
                   <input
+                    ref={el => { qtyRefs.current[l.id] = el; }}
                     style={qeStyles.qtyInput}
                     value={l.qty}
                     inputMode="numeric"
+                    onFocus={e => e.target.select()}
                     onChange={e => setQty(l.id, parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0)}
+                    onKeyDown={e => onQtyKey(e, l.id, i === orderLines.length - 1)}
                   />
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{(Number(l.qty) || 0) * pack}</td>
@@ -1176,34 +1203,44 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, remove
               </tr>
             );
           })}
-          {/* entry row */}
-          <tr>
-            <td style={qeStyles.td} colSpan={2}>
-              <div style={{ position: 'relative' }}>
-                <input
-                  style={qeStyles.codeInput}
-                  placeholder="Type item # or name, then Enter…"
-                  value={draftCode}
-                  onChange={e => { setDraftCode(e.target.value); setOpenMatch(true); }}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitDraft(); } if (e.key === 'Escape') { setDraftCode(''); setOpenMatch(false); } }}
-                />
-                {openMatch && draftCode.trim() && matches.length > 0 && (
-                  <div style={qeStyles.dropdown}>
-                    {matches.map(it => (
-                      <button key={it.id} style={qeStyles.matchRow} onClick={() => addDraft(it)}>
-                        <span style={{ fontWeight: 700, marginRight: 8 }}>{displayCode(it.id)}</span>
-                        <span>{it.name}</span>
-                        {!inCatalog(it.id) && <span style={qeStyles.warnTag}>not in catalog</span>}
-                      </button>
-                    ))}
+          {/* blank entry rows */}
+          {drafts.map((text, rowIdx) => {
+            const ms = activeRow === rowIdx ? matchesFor(text) : [];
+            return (
+              <tr key={`draft-${rowIdx}`}>
+                <td style={qeStyles.td} colSpan={2}>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      ref={el => { codeRefs.current[rowIdx] = el; }}
+                      style={qeStyles.codeInput}
+                      placeholder={rowIdx === 0 && orderLines.length === 0 ? 'Type item # or name…' : ''}
+                      value={text}
+                      onChange={e => setDraft(rowIdx, e.target.value)}
+                      onFocus={() => { if (text.trim()) { setActiveRow(rowIdx); setHi(0); } }}
+                      onKeyDown={e => onCodeKey(e, rowIdx)}
+                    />
+                    {activeRow === rowIdx && text.trim() && ms.length > 0 && (
+                      <div style={qeStyles.dropdown}>
+                        {ms.map((it, mi) => (
+                          <button
+                            key={it.id}
+                            style={{ ...qeStyles.matchRow, ...(mi === Math.min(hi, ms.length - 1) ? qeStyles.matchRowHi : {}) }}
+                            onMouseEnter={() => setHi(mi)}
+                            onMouseDown={e => { e.preventDefault(); pickForRow(rowIdx, it); }}
+                          >
+                            <span style={{ fontWeight: 700, marginRight: 8 }}>{displayCode(it.id)}</span>
+                            <span>{it.name}</span>
+                            {!inCatalog(it.id) && <span style={qeStyles.warnTag}>not in catalog</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </td>
-            <td style={qeStyles.td} colSpan={5}>
-              <span style={{ fontSize: 12, color: '#8A8F87' }}>Enter an item to add a row</span>
-            </td>
-          </tr>
+                </td>
+                <td style={qeStyles.td} colSpan={5} />
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot><tr>
           <td style={qeStyles.tfoot} colSpan={2}>Totals</td>
@@ -1220,15 +1257,17 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, remove
 
 const qeStyles = {
   wrap: { padding: '4px 16px 16px' },
+  hint: { fontSize: 12, color: '#8A8F87', padding: '2px 2px 8px' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 },
   th: { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '6px 8px', borderBottom: '1px solid #E3E1D6' },
   td: { padding: '5px 8px', borderBottom: '1px solid #F0EEE6', color: '#14181F' },
   warnRow: { background: '#FDF6EC' },
   warnTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FBEED9', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' },
   qtyInput: { width: 60, textAlign: 'right', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 7px', fontSize: 13.5, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", outline: 'none' },
-  codeInput: { width: '100%', background: '#FFFFFF', border: '1px solid #C4DDD2', borderRadius: 7, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
+  codeInput: { width: '100%', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
   dropdown: { position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 2, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 30px rgba(20,24,31,0.2)', zIndex: 8, padding: 6, maxHeight: 280, overflowY: 'auto' },
-  matchRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '8px 6px', fontSize: 13, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit' },
+  matchRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '8px 6px', fontSize: 13, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 5 },
+  matchRowHi: { background: '#EAF1EE' },
   rm: { width: 26, height: 26, borderRadius: 6, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 15, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
   tfoot: { padding: '9px 8px', borderTop: '2px solid #14181F', fontWeight: 800, fontSize: 14, color: '#14181F' },
 };
