@@ -1096,7 +1096,7 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [itemsData, customersData, itemsAllData, customersAllData, ordersData, brandColorsData, printOrderData, brandSettingsData] = await Promise.all([
+      const [itemsData, customersData, itemsAllData, customersAllData, ordersData, brandColorsData, printOrderData, brandSettingsData, incomingData] = await Promise.all([
         apiGet('/items'),
         apiGet('/customers'),
         apiGet('/items?includeInactive=true'),
@@ -1105,12 +1105,15 @@ export default function App() {
         apiGet('/brand-colors'),
         apiGet('/print-order'),
         apiGet('/brand-settings').catch(() => ({})),
+        apiGet('/purchase-orders/incoming').catch(() => ({})),
       ]);
       // Load the invoice-number offset (aligns printed # + QuickBooks RefNumber).
       apiGet('/orders/invoice-offset').then(d => { if (d && typeof d.offset === 'number') INVOICE_OFFSET = d.offset; }).catch(() => {});
-      setItems(itemsData);
+      const incoming = incomingData || {};
+      const withIncoming = arr => arr.map(it => (incoming[it.id] ? { ...it, incoming: incoming[it.id] } : it));
+      setItems(withIncoming(itemsData));
       setCustomers(customersData);
-      setItemsAll(itemsAllData);
+      setItemsAll(withIncoming(itemsAllData));
       setCustomersAll(customersAllData);
       setOrderHistory(ordersData);
       setBrandColors(brandColorsData || {});
@@ -1372,6 +1375,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                 <td style={qeStyles.td}>
                   {l.name}
                   {oos && <span style={qeStyles.oosTag} title="Out of stock — added at 0 as a backorder placeholder">out of stock</span>}
+                  {oos && l.incoming > 0 && <span style={qeStyles.incomingTag} title="Incoming from a purchase order">+{l.incoming} incoming</span>}
                   {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
@@ -1498,6 +1502,7 @@ const qeStyles = {
   previewRow: { background: '#F3F6F4' },
   oosRow: { background: '#FBEEE7' },
   oosTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#B5493B', background: '#F8DCD2', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 7px' },
+  incomingTag: { marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 7px' },
   unitToggle: { display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 7, overflow: 'hidden' },
   unitBtn: { background: '#FFFFFF', border: 'none', padding: '4px 9px', fontSize: 12, fontWeight: 700, color: '#8A8F87', cursor: 'pointer', fontFamily: 'inherit' },
   unitBtnOn: { background: '#2B5D50', color: '#F7F8F4' },
@@ -2151,10 +2156,10 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             <span style={styles.headerTitle}>New Order</span>
           </div>
         )}
-        {pickersExpanded ? (
+        {(desktop || pickersExpanded) ? (
           <>
             {desktop ? (
-              <div style={{ position: 'relative', ...(quickEntry && !isEdit ? { flex: '0 0 240px' } : { flex: 1 }) }}>
+              <div style={{ position: 'relative', ...(desktop && !isEdit ? { flex: '0 0 240px' } : { flex: 1 }) }}>
                 <div style={{ ...styles.customerBtn, marginTop: 0 }}>
                   <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
                   <input
@@ -2236,7 +2241,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
               </button>
             )}
-            {desktop && quickEntry && !isEdit && (
+            {desktop && !isEdit && (
               <>
                 <div style={{ ...styles.dateBtn, flex: '0 0 175px', width: 'auto', marginTop: 0, padding: '9px 10px', gap: 6 }} title="PO number — auto-filled; edit to override">
                   <span style={{ fontSize: 11, fontWeight: 800, color: '#8A8F87' }}>PO#</span>
@@ -2415,6 +2420,11 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                     <span style={{ ...styles.stockTag, ...(low ? styles.stockTagLow : {}) }}>
                       {item.stock} in stock
                     </span>
+                    {item.incoming > 0 && (
+                      <span style={styles.incomingTag} title={`${item.incoming} on order (incoming from a purchase order)`}>
+                        +{item.incoming} incoming
+                      </span>
+                    )}
                   </div>
                   {item.price > 0 && (
                     <div style={styles.itemMeta}>
@@ -3446,6 +3456,12 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
           >
             Reports
           </button>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'purchasing' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('purchasing')}
+          >
+            Purchasing
+          </button>
         </div>
         {isManualOverride && (
           <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
@@ -3482,6 +3498,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
         {section === 'reports' && <OfficeReports />}
+        {section === 'purchasing' && <OfficePurchasing items={items} onRefresh={onRefresh} />}
       </div>
     </div>
   );
@@ -4392,6 +4409,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   ) : (
                     <span style={item.stock <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined}>{item.stock}</span>
                   )}
+                  {item.incoming > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2B5D50' }} title="Incoming from open purchase orders">+{item.incoming}</span>}
                 </td>
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   {(isItems && canEdit('active')) ? (
@@ -5005,6 +5023,274 @@ const REPORT_LIST = [
   { id: 'order-margin', name: 'Order margin', desc: 'Pick any order and see the margin per item and total profit instantly.' },
   // Add more reports here as they\u2019re built.
 ];
+// Purchasing tab: list purchase orders, create new ones, and receive stock.
+function OfficePurchasing({ items, onRefresh }) {
+  const [pos, setPos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState('list'); // list | new | detail
+  const [selId, setSelId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('open');
+
+  async function load() {
+    setLoading(true);
+    try { setPos(await apiGet('/purchase-orders')); } catch { setPos([]); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const shown = useMemo(() => {
+    if (statusFilter === 'all') return pos;
+    if (statusFilter === 'open') return pos.filter(p => p.status === 'open' || p.status === 'partial');
+    return pos.filter(p => p.status === statusFilter);
+  }, [pos, statusFilter]);
+
+  if (view === 'new') return <PurchaseOrderForm items={items} onBack={() => setView('list')} onSaved={async () => { setView('list'); await load(); }} />;
+  if (view === 'detail' && selId != null) return <PurchaseOrderDetail poId={selId} items={items} onBack={() => { setView('list'); setSelId(null); }} onChanged={async () => { await load(); await onRefresh(); }} />;
+
+  const statusChip = s => {
+    const map = { open: { bg: '#EAF1EE', bd: '#C4DDD2', c: '#2B5D50' }, partial: { bg: '#FDF3E3', bd: '#EAD3A8', c: '#B5793B' }, received: { bg: '#EDEBE3', bd: '#E3E1D6', c: '#8A8F87' }, cancelled: { bg: '#FBEEE7', bd: '#E6C6B4', c: '#B5493B' } };
+    const m = map[s] || map.open;
+    return { fontSize: 11, fontWeight: 700, color: m.c, background: m.bg, border: `1px solid ${m.bd}`, borderRadius: 20, padding: '2px 9px', textTransform: 'capitalize' };
+  };
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Purchasing</div>
+        <button style={officeStyles.smallBtn} onClick={() => setView('new')}>+ New PO</button>
+        <div style={{ display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 8, overflow: 'hidden' }}>
+          {[['open', 'Open'], ['received', 'Received'], ['all', 'All']].map(([id, label]) => (
+            <button key={id} style={{ background: statusFilter === id ? '#2B5D50' : '#FFFFFF', color: statusFilter === id ? '#F7F8F4' : '#8A8F87', border: 'none', padding: '7px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => setStatusFilter(id)}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {loading ? <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div> : (
+        <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
+          <table style={officeStyles.table}>
+            <thead><tr>
+              <th style={officeStyles.th}>PO #</th>
+              <th style={officeStyles.th}>Supplier</th>
+              <th style={officeStyles.th}>Reference</th>
+              <th style={officeStyles.th}>Expected</th>
+              <th style={{ ...officeStyles.th, textAlign: 'center' }}>Items</th>
+              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered</th>
+              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received</th>
+              <th style={{ ...officeStyles.th, textAlign: 'center' }}>Status</th>
+            </tr></thead>
+            <tbody>
+              {shown.map(p => (
+                <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => { setSelId(p.id); setView('detail'); }}>
+                  <td style={{ ...officeStyles.td, fontWeight: 700 }}>#{p.id}</td>
+                  <td style={officeStyles.td}>{p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                  <td style={officeStyles.td}>{p.reference || ''}</td>
+                  <td style={officeStyles.td}>{p.expectedDate ? formatDate(p.expectedDate) : ''}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>{p.itemCount}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrdered}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalReceived}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'center' }}><span style={statusChip(p.status)}>{p.status}</span></td>
+                </tr>
+              ))}
+              {shown.length === 0 && <tr><td colSpan={8} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>No purchase orders.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Create a new purchase order.
+function PurchaseOrderForm({ items, onBack, onSaved }) {
+  const [supplier, setSupplier] = useState('');
+  const [reference, setReference] = useState('');
+  const [expectedDate, setExpectedDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [lines, setLines] = useState([{ itemId: '', qty: '' }]);
+  const [saving, setSaving] = useState(false);
+  const [pickerRow, setPickerRow] = useState(null);
+  const [pquery, setPquery] = useState('');
+
+  const candidates = useMemo(() => {
+    const q = pquery.trim().toLowerCase();
+    if (!q) return items.slice(0, 30);
+    return items.filter(i => i.name.toLowerCase().includes(q) || String(i.id).toLowerCase().includes(q)).slice(0, 40);
+  }, [items, pquery]);
+  const itemById = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
+
+  function setLine(i, patch) { setLines(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r)); }
+  function addRow() { setLines(prev => [...prev, { itemId: '', qty: '' }]); }
+  function removeRow(i) { setLines(prev => prev.filter((_, idx) => idx !== i)); }
+
+  async function save() {
+    const clean = lines.map(l => ({ itemId: l.itemId, qty: Number(l.qty) || 0 })).filter(l => l.itemId && l.qty > 0);
+    if (clean.length === 0) return;
+    setSaving(true);
+    try {
+      await apiPost('/purchase-orders', { supplier, reference, expectedDate: expectedDate || null, notes, lines: clean });
+      await onSaved();
+    } catch { setSaving(false); }
+  }
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button>
+        <div style={officeStyles.sectionTitle}>New purchase order</div>
+      </div>
+      <div style={poStyles.formGrid}>
+        <label style={poStyles.field}><span style={poStyles.lbl}>Supplier</span><input style={poStyles.input} value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="e.g. Albanese" /></label>
+        <label style={poStyles.field}><span style={poStyles.lbl}>Reference #</span><input style={poStyles.input} value={reference} onChange={e => setReference(e.target.value)} placeholder="Supplier PO / SO #" /></label>
+        <label style={poStyles.field}><span style={poStyles.lbl}>Expected date</span><input style={poStyles.input} type="date" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} /></label>
+      </div>
+      <div style={poStyles.linesCard}>
+        <table style={officeStyles.table}>
+          <thead><tr>
+            <th style={officeStyles.th}>Item</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right', width: 120 }}>Qty ordered</th>
+            <th style={{ ...officeStyles.th, width: 34 }} />
+          </tr></thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i}>
+                <td style={officeStyles.td}>
+                  <div style={{ position: 'relative' }}>
+                    <button style={poStyles.pickBtn} onClick={() => { setPickerRow(pickerRow === i ? null : i); setPquery(''); }}>
+                      {l.itemId ? <span><strong>{displayCode(l.itemId)}</strong> {itemById[l.itemId]?.name}</span> : <span style={{ color: '#8A8F87' }}>Search for an item…</span>}
+                    </button>
+                    {pickerRow === i && (
+                      <div style={poStyles.dropdown}>
+                        <input autoFocus style={poStyles.search} placeholder="Search items…" value={pquery} onChange={e => setPquery(e.target.value)} />
+                        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                          {candidates.map(it => (
+                            <button key={it.id} style={poStyles.matchRow} onClick={() => { setLine(i, { itemId: it.id }); setPickerRow(null); }}>
+                              <strong style={{ marginRight: 8, color: '#2B5D50' }}>{displayCode(it.id)}</strong>{it.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </td>
+                <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                  <input style={{ ...poStyles.input, width: 90, textAlign: 'right' }} value={l.qty} inputMode="numeric" placeholder="0" onChange={e => setLine(i, { qty: e.target.value.replace(/[^0-9]/g, '') })} />
+                </td>
+                <td style={{ ...officeStyles.td, textAlign: 'center' }}><button style={poStyles.rm} onClick={() => removeRow(i)}>×</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button style={poStyles.addBtn} onClick={addRow}>+ Add item</button>
+      </div>
+      <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#F7F8F4' }} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Create PO'}</button>
+        <button style={officeStyles.smallBtn} onClick={onBack} disabled={saving}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// View one PO and receive stock (partial or all).
+function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
+  const [po, setPo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [recv, setRecv] = useState({}); // itemId -> qty to receive
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try { setPo(await apiGet(`/purchase-orders/${poId}`)); } catch { setPo(null); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [poId]);
+
+  async function receive(all) {
+    setBusy(true);
+    try {
+      const body = all ? { all: true } : { receipts: Object.entries(recv).map(([itemId, qty]) => ({ itemId, qty: Number(qty) || 0 })).filter(r => r.qty > 0) };
+      await apiPost(`/purchase-orders/${poId}/receive`, body);
+      setRecv({});
+      await load(); await onChanged();
+    } catch { /* ignore */ }
+    finally { setBusy(false); }
+  }
+  async function cancelPO() {
+    if (!window.confirm('Cancel this purchase order? Incoming stock from it will be removed.')) return;
+    setBusy(true);
+    try { await apiPatch(`/purchase-orders/${poId}`, { status: 'cancelled' }); await load(); await onChanged(); }
+    catch { /* ignore */ } finally { setBusy(false); }
+  }
+
+  if (loading) return <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div>;
+  if (!po) return <div><button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button><div style={{ padding: 20 }}>Not found.</div></div>;
+
+  const outstanding = po.lines.reduce((s, l) => s + (l.qtyOrdered - l.qtyReceived), 0);
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button>
+        <div style={officeStyles.sectionTitle}>PO #{po.id} · {po.supplier || 'No supplier'}</div>
+        {po.status !== 'cancelled' && po.status !== 'received' && <button style={officeStyles.smallBtn} onClick={cancelPO} disabled={busy}>Cancel PO</button>}
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>
+        {po.reference ? `Ref ${po.reference} · ` : ''}{po.expectedDate ? `Expected ${formatDate(po.expectedDate)} · ` : ''}Status: <strong style={{ textTransform: 'capitalize' }}>{po.status}</strong>
+      </div>
+      <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
+        <table style={officeStyles.table}>
+          <thead><tr>
+            <th style={officeStyles.th}>Item</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Outstanding</th>
+            {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 120 }}>Receive now</th>}
+          </tr></thead>
+          <tbody>
+            {po.lines.map(l => {
+              const out = l.qtyOrdered - l.qtyReceived;
+              return (
+                <tr key={l.id}>
+                  <td style={officeStyles.td}><strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(l.itemId)}</strong>{l.item}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{l.qtyOrdered}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{l.qtyReceived}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: out > 0 ? '#B5793B' : '#8A8F87' }}>{out}</td>
+                  {po.status !== 'received' && po.status !== 'cancelled' && (
+                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                      {out > 0 ? (
+                        <input style={{ ...poStyles.input, width: 80, textAlign: 'right' }} value={recv[l.itemId] || ''} inputMode="numeric" placeholder="0"
+                          onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRecv(prev => ({ ...prev, [l.itemId]: Math.min(Number(v) || 0, out) })); }} />
+                      ) : <span style={{ color: '#B9BDB2' }}>—</span>}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {po.status !== 'received' && po.status !== 'cancelled' && outstanding > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#F7F8F4' }} onClick={() => receive(false)} disabled={busy || Object.values(recv).every(v => !Number(v))}>Receive entered</button>
+          <button style={officeStyles.smallBtn} onClick={() => receive(true)} disabled={busy}>Receive all ({outstanding})</button>
+          <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Receiving adds the quantity into on-hand stock.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+const poStyles = {
+  formGrid: { display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 },
+  field: { display: 'flex', flexDirection: 'column', gap: 4 },
+  lbl: { fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  input: { background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
+  linesCard: { border: '1px solid #E3E1D6', borderRadius: 12, background: '#FFFFFF', padding: 8 },
+  pickBtn: { width: '100%', textAlign: 'left', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
+  dropdown: { position: 'absolute', left: 0, top: '100%', marginTop: 3, minWidth: 420, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 30px rgba(20,24,31,0.2)', zIndex: 8, padding: 6 },
+  search: { width: '100%', background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 6, padding: '7px 9px', fontSize: 13, fontFamily: 'inherit', outline: 'none', marginBottom: 4 },
+  matchRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '8px 6px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  addBtn: { marginTop: 4, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  rm: { width: 26, height: 26, borderRadius: 6, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 15, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
+};
+
 function OfficeReports() {
   const [active, setActive] = useState(null);
   if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
@@ -6003,6 +6289,7 @@ const styles = {
   itemMeta: { display: 'flex', alignItems: 'center', gap: 8 },
   sku: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#8A8F87' },
   stockTag: { fontSize: 11, fontWeight: 600, color: '#5B6058', background: '#EAE8DD', borderRadius: 5, padding: '2px 6px' },
+  incomingTag: { fontSize: 11, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 5, padding: '2px 6px' },
   stockTagLow: { color: '#B5493B', background: '#F7E4E0' },
   brandLabel: { fontSize: 11, fontWeight: 600, color: '#8A8F87' },
   stepper: { display: 'flex', alignItems: 'center', gap: 2, background: '#F1EFE6', borderRadius: 9, padding: 3 },
