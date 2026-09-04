@@ -3422,20 +3422,26 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
-  const [selectedIds, setSelectedIds] = useState(new Set());
-  const [hideExported, setHideExported] = useState(false);
+  const [readyBusyId, setReadyBusyId] = useState(null);
 
-  function toggleSelect(id) {
-    setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  // Toggle the shared "ready for import" flag on an order (saved server-side so
+  // a coworker can mark orders ready and you batch-import them later).
+  async function toggleReady(id, next) {
+    setReadyBusyId(id); setIifError('');
+    try {
+      await apiPost('/orders/set-ready', { ids: [id], ready: next });
+      await onRefresh();
+    } catch (err) { setIifError(err.message || 'Could not update the order.'); }
+    finally { setReadyBusyId(null); }
   }
-  async function downloadBatch() {
-    const ids = [...selectedIds];
+  // Download every "ready" order as one QB import file, mark exported + clear ready.
+  async function downloadReadyBatch(readyOrders) {
+    const ids = readyOrders.map(o => o.id);
     if (ids.length === 0) return;
     setBatchBusy(true); setIifError('');
     try {
       await downloadOrdersTP(ids);
       await apiPost('/orders/mark-exported', { ids });
-      setSelectedIds(new Set());
       await onRefresh();
     } catch (err) {
       setIifError(err.message || 'Could not download the batch.');
@@ -3549,6 +3555,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
 
   const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
 
+  const readyOrders = useMemo(() => orders.filter(o => o.readyForImport && !o.exported), [orders]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = orders;
@@ -3636,14 +3643,13 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
         </div>
       )}
 
-      {selectedIds.size > 0 && (
+      {readyOrders.length > 0 && (
         <div style={officeStyles.batchBar}>
-          <span style={{ fontWeight: 700 }}>{selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected</span>
-          <button style={officeStyles.primarySmallBtn} onClick={downloadBatch} disabled={batchBusy}>
-            {batchBusy ? 'Downloading…' : `Download ${selectedIds.size} for import`}
+          <span style={{ fontWeight: 700 }}>{readyOrders.length} order{readyOrders.length === 1 ? '' : 's'} ready for import</span>
+          <button style={officeStyles.primarySmallBtn} onClick={() => downloadReadyBatch(readyOrders)} disabled={batchBusy}>
+            {batchBusy ? 'Downloading…' : `Download ${readyOrders.length} for import`}
           </button>
-          <button style={officeStyles.smallBtn} onClick={() => setSelectedIds(new Set())} disabled={batchBusy}>Clear</button>
-          <span style={{ fontSize: 12.5, color: '#5B6058' }}>Downloads one QuickBooks import file and marks these as exported.</span>
+          <span style={{ fontSize: 12.5, color: '#5B6058' }}>Downloads one QuickBooks import file for all ready orders and marks them exported.</span>
         </div>
       )}
 
@@ -3651,7 +3657,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
         <table style={officeStyles.table}>
           <thead>
             <tr>
-              <th style={{ ...officeStyles.th, width: 34, textAlign: 'center' }} title="Select for batch import">✓</th>
+              <th style={{ ...officeStyles.th, width: 44, textAlign: 'center' }} title="Ready for QuickBooks import (shared)">Ready</th>
               <th style={officeStyles.th}></th>
               <SortableTh field="submittedAt" label="Submitted" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
@@ -3676,10 +3682,10 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                       <input
                         type="checkbox"
-                        checked={selectedIds.has(o.id)}
-                        onChange={() => toggleSelect(o.id)}
-                        disabled={o.status === 'pending'}
-                        title={o.exported ? 'Already exported — check to re-export' : 'Select for batch import'}
+                        checked={!!o.readyForImport}
+                        onChange={e => toggleReady(o.id, e.target.checked)}
+                        disabled={o.status === 'pending' || readyBusyId === o.id}
+                        title={o.status === 'pending' ? 'Pending orders can\u2019t be marked ready' : 'Mark ready for QuickBooks import (saved for everyone)'}
                       />
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
