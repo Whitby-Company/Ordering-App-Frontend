@@ -625,10 +625,10 @@ function printInvoice(order, customer, printSequence, items = []) {
       row += '<tr class="containrow"><td></td><td></td>' + (allCases ? '' : '<td></td>') +
         '<td class="c-contains"><div class="contains-lbl">Contains below:</div>' +
         contains.map(x => {
-          const bc = barcodeSVG(x.upc);
+          const bc = hideUpc ? '' : barcodeSVG(x.upc);
           const label = (x.qty ? x.qty + 'ea ' : '') + esc(x.name || '');
           return '<div class="contain-item"><span class="contain-name">' + label + '</span>' +
-                 '<span class="contain-bc">' + (bc ? '<div class="barcode">' + bc + '</div>' : esc(x.upc || '')) + '</span></div>';
+                 (hideUpc ? '' : '<span class="contain-bc">' + (bc ? '<div class="barcode">' + bc + '</div>' : esc(x.upc || '')) + '</span>') + '</div>';
         }).join('') +
         '</td>' + (hideUpc ? '' : '<td></td>') + '<td></td><td></td></tr>';
     }
@@ -1126,7 +1126,7 @@ export default function App() {
         {tab === 'order' && (
           <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} />
         )}
-        {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} />}
+        {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} />}
         {tab === 'orders' && (
           <OrdersTab
             orders={orderHistory}
@@ -1387,6 +1387,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                             <span style={qeStyles.matchCode}>{displayCode(it.id)}</span>
                             <span style={qeStyles.matchName}>{it.name}</span>
                             {(Number(it.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
+                            {it.incoming > 0 && <span style={qeStyles.incomingTag}>+{it.incoming} incoming</span>}
                             {!inCatalog(it.id) && (Number(it.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
                           </button>
                           );
@@ -1402,6 +1403,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                       <span style={{ color: '#8A8F87', fontWeight: 700, marginRight: 8 }}>{displayCode(preview.id)}</span>
                       {preview.name}
                       {(Number(preview.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
+                      {preview.incoming > 0 && <span style={qeStyles.incomingTag}>+{preview.incoming} incoming</span>}
                       {!inCatalog(preview.id) && (Number(preview.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
                     </span>
                   ) : null}
@@ -2822,7 +2824,7 @@ function Confirmation({ data, onNewOrder }) {
 // ============================================================
 // TAB 2 — INVENTORY
 // ============================================================
-function InventoryTab({ items, orders, brandColors }) {
+function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
   const [brand, setBrand] = useState('All');
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
@@ -6070,12 +6072,12 @@ function OfficeCustomers({ customers, onRefresh }) {
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
-                    <CustomerTextField customer={c} field="abbreviation" value={c.abbreviation} placeholder="e.g. T2" width={70} onRefresh={onRefresh} />
+                    <CustomerTextField customer={c} field="abbreviation" value={c.abbreviation} placeholder="T2" width={48} onRefresh={onRefresh} />
                   </td>
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
-                    <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="e.g. Kahala" width={110} onRefresh={onRefresh} />
+                    <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="Kahala" width={80} onRefresh={onRefresh} />
                   </td>
                 )}
                 {editMode && (
