@@ -556,7 +556,7 @@ function invoiceNumberFor(order) {
 // Build a printable invoice that matches the Hawken Group template, using the
 // same data as the TP export (customer bill-to/ship-to, PO, line items with
 // cases/eaches/price, UPCs, totals, 0.5% sales tax).
-function printInvoice(order, customer, printSequence, items = []) {
+function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const c = customer || {};
   const SALES_TAX_RATE = 0.005; // 0.5%
@@ -599,7 +599,7 @@ function printInvoice(order, customer, printSequence, items = []) {
 
   // If every ordered (positive-qty) line is a case, drop the EACH column entirely.
   const allCases = positive.length > 0 && positive.every(l => l.unit === 'case');
-  const hideUpc = !!(c && c.hideBarcodes);
+  const hideUpc = !!(c && c.hideBarcodes) || !!opts.noBarcode;
 
   const rows = lines.map(l => {
     const cases = Number(l.qty) || 0;
@@ -609,28 +609,34 @@ function printInvoice(order, customer, printSequence, items = []) {
     const each = isCase ? '' : cases * pack;
     const priceShown = isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0);
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
-    const upcCell = barcodesForCell(l.upc) || parseUpcList(l.upc).map(esc).join('<br>');
+    // Normal: scannable barcode. "No barcode" mode: the UPC digits as text.
+    const upcText = parseUpcList(l.upc).map(esc).join('<br>');
+    const upcCell = hideUpc ? upcText : (barcodesForCell(l.upc) || upcText);
     let row = '<tr class="itemrow">' +
       '<td class="c-item">' + esc(displayCode(l.id)) + '</td>' +
       '<td class="c-cs">' + cases + '</td>' +
       (allCases ? '' : '<td class="c-each">' + each + '</td>') +
       '<td class="c-desc">' + desc + '</td>' +
-      (hideUpc ? '' : '<td class="c-upc">' + upcCell + '</td>') +
+      '<td class="c-upc">' + upcCell + '</td>' +
       '<td class="c-price">' + money(priceShown) + '</td>' +
       '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
     '</tr>';
     // Shipper "Contains below" sub-lines (from the item's `contains` list).
     const contains = (itemById[l.id] && itemById[l.id].contains) || [];
     if (Array.isArray(contains) && contains.length) {
-      row += '<tr class="containrow"><td></td><td></td>' + (allCases ? '' : '<td></td>') +
-        '<td class="c-contains"><div class="contains-lbl">Contains below:</div>' +
-        contains.map(x => {
-          const bc = hideUpc ? '' : barcodeSVG(x.upc);
-          const label = (x.qty ? x.qty + 'ea ' : '') + esc(x.name || '');
-          return '<div class="contain-item"><span class="contain-name">' + label + '</span>' +
-                 (hideUpc ? '' : '<span class="contain-bc">' + (bc ? '<div class="barcode">' + bc + '</div>' : esc(x.upc || '')) + '</span>') + '</div>';
-        }).join('') +
-        '</td>' + (hideUpc ? '' : '<td></td>') + '<td></td><td></td></tr>';
+      const leadEmpty = '<td></td><td></td>' + (allCases ? '' : '<td></td>');
+      row += '<tr class="containrow">' + leadEmpty +
+        '<td class="c-desc"><div class="contains-lbl">Contains below:</div></td><td></td><td></td><td></td></tr>';
+      for (const x of contains) {
+        const label = (x.qty ? x.qty + 'ea ' : '') + esc(x.name || '');
+        const bc = hideUpc ? '' : barcodeSVG(x.upc);
+        const upcCellC = hideUpc ? esc(x.upc || '') : (bc ? '<div class="barcode">' + bc + '</div>' : esc(x.upc || ''));
+        row += '<tr class="containrow">' +
+          '<td></td><td></td>' + (allCases ? '' : '<td></td>') +
+          '<td class="c-desc contain-name">' + label + '</td>' +
+          '<td class="c-upc">' + upcCellC + '</td>' +
+          '<td></td><td></td></tr>';
+      }
     }
     return row;
   }).join('');
@@ -661,14 +667,14 @@ function printInvoice(order, customer, printSequence, items = []) {
     '<table class="sigrow"><tr><td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>' +
     '<td style="width:30%">Signature</td><td style="width:20%">Date</td></tr></table>';
 
-  // Columns: Item#, CS, [Each unless allCases], Description, [UPC unless hideUpc], Price, Total.
+  // Columns: Item#, CS, [Each unless allCases], Description, UPC, Price, Total.
   const colDefs = [];
   const headCells = [];
   colDefs.push('<col style="width:9%"/>'); headCells.push('<th>ITEM #</th>');
   colDefs.push('<col style="width:5%"/>'); headCells.push('<th class="ctr">CS</th>');
   if (!allCases) { colDefs.push('<col style="width:6%"/>'); headCells.push('<th class="ctr">EACH</th>'); }
-  colDefs.push('<col style="width:' + (hideUpc ? '52%' : '39%') + '"/>'); headCells.push('<th>DESCRIPTION</th>');
-  if (!hideUpc) { colDefs.push('<col style="width:20%"/>'); headCells.push('<th class="ctr">UPC</th>'); }
+  colDefs.push('<col style="width:39%"/>'); headCells.push('<th>DESCRIPTION</th>');
+  colDefs.push('<col style="width:20%"/>'); headCells.push('<th class="ctr">UPC</th>');
   colDefs.push('<col style="width:8%"/>'); headCells.push('<th class="r">PRICE</th>');
   colDefs.push('<col style="width:13%"/>'); headCells.push('<th class="r">TOTAL($)</th>');
   const COLG = '<colgroup>' + colDefs.join('') + '</colgroup>';
@@ -714,10 +720,8 @@ function printInvoice(order, customer, printSequence, items = []) {
     '.contd { text-align: center; font-size: 12px; font-weight: bold; margin: 14px 0 14px; }' +
     /* Contains-below sub-lines under a shipper item */
     'tr.containrow td { padding-top: 0; padding-bottom: 4px; vertical-align: top; }' +
-    '.contains-lbl { font-size: 12px; font-style: italic; margin: 0 0 2px; }' +
-    '.contain-item { display: flex; align-items: center; gap: 12px; padding: 1px 0; }' +
-    '.contain-name { font-size: 12px; min-width: 130px; }' +
-    '.contain-bc .barcode svg { display: block; height: 24px; width: auto; }' +
+    '.contains-lbl { font-size: 12px; font-style: italic; margin: 0 0 1px; }' +
+    'tr.containrow td.contain-name { font-size: 12px; padding-left: 14px; }' +
     '.pg-footer { position: absolute; left: 0.4in; right: 0.4in; bottom: 0.3in; }' +
     '.totals { width: 100%; }' +
     '.tf-left { font-size: 14px; line-height: 1.9; vertical-align: bottom; }' +
@@ -1002,6 +1006,8 @@ export default function App() {
   const [brandColors, setBrandColors] = useState({});
   const [brandSettings, setBrandSettings] = useState({});
   const [printSequence, setPrintSequence] = useState([]);
+  // Session-wide toggle: print invoices with UPC as text instead of barcodes.
+  const [barcodesOff, setBarcodesOff] = useState(false);
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
   // Navigation stack: the last element is the current tab. Navigating pushes,
   // back pops exactly one. Single source of truth so history and current view
@@ -1103,7 +1109,10 @@ export default function App() {
           brandColors={brandColors}
           brandSettings={brandSettings}
           printSequence={printSequence}
+          barcodesOff={barcodesOff}
+          setBarcodesOff={setBarcodesOff}
           onRefresh={loadAll}
+          customersAll={customersAll}
           onSwitchToMobile={() => setOverride('mobile')}
           isManualOverride={!!viewOverride}
           onResetToAuto={() => setOverride(null)}
@@ -1124,7 +1133,7 @@ export default function App() {
       <div style={styles.tabContent} className={canGoBack ? 'has-back' : ''}>
         <ErrorBoundary key={tab}>
         {tab === 'order' && (
-          <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} />
+          <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} />
         )}
         {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} />}
         {tab === 'orders' && (
@@ -1570,7 +1579,7 @@ const calStyles = {
   todayBtn: { marginTop: 8, width: '100%', background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '6px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
 };
 
-function OrderTab({ items, customers, customersAll, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
+function OrderTab({ items, customers, customersAll, orders, brandColors, printSequence, onOrderSubmitted, barcodesOff = false, setBarcodesOff = () => {}, desktop = false, editOrder = null, onClose = null }) {
   const isEdit = !!editOrder;
   // Look up a customer by id across the active list and the full list (so desktop
   // quick entry can select inactive customers too).
@@ -2268,6 +2277,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             title="Distributor order: new lines default to cases; each column hidden while all cases"
           >
             {distributor ? 'Distributor ✓' : 'Distributor'}
+          </button>
+        )}
+        {desktop && !isEdit && (
+          <button
+            style={{ ...styles.allItemsChip, ...(barcodesOff ? styles.allItemsChipOn : {}) }}
+            onClick={() => setBarcodesOff(v => !v)}
+            title="Print this order's invoice with the UPC as text instead of barcodes"
+          >
+            {barcodesOff ? 'UPC text ✓' : 'Barcodes'}
           </button>
         )}
       </div>
@@ -3313,7 +3331,7 @@ const editStyles = {
 // DESKTOP — OFFICE VIEW (orders table for QuickBooks entry,
 // inventory table with editable stock)
 // ============================================================
-function OfficeView({ items, customers, activeItems, activeCustomers, orders, brandColors, brandSettings = {}, printSequence, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
+function OfficeView({ items, customers, customersAll, activeItems, activeCustomers, orders, brandColors, brandSettings = {}, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, onSwitchToMobile, isManualOverride, onResetToAuto }) {
   const [navStack, setNavStack] = useState(['orders']);
   const section = navStack[navStack.length - 1];
   const setSection = useCallback((next) => {
@@ -3422,16 +3440,19 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
             <OrderTab
               items={activeItems}
               customers={activeCustomers}
+              customersAll={customersAll}
               orders={orders}
               brandColors={brandColors}
               printSequence={printSequence}
+              barcodesOff={barcodesOff}
+              setBarcodesOff={setBarcodesOff}
               onOrderSubmitted={async () => { await onRefresh(); }}
               desktop
             />
           </div>
         )}
-        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
-        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} />}
+        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} />}
         {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
@@ -3443,7 +3464,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
   );
 }
 
-function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scope = 'all' }) {
+function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all' }) {
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
@@ -3658,6 +3679,13 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
             {unprocessedCount > 0 && ` (${unprocessedCount})`}
           </button>
         )}
+        <button
+          style={{ ...officeStyles.smallBtn, ...(barcodesOff ? officeStyles.editModeBtnActive : {}) }}
+          onClick={() => setBarcodesOff(v => !v)}
+          title="Print invoices with the UPC as text instead of barcodes"
+        >
+          {barcodesOff ? 'UPC text ✓' : 'Barcodes'}
+        </button>
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
       </div>
 
@@ -3757,7 +3785,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                         <>
                           <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items)} title="Print an invoice for this order">Invoice</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
                           </button>{' '}
