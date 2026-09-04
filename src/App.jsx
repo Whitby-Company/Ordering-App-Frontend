@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
+import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore } from './utils.js';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
@@ -176,42 +177,10 @@ function brandColor(brand, index, customColors) {
   return BRAND_COLORS[brand] || BRAND_FALLBACK_COLORS[index % BRAND_FALLBACK_COLORS.length];
 }
 
-function formatDate(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-}
 // Today's date as ISO yyyy-mm-dd (local).
-function todayISODate() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-}
 // ISO yyyy-mm-dd -> mm/dd/yy (2-digit year) for the compact date field.
-function formatDateMMDDYY(iso) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  return `${m}/${d}/${y.slice(2)}`;
-}
 // Parse a typed date like "9/18", "9/18/26", "09/18/2026" -> ISO (assumes
 // current year if year omitted). Returns '' if unparseable.
-function parseTypedDate(text) {
-  const t = (text || '').trim();
-  const m = t.match(/^(\d{1,2})\D+(\d{1,2})(?:\D+(\d{2,4}))?$/);
-  if (!m) return '';
-  let [, mm, dd, yy] = m;
-  let year = yy ? Number(yy) : new Date().getFullYear();
-  if (yy && yy.length === 2) year = 2000 + Number(yy);
-  const mo = Number(mm), day = Number(dd);
-  if (mo < 1 || mo > 12 || day < 1 || day > 31) return '';
-  return `${year}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-function formatDateTime(iso) {
-  const date = new Date(iso);
-  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-function toISO(year, month, day) {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
 // Day-of-week labels; index 0 = Sunday, matching JS getDay() and the backend.
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -793,9 +762,6 @@ function printInvoice(order, customer, printSequence, items = []) {
   win.document.close();
   win.focus();
 }
-function formatMoney(n) {
-  return `$${(Number(n) || 0).toFixed(2)}`;
-}
 
 // Item numbers are stored brand-prefixed (e.g. "Ritter Sport:2146") because
 // that's the real DB key used for API calls, matching, and cart ops. For
@@ -804,60 +770,7 @@ function formatMoney(n) {
 // Tolerant match score of query vs text: higher = better. Handles exact,
 // prefix, substring, per-word matches, subsequence (typos/skips), and small
 // edit-distance so misspellings still surface the best customer.
-function fuzzyScore(q, text) {
-  q = q.trim(); if (!q) return 0;
-  if (text === q) return 1000;
-  if (text.startsWith(q)) return 800 - text.length;
-  if (text.includes(q)) return 600 - text.indexOf(q);
-  // every query word appears somewhere (any order)
-  const words = q.split(/\s+/).filter(Boolean);
-  if (words.length > 1 && words.every(w => text.includes(w))) return 500 - text.length;
-  // subsequence: query chars appear in order (tolerates missing letters)
-  let ti = 0, hits = 0;
-  for (let i = 0; i < q.length; i++) {
-    const idx = text.indexOf(q[i], ti);
-    if (idx >= 0) { hits++; ti = idx + 1; }
-  }
-  if (hits === q.length) return 300 - (ti - q.length);
-  // fall back to a light edit-distance for typos (per word and whole string)
-  let best = 0;
-  for (const w of text.split(/\s+/)) {
-    const d = editDistance(q, w.slice(0, q.length + 2));
-    const sim = 1 - d / Math.max(q.length, 1);
-    if (sim > best) best = sim;
-  }
-  // whole-string comparison catches multi-word typos (e.g. "coast gaurd" vs
-  // "coast guard exchange system") by comparing against the leading words only.
-  const textWords = text.split(/\s+/);
-  const lead = textWords.slice(0, Math.max(1, words.length)).join(' ');
-  const dw = editDistance(q, lead);
-  const simw = 1 - dw / Math.max(q.length, 1);
-  if (simw > best) best = simw;
-  return best >= 0.55 ? Math.round(100 * best) : 0;
-}
-function editDistance(a, b) {
-  const m = a.length, n = b.length;
-  if (!m) return n; if (!n) return m;
-  let prev = Array.from({ length: n + 1 }, (_, i) => i);
-  for (let i = 1; i <= m; i++) {
-    const cur = [i];
-    for (let j = 1; j <= n; j++) {
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-    prev = cur;
-  }
-  return prev[n];
-}
-function displayCode(id) {  const s = String(id ?? '');
-  const i = s.indexOf(':');
-  return i >= 0 ? s.slice(i + 1) : s;
-}
 // --- CSV helpers for bulk inventory export/import ---
-function csvEscape(val) {
-  const s = String(val ?? '');
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
 function toCSV(rows, headers) {
   const lines = [headers.join(',')];
   for (const row of rows) {
@@ -972,12 +885,6 @@ async function downloadOrdersTP(orderIds) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-function lineTotal(item, qty) {
-  return (Number(item.price) || 0) * (Number(item.pack) || 1) * (Number(qty) || 0);
-}
-function casePrice(item) {
-  return (Number(item.price) || 0) * (Number(item.pack) || 1);
 }
 
 // Switches between the mobile ordering UI and the desktop office view based
@@ -6077,7 +5984,12 @@ function OfficeCustomers({ customers, onRefresh }) {
         </div>
       )}
       <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
-        <table style={{ ...officeStyles.table, ...(editMode ? { minWidth: 1000 } : {}) }}>
+        <table className={editMode ? 'cust-edit-tight' : ''} style={{ ...officeStyles.table, ...(editMode ? { minWidth: 900 } : {}) }}>
+          <style>{`
+            .cust-edit-tight th, .cust-edit-tight td { padding: 4px 6px !important; }
+            .cust-edit-tight input, .cust-edit-tight select { padding: 4px 6px !important; font-size: 12.5px !important; }
+            .cust-edit-tight input[type=checkbox] { transform: scale(1.15); }
+          `}</style>
           <thead><tr>
             <th style={officeStyles.th}>Customer name</th>
             {editMode && <th style={officeStyles.th}>Usual delivery day</th>}
@@ -6122,12 +6034,12 @@ function OfficeCustomers({ customers, onRefresh }) {
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
-                    <CustomerTextField customer={c} field="abbreviation" value={c.abbreviation} placeholder="e.g. T2" width={90} onRefresh={onRefresh} />
+                    <CustomerTextField customer={c} field="abbreviation" value={c.abbreviation} placeholder="e.g. T2" width={70} onRefresh={onRefresh} />
                   </td>
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
-                    <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="e.g. Kahala" width={140} onRefresh={onRefresh} />
+                    <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="e.g. Kahala" width={110} onRefresh={onRefresh} />
                   </td>
                 )}
                 {editMode && (
