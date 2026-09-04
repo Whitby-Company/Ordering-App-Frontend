@@ -1342,8 +1342,10 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
   }
 
   const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
-  const totalEach = orderLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+  const totalEach = orderLines.reduce((s, l) => s + (l.unit === 'case' ? 0 : (Number(l.qty) || 0) * (Number(l.pack) || 1)), 0);
   const totalAmt = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+  // Hide the EACH column while every ordered line is a case.
+  const showEach = orderLines.length === 0 ? true : !orderLines.every(l => l.unit === 'case');
 
   return (
     <div style={qeStyles.wrap}>
@@ -1354,7 +1356,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
           <th style={qeStyles.th}>Description</th>
           <th style={{ ...qeStyles.th, textAlign: 'center', width: 90 }}>Unit</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 80 }}>Qty</th>
-          <th style={{ ...qeStyles.th, textAlign: 'right', width: 70 }}>Each</th>
+          {showEach && <th style={{ ...qeStyles.th, textAlign: 'right', width: 70 }}>Each</th>}
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 90 }}>Price/ea</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 100 }}>Total</th>
           <th style={{ ...qeStyles.th, width: 34 }} />
@@ -1402,7 +1404,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     onKeyDown={e => onQtyKey(e, l.id, i === orderLines.length - 1)}
                   />
                 </td>
-                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{(Number(l.qty) || 0) * pack}</td>
+                {showEach && <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{(Number(l.qty) || 0) * pack}</td>}
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{formatMoney(l.price)}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineTotal(l, l.qty))}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
@@ -1466,7 +1468,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                 </td>
                 <td style={qeStyles.td} />
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? '—' : ''}</td>
-                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? (Number(preview.pack) || 1) : ''}</td>
+                {showEach && <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? (Number(preview.pack) || 1) : ''}</td>}
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? formatMoney(preview.price) : ''}</td>
                 <td style={qeStyles.td} colSpan={2} />
               </tr>
@@ -1476,7 +1478,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
         <tfoot><tr>
           <td style={qeStyles.tfoot} colSpan={3}>Totals</td>
           <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalCases}</td>
-          <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalEach}</td>
+          {showEach && <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalEach}</td>}
           <td style={qeStyles.tfoot} />
           <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{formatMoney(totalAmt)}</td>
           <td style={qeStyles.tfoot} />
@@ -1641,6 +1643,9 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     return map;
   }, [isEdit, editOrder]);
   const [customerId, setCustomerId] = useState(isEdit ? editOrder.customerId : (savedDraft.customerId ?? null));
+  // Distributor mode: new lines default to case; EACH column hides while all cases.
+  const [distributor, setDistributor] = useState(false);
+  const [distributorTouched, setDistributorTouched] = useState(false);
   // Per-store catalog: which items this customer carries + their per-each prices.
   // catalog === null means "not loaded / no customer"; catalog.off means the
   // store has no catalog set up (field shows nothing).
@@ -1667,9 +1672,10 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   }, [customerId, customers]);
   // The store's default unit for an item ('box' | 'case'), fallback 'box'.
   const unitOf = React.useCallback((item) => {
+    if (distributor && item.caseSize) return 'case';
     if (catalog && catalog.units && catalog.units.has(item.id)) return catalog.units.get(item.id);
     return 'box';
-  }, [catalog]);
+  }, [catalog, distributor]);
   // Eaches per ordered unit for an item at a given unit.
   const packFor = React.useCallback((item, unit) => {
     if (unit === 'case' && item.caseSize) return (Number(item.pack) || 1) * item.caseSize;
@@ -1715,6 +1721,12 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [screen, setScreen] = useState('brands');
   const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
   const [quickEntry, setQuickEntry] = useState(desktop && !editOrder); // desktop default: QuickBooks-style grid entry
+  // Adopt the customer's "is distributor" default (unless manually toggled).
+  useEffect(() => {
+    if (distributorTouched) return;
+    const cust = customers.find(c => c.id === customerId);
+    setDistributor(!!(cust && cust.isDistributor));
+  }, [customerId, customers, distributorTouched]);
   const [order, setOrder] = useState(isEdit ? editInitLines : (Array.isArray(savedDraft.order) ? savedDraft.order : []));
   const [notes, setNotes] = useState(isEdit ? (editOrder.notes || '') : (savedDraft.notes || ''));
   const [ticketOpen, setTicketOpen] = useState(false);
@@ -2142,7 +2154,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
         {pickersExpanded ? (
           <>
             {desktop ? (
-              <div style={{ position: 'relative', flex: 1 }}>
+              <div style={{ position: 'relative', ...(quickEntry && !isEdit ? { flex: '0 0 240px' } : { flex: 1 }) }}>
                 <div style={{ ...styles.customerBtn, marginTop: 0 }}>
                   <User size={16} color={customerId ? '#14181F' : '#8A8F87'} />
                   <input
@@ -2224,6 +2236,29 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
                 <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
               </button>
             )}
+            {desktop && quickEntry && !isEdit && (
+              <>
+                <div style={{ ...styles.dateBtn, flex: '0 0 175px', width: 'auto', marginTop: 0, padding: '9px 10px', gap: 6 }} title="PO number — auto-filled; edit to override">
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#8A8F87' }}>PO#</span>
+                  <input
+                    style={{ ...styles.comboInput, fontSize: 13 }}
+                    placeholder="PO #"
+                    value={poValue}
+                    onChange={e => { setPoEdited(true); setPoNumber(e.target.value); }}
+                  />
+                </div>
+                <div style={{ ...styles.dateBtn, flex: '0 0 120px', width: 'auto', marginTop: 0, padding: '9px 10px', gap: 6 }} title="Invoice number — next available; edit to override">
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#8A8F87' }}>INV#</span>
+                  <input
+                    style={{ ...styles.comboInput, fontSize: 13 }}
+                    placeholder="Inv #"
+                    inputMode="numeric"
+                    value={invValue}
+                    onChange={e => { setInvEdited(true); setInvNumber(e.target.value.replace(/[^0-9]/g, '')); }}
+                  />
+                </div>
+              </>
+            )}
           </>
         ) : (
           <button style={styles.pickersSummary} onClick={() => setPickersExpanded(true)}>
@@ -2238,45 +2273,23 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
       </div>
 
       <div style={desktop ? { ...styles.searchWrap, padding: '8px 16px 4px' } : styles.searchWrap}>
-        {desktop && quickEntry && !isEdit ? (
-          <div style={{ ...styles.searchInputWrap, flex: 1, alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 12 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: '#8A8F87', letterSpacing: '0.03em' }}>PO#</span>
+        {!(desktop && quickEntry && !isEdit) && (
+          <div style={styles.searchInputWrap}>
+            <Search size={16} color="#8A8F87" style={styles.searchIconInner} />
             <input
-              style={{ ...styles.searchInputInner, flex: '1 1 40%', minWidth: 100 }}
-              placeholder="PO number"
-              value={poValue}
-              onChange={e => { setPoEdited(true); setPoNumber(e.target.value); }}
+              style={styles.searchInputInner}
+              placeholder="Search any item or SKU"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
             />
-            <span style={{ fontSize: 12, fontWeight: 800, color: '#8A8F87', letterSpacing: '0.03em', borderLeft: '1px solid #E3E1D6', paddingLeft: 12 }}>INV#</span>
-            <input
-              style={{ ...styles.searchInputInner, flex: '0 0 130px', minWidth: 130, textAlign: 'left', paddingRight: 6 }}
-              placeholder="Invoice #"
-              inputMode="numeric"
-              value={invValue}
-              onChange={e => { setInvEdited(true); setInvNumber(e.target.value.replace(/[^0-9]/g, '')); }}
-            />
-            {(poEdited || invEdited) && (
-              <button style={styles.clearSearchBtnInner} title="Reset PO# and Invoice# to auto" onClick={() => { setPoEdited(false); setPoNumber(''); setInvEdited(false); setInvNumber(''); }}>
+            {query && (
+              <button style={styles.clearSearchBtnInner} onClick={() => setQuery('')}>
                 <X size={14} color="#8A8F87" />
               </button>
             )}
           </div>
-        ) : (
-        <div style={styles.searchInputWrap}>
-          <Search size={16} color="#8A8F87" style={styles.searchIconInner} />
-          <input
-            style={styles.searchInputInner}
-            placeholder="Search any item or SKU"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
-          {query && (
-            <button style={styles.clearSearchBtnInner} onClick={() => setQuery('')}>
-              <X size={14} color="#8A8F87" />
-            </button>
-          )}
-        </div>
         )}
+        {desktop && quickEntry && !isEdit && <div style={{ flex: 1 }} />}
         {!(desktop && quickEntry && !isEdit) && (
         <button style={styles.gridSizeBtn} onClick={toggleGridSize} title={`Tile size: ${gridSize} (tap to change)`}>
           <GridSizeIcon variant={gridSize} size={16} color="#5B6058" />
@@ -2298,6 +2311,15 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
             title="Bulk entry: type item numbers and cases, QuickBooks-style"
           >
             {quickEntry ? 'Quick entry ✓' : 'Quick entry'}
+          </button>
+        )}
+        {desktop && !isEdit && quickEntry && (
+          <button
+            style={{ ...styles.allItemsChip, ...(distributor ? styles.allItemsChipOn : {}) }}
+            onClick={() => { setDistributorTouched(true); setDistributor(v => !v); }}
+            title="Distributor order: new lines default to cases; each column hidden while all cases"
+          >
+            {distributor ? 'Distributor ✓' : 'Distributor'}
           </button>
         )}
       </div>
@@ -5735,12 +5757,13 @@ function OfficeCustomers({ customers, onRefresh }) {
             {editMode && <th style={officeStyles.th}>Short name (memo)</th>}
             {editMode && <th style={officeStyles.th}>Terms</th>}
             {editMode && <th style={officeStyles.th}>Ship-to</th>}
+            {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Distrib.</th>}
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Mobile</th>
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 8 : 3}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 9 : 3}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => {
               const shipOpen = shipToOpenId === c.id;
@@ -5808,6 +5831,16 @@ function OfficeCustomers({ customers, onRefresh }) {
                     title="Show this customer in the mobile field-rep picker"
                   />
                 </td>
+                {editMode && (
+                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!c.isDistributor && c.isDistributor !== 0}
+                      onChange={async e => { await apiPatch(`/customers/${c.id}`, { isDistributor: e.target.checked }); await onRefresh(); }}
+                      title="Distributor: orders default to cases"
+                    />
+                  </td>
+                )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
@@ -5817,7 +5850,7 @@ function OfficeCustomers({ customers, onRefresh }) {
               </tr>
               {editMode && shipOpen && (
                 <tr>
-                  <td colSpan={8} style={officeStyles.shipToCell}>
+                  <td colSpan={9} style={officeStyles.shipToCell}>
                     <div style={officeStyles.shipToTitle}>Bill-to address (invoice) for {c.name}</div>
                     <div style={officeStyles.shipToGrid}>
                       <CustomerTextField customer={c} field="billToLine1" value={c.billToLine1} placeholder="Bill-to line 1 (company)" width={220} onRefresh={onRefresh} />
