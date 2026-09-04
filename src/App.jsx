@@ -3515,6 +3515,25 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [hideExported, setHideExported] = useState(false);
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  async function downloadBatch() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBatchBusy(true); setIifError('');
+    try {
+      await downloadOrdersTP(ids);
+      await apiPost('/orders/mark-exported', { ids });
+      setSelectedIds(new Set());
+      await onRefresh();
+    } catch (err) {
+      setIifError(err.message || 'Could not download the batch.');
+    } finally { setBatchBusy(false); }
+  }
 
   async function setProcessed(orderId, processed) {
     setProcessingId(orderId);
@@ -3710,10 +3729,22 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
         </div>
       )}
 
+      {selectedIds.size > 0 && (
+        <div style={officeStyles.batchBar}>
+          <span style={{ fontWeight: 700 }}>{selectedIds.size} order{selectedIds.size === 1 ? '' : 's'} selected</span>
+          <button style={officeStyles.primarySmallBtn} onClick={downloadBatch} disabled={batchBusy}>
+            {batchBusy ? 'Downloading…' : `Download ${selectedIds.size} for import`}
+          </button>
+          <button style={officeStyles.smallBtn} onClick={() => setSelectedIds(new Set())} disabled={batchBusy}>Clear</button>
+          <span style={{ fontSize: 12.5, color: '#5B6058' }}>Downloads one QuickBooks import file and marks these as exported.</span>
+        </div>
+      )}
+
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
           <thead>
             <tr>
+              <th style={{ ...officeStyles.th, width: 34, textAlign: 'center' }} title="Select for batch import">✓</th>
               <th style={officeStyles.th}></th>
               <SortableTh field="submittedAt" label="Submitted" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
@@ -3727,7 +3758,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={9}>No orders match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={10}>No orders match "{query}"</td></tr>
             )}
             {filtered.map(o => {
               const isOpen = openId === o.id;
@@ -3735,6 +3766,15 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
               return (
                 <React.Fragment key={o.id}>
                   <tr style={{ ...officeStyles.rowClickable, ...(o.processed ? {} : officeStyles.rowUnprocessed) }}>
+                    <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(o.id)}
+                        onChange={() => toggleSelect(o.id)}
+                        disabled={o.status === 'pending'}
+                        title={o.exported ? 'Already exported — check to re-export' : 'Select for batch import'}
+                      />
+                    </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                     </td>
@@ -3750,6 +3790,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                         : o.processed
                           ? <span style={officeStyles.badgeProcessed}>Processed</span>
                           : <span style={officeStyles.badgeUnprocessed}>New</span>}
+                      {o.exported ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 7px' }} title={o.exportedAt ? `Exported ${formatDateTime(o.exportedAt)}` : 'Exported'}>exported</span> : null}
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
@@ -3790,7 +3831,7 @@ function OfficeOrders({ orders, items, customers, printSequence, onRefresh, scop
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={9}>
+                      <td style={officeStyles.detailCell} colSpan={10}>
                         {o.notes && (
                           <div style={officeStyles.orderNotes}>
                             <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
@@ -6451,6 +6492,7 @@ const officeStyles = {
   select: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   smallBtn: { background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 600, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   primarySmallBtn: { background: '#2B5D50', border: '1px solid #2B5D50', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 700, color: '#F7F8F4', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  batchBar: { display: 'flex', alignItems: 'center', gap: 12, background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 10, padding: '10px 16px', marginBottom: 10, flexWrap: 'wrap' },
   smallBtnDisabled: { opacity: 0.5, cursor: 'not-allowed' },
   inlineInput: { background: '#FFFFFF', border: '1px solid #B7C9C1', borderRadius: 8, padding: '7px 10px', fontSize: 13.5, fontWeight: 600, color: '#14181F', fontFamily: 'inherit', minWidth: 220, outline: 'none' },
   checkboxLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#5B6058', whiteSpace: 'nowrap' },
