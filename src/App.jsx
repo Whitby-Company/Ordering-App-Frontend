@@ -416,8 +416,8 @@ async function parseUpcFile(file, items) {
 // Sort an order's lines to follow the saved print sequence. Items in the
 // sequence come first (in that order); anything not in it keeps its original
 // relative order and goes at the end. Never drops a line.
-function sortLinesForPrint(lines, printOrder) {
-  if (!printOrder || printOrder.length === 0) return lines;
+function sortLinesForPrint(lines, printOrder, enabled = true) {
+  if (!enabled || !printOrder || printOrder.length === 0) return lines;
   const pos = new Map();
   printOrder.forEach((sku, i) => pos.set(sku, i));
   const BIG = Number.MAX_SAFE_INTEGER;
@@ -503,7 +503,7 @@ function printOrder(order, printSequence, options = {}) {
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
-  const orderedLines = sortLinesForPrint(order.lines, printSequence);
+  const orderedLines = sortLinesForPrint(order.lines, printSequence, !!(customer && customer.usePrintOrder));
   const rows = orderedLines.map(l => {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
@@ -596,7 +596,7 @@ function printInvoice(order, customer, printSequence, items = []) {
   // items stay plain (no $).
   const moneyD = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const ordered = sortLinesForPrint(order.lines, printSequence);
+  const ordered = sortLinesForPrint(order.lines, printSequence, !!(c && c.usePrintOrder));
   const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
   const zeros = ordered.filter(l => (Number(l.qty) || 0) === 0);
   const lines = [...positive, ...zeros];
@@ -680,7 +680,7 @@ function printInvoice(order, customer, printSequence, items = []) {
 
   const TOT =
     '<table class="totals"><tr>' +
-    '<td class="tf-left">Total Case: ' + totalCases + '<br>Total Each: ' + totalEach + '</td>' +
+    '<td class="tf-left">Total Case: ' + totalCases + (allCases ? '' : '<br>Total Each: ' + totalEach) + '</td>' +
     '<td class="tf-right"><table>' +
     '<tr><td class="lbl">Subtotal</td><td class="amt">' + moneyD(subtotal) + '</td></tr>' +
     '<tr><td class="lbl">Sales Tax (0.5%)</td><td class="amt">' + moneyD(tax) + '</td></tr>' +
@@ -1189,7 +1189,7 @@ export default function App() {
       )}
       <div style={styles.tabContent} className={canGoBack ? 'has-back' : ''}>
         {tab === 'order' && (
-          <OrderTab items={items} customers={customers} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} />
+          <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} />
         )}
         {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} />}
         {tab === 'orders' && (
@@ -1632,8 +1632,12 @@ const calStyles = {
   todayBtn: { marginTop: 8, width: '100%', background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '6px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
 };
 
-function OrderTab({ items, customers, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
+function OrderTab({ items, customers, customersAll, orders, brandColors, printSequence, onOrderSubmitted, desktop = false, editOrder = null, onClose = null }) {
   const isEdit = !!editOrder;
+  // Look up a customer by id across the active list and the full list (so desktop
+  // quick entry can select inactive customers too).
+  const allCustList = (customersAll && customersAll.length) ? customersAll : customers;
+  const findCust = (id) => customers.find(c => c.id === id) || allCustList.find(c => c.id === id);
   // Restore an in-progress order draft (customer, delivery date, quantities)
   // so switching tabs or an accidental refresh doesn't lose it. In edit mode
   // we ignore the saved draft and initialize from the order being edited.
@@ -1657,7 +1661,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   const [catalog, setCatalog] = useState(null);
   useEffect(() => {
     if (customerId == null) { setCatalog(null); return; }
-    const cust = customers.find(c => c.id === customerId);
+    const cust = findCust(customerId);
     // A customer with catalog_on = false shows nothing until configured.
     if (cust && cust.catalogOn === false) { setCatalog({ off: true, ids: new Set(), prices: new Map(), units: new Map() }); return; }
     let cancelled = false;
@@ -1729,7 +1733,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
     if (distributorTouched) return;
-    const cust = customers.find(c => c.id === customerId);
+    const cust = findCust(customerId);
     setDistributor(!!(cust && cust.isDistributor));
   }, [customerId, customers, distributorTouched]);
   const [order, setOrder] = useState(isEdit ? editInitLines : (Array.isArray(savedDraft.order) ? savedDraft.order : []));
@@ -1798,7 +1802,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     if (dx > 60 && dy < 50) goBackToBrands();
   }
 
-  const customerName = customers.find(c => c.id === customerId)?.name
+  const customerName = findCust(customerId)?.name
     || (isEdit && editOrder.customerId === customerId ? editOrder.customer : '')
     || '';
   // Auto PO# = MMDDYY(delivery date)-<customer abbreviation>.
@@ -1806,7 +1810,7 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
     // Fill in as soon as a customer is chosen. Uses TODAY's date (MMDDYY) plus
     // the customer's abbreviation when they have one.
     if (customerId == null) return '';
-    const cust = customers.find(c => c.id === customerId);
+    const cust = findCust(customerId);
     const abbr = (cust && cust.abbreviation || '').trim();
     const [y, m, d] = todayISODate().split('-');
     const mmddyy = `${m}${d}${y.slice(2)}`;
@@ -1833,15 +1837,16 @@ function OrderTab({ items, customers, orders, brandColors, printSequence, onOrde
   // Desktop combobox: filter customers by the typed text (all customers on desktop).
   const comboMatches = useMemo(() => {
     const q = comboText.trim().toLowerCase();
-    const pool = customers.filter(c => c.active !== 0);
+    // Desktop quick entry can pick ANY customer (active or not).
+    const source = (desktop && customersAll && customersAll.length) ? customersAll : customers;
+    const pool = desktop ? source : source.filter(c => c.active !== 0);
     if (!q) return [...pool].sort((a, b) => a.name.localeCompare(b.name));
-    // Score each customer; keep anything with a reasonable score, best first.
     const scored = pool
       .map(c => ({ c, s: fuzzyScore(q, c.name.toLowerCase()) }))
       .filter(x => x.s > 0)
       .sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name));
     return scored.map(x => x.c);
-  }, [customers, comboText]);
+  }, [customers, customersAll, comboText, desktop]);
   // Which weekdays actually have customers assigned (to only show useful chips).
   const daysInUse = useMemo(() => {
     const s = new Set();
@@ -2988,7 +2993,7 @@ function InventoryTab({ items, orders, brandColors }) {
       )}
 
       {screen === 'items' && !searching && !lowOnly && (
-        <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
+        <div style={styles.itemsSubHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <button style={styles.backBtnBig} onClick={() => { setScreen('brands'); setBrand('All'); }}>
               <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
@@ -3007,7 +3012,7 @@ function InventoryTab({ items, orders, brandColors }) {
         </div>
       )}
       {(searching || lowOnly) && (
-        <div style={desktop ? { ...styles.itemsSubHeader, padding: '4px 16px 2px' } : styles.itemsSubHeader}>
+        <div style={styles.itemsSubHeader}>
           <span style={styles.itemsSubHeaderBrand}>
             {lowOnly ? 'Low stock, all brands' : (
               <><LayoutGrid size={13} style={{ marginRight: 6, verticalAlign: -2 }} />Searching all brands</>
@@ -3471,10 +3476,6 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         <button style={officeStyles.refreshBtn} onClick={onSwitchToMobile}>
           Mobile View
         </button>
-        <button style={officeStyles.refreshBtn} onClick={handleRefresh} disabled={refreshing}>
-          <RefreshCw size={14} style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }} />
-          Refresh
-        </button>
       </div>
 
       <div style={section === 'neworder' ? officeStyles.bodyNoScroll : officeStyles.body}>
@@ -3498,7 +3499,7 @@ function OfficeView({ items, customers, activeItems, activeCustomers, orders, br
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
         {section === 'reports' && <OfficeReports />}
-        {section === 'purchasing' && <OfficePurchasing items={items} onRefresh={onRefresh} />}
+        {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
       </div>
     </div>
   );
@@ -6044,12 +6045,13 @@ function OfficeCustomers({ customers, onRefresh }) {
             {editMode && <th style={officeStyles.th}>Terms</th>}
             {editMode && <th style={officeStyles.th}>Ship-to</th>}
             {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Distrib.</th>}
+            {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Print order</th>}
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Mobile</th>
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 9 : 3}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 10 : 3}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => {
               const shipOpen = shipToOpenId === c.id;
@@ -6127,6 +6129,16 @@ function OfficeCustomers({ customers, onRefresh }) {
                     />
                   </td>
                 )}
+                {editMode && (
+                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!c.usePrintOrder && c.usePrintOrder !== 0}
+                      onChange={async e => { await apiPatch(`/customers/${c.id}`, { usePrintOrder: e.target.checked }); await onRefresh(); }}
+                      title="Sort this customer's invoice & print sheet by the inventory print order (off = entry order)"
+                    />
+                  </td>
+                )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
@@ -6136,7 +6148,7 @@ function OfficeCustomers({ customers, onRefresh }) {
               </tr>
               {editMode && shipOpen && (
                 <tr>
-                  <td colSpan={9} style={officeStyles.shipToCell}>
+                  <td colSpan={10} style={officeStyles.shipToCell}>
                     <div style={officeStyles.shipToTitle}>Bill-to address (invoice) for {c.name}</div>
                     <div style={officeStyles.shipToGrid}>
                       <CustomerTextField customer={c} field="billToLine1" value={c.billToLine1} placeholder="Bill-to line 1 (company)" width={220} onRefresh={onRefresh} />
