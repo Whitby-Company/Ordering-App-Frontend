@@ -599,6 +599,7 @@ function printInvoice(order, customer, printSequence, items = []) {
 
   // If every ordered (positive-qty) line is a case, drop the EACH column entirely.
   const allCases = positive.length > 0 && positive.every(l => l.unit === 'case');
+  const hideUpc = !!(c && c.hideBarcodes);
 
   const rows = lines.map(l => {
     const cases = Number(l.qty) || 0;
@@ -614,7 +615,7 @@ function printInvoice(order, customer, printSequence, items = []) {
       '<td class="c-cs">' + cases + '</td>' +
       (allCases ? '' : '<td class="c-each">' + each + '</td>') +
       '<td class="c-desc">' + desc + '</td>' +
-      '<td class="c-upc">' + upcCell + '</td>' +
+      (hideUpc ? '' : '<td class="c-upc">' + upcCell + '</td>') +
       '<td class="c-price">' + money(priceShown) + '</td>' +
       '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
     '</tr>';
@@ -629,7 +630,7 @@ function printInvoice(order, customer, printSequence, items = []) {
           return '<div class="contain-item"><span class="contain-name">' + label + '</span>' +
                  '<span class="contain-bc">' + (bc ? '<div class="barcode">' + bc + '</div>' : esc(x.upc || '')) + '</span></div>';
         }).join('') +
-        '</td><td></td><td></td><td></td></tr>';
+        '</td>' + (hideUpc ? '' : '<td></td>') + '<td></td><td></td></tr>';
     }
     return row;
   }).join('');
@@ -660,12 +661,18 @@ function printInvoice(order, customer, printSequence, items = []) {
     '<table class="sigrow"><tr><td style="width:25%">Total Cases</td><td style="width:25%">Print Name</td>' +
     '<td style="width:30%">Signature</td><td style="width:20%">Date</td></tr></table>';
 
-  const COLG = allCases
-    ? '<colgroup><col style="width:10%"/><col style="width:6%"/><col style="width:42%"/><col style="width:21%"/><col style="width:9%"/><col style="width:12%"/></colgroup>'
-    : '<colgroup><col style="width:9%"/><col style="width:5%"/><col style="width:6%"/><col style="width:39%"/><col style="width:20%"/><col style="width:8%"/><col style="width:13%"/></colgroup>';
-  const COLH = allCases
-    ? '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th>DESCRIPTION</th><th class="ctr">UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>'
-    : '<tr class="colhdr"><th>ITEM #</th><th class="ctr">CS</th><th class="ctr">EACH</th><th>DESCRIPTION</th><th class="ctr">UPC</th><th class="r">PRICE</th><th class="r">TOTAL($)</th></tr>';
+  // Columns: Item#, CS, [Each unless allCases], Description, [UPC unless hideUpc], Price, Total.
+  const colDefs = [];
+  const headCells = [];
+  colDefs.push('<col style="width:9%"/>'); headCells.push('<th>ITEM #</th>');
+  colDefs.push('<col style="width:5%"/>'); headCells.push('<th class="ctr">CS</th>');
+  if (!allCases) { colDefs.push('<col style="width:6%"/>'); headCells.push('<th class="ctr">EACH</th>'); }
+  colDefs.push('<col style="width:' + (hideUpc ? '52%' : '39%') + '"/>'); headCells.push('<th>DESCRIPTION</th>');
+  if (!hideUpc) { colDefs.push('<col style="width:20%"/>'); headCells.push('<th class="ctr">UPC</th>'); }
+  colDefs.push('<col style="width:8%"/>'); headCells.push('<th class="r">PRICE</th>');
+  colDefs.push('<col style="width:13%"/>'); headCells.push('<th class="r">TOTAL($)</th>');
+  const COLG = '<colgroup>' + colDefs.join('') + '</colgroup>';
+  const COLH = '<tr class="colhdr">' + headCells.join('') + '</tr>';
 
   const win = window.open('', '_blank', 'width=880,height=1000');
   if (!win) return;
@@ -966,6 +973,26 @@ const updateStyles = {
   refresh: { background: '#5B9A86', color: '#0F1A16', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
 };
 
+// Catches render errors in a subtree so one broken screen doesn't white out the
+// whole app. Shows the error message (useful for diagnosing) and a reset link.
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { try { console.error('Screen error:', error, info); } catch (e) { /* ignore */ } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 24, fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#B5493B', marginBottom: 8 }}>Something went wrong on this screen</div>
+          <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{String(this.state.error && this.state.error.message || this.state.error)}</div>
+          <button style={{ background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }} onClick={() => this.setState({ error: null })}>Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [items, setItems] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -1095,6 +1122,7 @@ export default function App() {
         </button>
       )}
       <div style={styles.tabContent} className={canGoBack ? 'has-back' : ''}>
+        <ErrorBoundary key={tab}>
         {tab === 'order' && (
           <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} />
         )}
@@ -1109,6 +1137,7 @@ export default function App() {
             onOrderChanged={loadAll}
           />
         )}
+        </ErrorBoundary>
       </div>
       <TabBar active={tab} onChange={setTab} />
       <UpdateNotice />
@@ -2102,7 +2131,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                 </div>
                 {comboOpen && comboMatches.length > 0 && (
                   <div style={styles.comboDropdown}>
-                    {comboMatches.slice(0, 60).map((c, ci) => (
+                    {comboMatches.slice(0, 500).map((c, ci) => (
                       <button
                         key={c.id}
                         ref={ci === Math.min(comboHi, comboMatches.length - 1) ? (el => { if (el) el.scrollIntoView({ block: 'nearest' }); }) : undefined}
@@ -6005,12 +6034,13 @@ function OfficeCustomers({ customers, onRefresh }) {
             {editMode && <th style={officeStyles.th}>Ship-to</th>}
             {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Distrib.</th>}
             {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Print order</th>}
+            {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>No barcode</th>}
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Mobile</th>
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 10 : 3}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 11 : 3}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => {
               const shipOpen = shipToOpenId === c.id;
@@ -6098,6 +6128,16 @@ function OfficeCustomers({ customers, onRefresh }) {
                     />
                   </td>
                 )}
+                {editMode && (
+                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!c.hideBarcodes && c.hideBarcodes !== 0}
+                      onChange={async e => { await apiPatch(`/customers/${c.id}`, { hideBarcodes: e.target.checked }); await onRefresh(); }}
+                      title="Hide the barcode/UPC column on this customer's invoice"
+                    />
+                  </td>
+                )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
@@ -6107,7 +6147,7 @@ function OfficeCustomers({ customers, onRefresh }) {
               </tr>
               {editMode && shipOpen && (
                 <tr>
-                  <td colSpan={10} style={officeStyles.shipToCell}>
+                  <td colSpan={11} style={officeStyles.shipToCell}>
                     <div style={officeStyles.shipToTitle}>Bill-to address (invoice) for {c.name}</div>
                     <div style={officeStyles.shipToGrid}>
                       <CustomerTextField customer={c} field="billToLine1" value={c.billToLine1} placeholder="Bill-to line 1 (company)" width={220} onRefresh={onRefresh} />
