@@ -5836,6 +5836,22 @@ const REPORT_LIST = [
   { id: 'invoice-numbers', name: 'Invoice numbers', desc: 'Check invoice numbers for gaps or duplicates, and reconcile against a QuickBooks export.' },
   // Add more reports here as they\u2019re built.
 ];
+// Format a date value from a QuickBooks/Excel export. Handles Excel serial-date
+// numbers (days since 1899-12-30), ISO strings, and plain date strings.
+function fmtQbDate(v) {
+  if (v == null || v === '') return '';
+  // Excel serial number (e.g. 46275 -> a 2026 date).
+  if (typeof v === 'number' || (/^\d{4,6}$/.test(String(v).trim()))) {
+    const serial = Number(v);
+    if (serial > 20000 && serial < 90000) {
+      const d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+  }
+  // Already a date-ish string.
+  return String(v).slice(0, 10);
+}
+
 // Invoice-number audit: range, gaps, and duplicates in the app's invoice numbers,
 // plus reconciliation against a QuickBooks invoice export.
 function InvoiceAuditReport({ onBack }) {
@@ -5880,7 +5896,7 @@ function InvoiceAuditReport({ onBack }) {
         const num = String(r[numCol] || '').trim();
         if (!num || !/^\d+$/.test(num)) continue;
         const n = Number(num);
-        if (!seen.has(n)) seen.set(n, { number: n, customer: curCustomer, date: dateCol >= 0 ? String(r[dateCol] || '').slice(0, 10) : '', total: 0 });
+        if (!seen.has(n)) seen.set(n, { number: n, customer: curCustomer, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), total: 0 });
         if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(n).total += a; }
       }
       const qbNumbers = [...seen.values()];
