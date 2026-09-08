@@ -599,7 +599,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
 
   // If every ordered (positive-qty) line is a case, drop the EACH column entirely.
   const allCases = positive.length > 0 && positive.every(l => l.unit === 'case');
-  const hideUpc = !!(c && c.hideBarcodes) || !!opts.noBarcode;
+  const hideUpc = false; // barcodes always show (hiding disabled for now)
 
   const rows = lines.map(l => {
     const cases = Number(l.qty) || 0;
@@ -1628,10 +1628,9 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   }, [customerId, customers]);
   // The store's default unit for an item ('box' | 'case'), fallback 'box'.
   const unitOf = React.useCallback((item) => {
-    if (distributor && item.caseSize) return 'case';
     if (catalog && catalog.units && catalog.units.has(item.id)) return catalog.units.get(item.id);
     return 'box';
-  }, [catalog, distributor]);
+  }, [catalog]);
   // Eaches per ordered unit for an item at a given unit.
   const packFor = React.useCallback((item, unit) => {
     if (unit === 'case' && item.caseSize) return (Number(item.pack) || 1) * item.caseSize;
@@ -2268,24 +2267,6 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             title="Bulk entry: type item numbers and cases, QuickBooks-style"
           >
             {quickEntry ? 'Quick entry ✓' : 'Quick entry'}
-          </button>
-        )}
-        {desktop && !isEdit && quickEntry && (
-          <button
-            style={{ ...styles.allItemsChip, ...(distributor ? styles.allItemsChipOn : {}) }}
-            onClick={() => { setDistributorTouched(true); setDistributor(v => !v); }}
-            title="Distributor order: new lines default to cases; each column hidden while all cases"
-          >
-            {distributor ? 'Distributor ✓' : 'Distributor'}
-          </button>
-        )}
-        {desktop && !isEdit && (
-          <button
-            style={{ ...styles.allItemsChip, ...(barcodesOff ? styles.allItemsChipOn : {}) }}
-            onClick={() => setBarcodesOff(v => !v)}
-            title="Print this order's invoice with the UPC as text instead of barcodes"
-          >
-            {barcodesOff ? 'UPC text ✓' : 'Barcodes'}
           </button>
         )}
       </div>
@@ -3679,13 +3660,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
             {unprocessedCount > 0 && ` (${unprocessedCount})`}
           </button>
         )}
-        <button
-          style={{ ...officeStyles.smallBtn, ...(barcodesOff ? officeStyles.editModeBtnActive : {}) }}
-          onClick={() => setBarcodesOff(v => !v)}
-          title="Print invoices with the UPC as text instead of barcodes"
-        >
-          {barcodesOff ? 'UPC text ✓' : 'Barcodes'}
-        </button>
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
       </div>
 
@@ -6062,15 +6036,13 @@ function OfficeCustomers({ customers, onRefresh }) {
             {editMode && <th style={officeStyles.th}>Short name (memo)</th>}
             {editMode && <th style={officeStyles.th}>Terms</th>}
             {editMode && <th style={officeStyles.th}>Ship-to</th>}
-            {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Distrib.</th>}
             {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Print order</th>}
-            {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>No barcode</th>}
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Mobile</th>
             <th style={{ ...officeStyles.th, textAlign: 'center' }}>Active</th>
           </tr></thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 11 : 3}>No customers match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={editMode ? 9 : 3}>No customers match "{query}"</td></tr>
             )}
             {filtered.map(c => {
               const shipOpen = shipToOpenId === c.id;
@@ -6142,29 +6114,9 @@ function OfficeCustomers({ customers, onRefresh }) {
                   <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                     <input
                       type="checkbox"
-                      checked={!!c.isDistributor && c.isDistributor !== 0}
-                      onChange={async e => { await apiPatch(`/customers/${c.id}`, { isDistributor: e.target.checked }); await onRefresh(); }}
-                      title="Distributor: orders default to cases"
-                    />
-                  </td>
-                )}
-                {editMode && (
-                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
                       checked={!!c.usePrintOrder && c.usePrintOrder !== 0}
                       onChange={async e => { await apiPatch(`/customers/${c.id}`, { usePrintOrder: e.target.checked }); await onRefresh(); }}
                       title="Sort this customer's invoice & print sheet by the inventory print order (off = entry order)"
-                    />
-                  </td>
-                )}
-                {editMode && (
-                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
-                      checked={!!c.hideBarcodes && c.hideBarcodes !== 0}
-                      onChange={async e => { await apiPatch(`/customers/${c.id}`, { hideBarcodes: e.target.checked }); await onRefresh(); }}
-                      title="Hide the barcode/UPC column on this customer's invoice"
                     />
                   </td>
                 )}
@@ -6177,7 +6129,7 @@ function OfficeCustomers({ customers, onRefresh }) {
               </tr>
               {editMode && shipOpen && (
                 <tr>
-                  <td colSpan={11} style={officeStyles.shipToCell}>
+                  <td colSpan={9} style={officeStyles.shipToCell}>
                     <div style={officeStyles.shipToTitle}>Bill-to address (invoice) for {c.name}</div>
                     <div style={officeStyles.shipToGrid}>
                       <CustomerTextField customer={c} field="billToLine1" value={c.billToLine1} placeholder="Bill-to line 1 (company)" width={220} onRefresh={onRefresh} />
