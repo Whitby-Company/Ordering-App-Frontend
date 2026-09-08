@@ -1564,10 +1564,18 @@ function DateBoxes({ value, onChange, firstRef }) {
   const [yy, setYy] = useState(value ? parts[0].slice(2) : '');
   const mRef = useRef(null), dRef = useRef(null), yRef = useRef(null);
   useEffect(() => { if (firstRef) firstRef.current = mRef.current; }, [firstRef]);
-  // Only re-sync from `value` when it's cleared elsewhere; otherwise let the user
-  // type freely (don't clobber in-progress input with padded values).
+  // Re-sync the MM/DD/YY boxes when `value` changes from outside (e.g. the
+  // calendar picker). Skip syncing when the boxes already represent that same
+  // date, so in-progress typing isn't clobbered with padded values.
   useEffect(() => {
-    if (!value) { setMm(''); setDd(''); setYy(''); }
+    if (!value) { setMm(''); setDd(''); setYy(''); return; }
+    const p = value.split('-');
+    const vMo = String(Number(p[1])), vDay = String(Number(p[2])), vYy = p[0].slice(2);
+    // What the boxes currently represent (padded to compare with the ISO value).
+    const curMatches =
+      mm && dd && yy &&
+      `20${yy}-${String(Number(mm)).padStart(2, '0')}-${String(Number(dd)).padStart(2, '0')}` === value;
+    if (!curMatches) { setMm(vMo); setDd(vDay); setYy(vYy); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
@@ -4283,17 +4291,19 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
               <th style={officeStyles.th}></th>
               <SortableTh field="submittedAt" label="Submitted" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <th style={officeStyles.th}>Invoice #</th>
               <SortableTh field="deliveryDate" label="Delivery date" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="status" label="Status" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="items" label="Items" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="units" label="Units" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="total" label="Order total" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              <th style={officeStyles.th} title="When this order was downloaded for the QuickBooks/TP import">Exported</th>
               <th style={officeStyles.th}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={10}>No orders match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={12}>No orders match "{query}"</td></tr>
             )}
             {filtered.map(o => {
               const isOpen = openId === o.id;
@@ -4318,6 +4328,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                       {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {o.submittedBy}</div>}
                     </td>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : invoiceNumberFor(o)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       {o.status === 'pending'
@@ -4330,6 +4341,11 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
+                      {o.exported
+                        ? (o.exportedAt ? <span style={{ fontSize: 12.5, color: '#2B5D50', fontWeight: 600 }}>{formatDateTime(o.exportedAt)}</span> : <span style={{ fontSize: 12.5, color: '#2B5D50', fontWeight: 600 }}>Exported</span>)
+                        : <span style={{ color: '#B9BDB2' }}>—</span>}
+                    </td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {o.status === 'pending' ? (
                         <>
@@ -4367,7 +4383,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={10}>
+                      <td style={officeStyles.detailCell} colSpan={12}>
                         {o.notes && (
                           <div style={officeStyles.orderNotes}>
                             <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
