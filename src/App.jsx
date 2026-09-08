@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
-import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore } from './utils.js';
+import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal } from './utils.js';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
@@ -143,6 +143,25 @@ const API_BASE = 'https://ordering-app-ycc9.onrender.com/api';
 // Device-level submitter name: whoever is placing orders on this device.
 // Stored in localStorage so it's remembered across sessions on that device.
 const SUBMITTER_KEY = 'submitterName';
+// Persisted "hide seasonal items" preference, shared across all screens.
+const HIDE_SEASONAL_KEY = 'hideSeasonal';
+function getHideSeasonal() {
+  try { return localStorage.getItem(HIDE_SEASONAL_KEY) === '1'; } catch { return false; }
+}
+function useHideSeasonal() {
+  const [on, setOn] = useState(getHideSeasonal);
+  useEffect(() => {
+    const h = () => setOn(getHideSeasonal());
+    window.addEventListener('hide-seasonal-changed', h);
+    return () => window.removeEventListener('hide-seasonal-changed', h);
+  }, []);
+  const update = useCallback((next) => {
+    try { localStorage.setItem(HIDE_SEASONAL_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    setOn(next);
+    window.dispatchEvent(new Event('hide-seasonal-changed'));
+  }, []);
+  return [on, update];
+}
 function getSubmitterName() {
   try { return localStorage.getItem(SUBMITTER_KEY) || ''; } catch { return ''; }
 }
@@ -1746,6 +1765,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
   const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
+  const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [quickEntry, setQuickEntry] = useState(desktop && !editOrder); // desktop default: QuickBooks-style grid entry
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
@@ -1891,15 +1911,16 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // restrict to their catalog and apply their per-each prices.
   const catalogItems = useMemo(() => {
     if (isEdit || !catalog) return items;
+    const seasonalFilter = arr => hideSeasonal ? arr.filter(i => !isSeasonal(i)) : arr;
     // Escape hatch: show every item (still apply the store's price if they have one).
     if (showAllItems) {
-      return items.map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i));
+      return seasonalFilter(items.map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)));
     }
     if (catalog.off) return [];
-    return items
+    return seasonalFilter(items
       .filter(i => catalog.ids.has(i.id))
-      .map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i));
-  }, [items, catalog, isEdit, showAllItems]);
+      .map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)));
+  }, [items, catalog, isEdit, showAllItems, hideSeasonal]);
 
   const brandList = useMemo(() => Array.from(new Set(catalogItems.map(i => i.brand))), [catalogItems]);
   const brandCounts = useMemo(() => {
@@ -2340,6 +2361,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             {quickEntry ? 'Quick entry ✓' : 'Quick entry'}
           </button>
         )}
+        {!isEdit && customerId != null && (
+          <button
+            style={{ ...styles.allItemsChip, ...(hideSeasonal ? styles.allItemsChipOn : {}) }}
+            onClick={() => setHideSeasonal(!hideSeasonal)}
+            title="Hide seasonal items (Halloween, Easter, Christmas, Valentines)"
+          >
+            {hideSeasonal ? 'Seasonal hidden ✓' : 'Hide seasonal'}
+          </button>
+        )}
       </div>
 
       {!isEdit && customerId == null && (
@@ -2350,7 +2380,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       )}
       {quickEntry && !isEdit && (customerId != null) && (
         <QuickEntryGrid
-          allItems={items.map(i => (catalog && catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i))}
+          allItems={items.map(i => (catalog && catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)).filter(i => !hideSeasonal || !isSeasonal(i))}
           catalog={catalog}
           priceOf={priceOf}
           orderLines={orderLines}
@@ -4418,6 +4448,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
+  const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [renamingBrand, setRenamingBrand] = useState(false);
   const [brandNameInput, setBrandNameInput] = useState('');
   const [importing, setImporting] = useState(false);
@@ -4552,6 +4583,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     const q = query.trim().toLowerCase();
     const matches = items.filter(i => {
       if (!showInactive && !i.active) return false;
+      if (hideSeasonal && isSeasonal(i)) return false;
       const brandMatch = brand === 'All' || i.brand === brand;
       const qDigits = q.replace(/\D/g, '');
       const upcDigits = i.upc ? String(i.upc).replace(/\D/g, '') : '';
@@ -4560,7 +4592,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       return brandMatch && queryMatch;
     });
     return sortInventoryItems(matches, sortField, sortDir, popularity, printSequence);
-  }, [items, query, brand, showInactive, sortField, sortDir, popularity, printSequence]);
+  }, [items, query, brand, showInactive, hideSeasonal, sortField, sortDir, popularity, printSequence]);
 
   const brandAllActive = brand !== 'All' && items.filter(i => i.brand === brand).every(i => !!i.active);
 
@@ -4807,6 +4839,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         <label style={officeStyles.checkboxLabel}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Show inactive
+        </label>
+        <label style={officeStyles.checkboxLabel}>
+          <input type="checkbox" checked={hideSeasonal} onChange={e => setHideSeasonal(e.target.checked)} />
+          Hide seasonal
         </label>
         <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}

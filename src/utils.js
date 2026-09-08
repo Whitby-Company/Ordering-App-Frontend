@@ -108,3 +108,13 @@ export function fuzzyScore(q, text) {
   if (simw > best) best = simw;
   return best >= 0.55 ? Math.round(100 * best) : 0;
 }
+
+// True if an item is a seasonal item (Halloween/Easter/Christmas/Valentines).
+// Detected by the "(Seasonal)" brand marker or the z-prefixed SKU convention.
+export function isSeasonal(item) {
+  if (!item) return false;
+  const brand = String(item.brand || '');
+  if (/\(seasonal\)/i.test(brand)) return true;
+  const id = String(item.id || '');
+  return /^z(christmas|halloween|easter|valentines?)/i.test(id);
+}
