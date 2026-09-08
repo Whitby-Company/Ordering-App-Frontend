@@ -6032,8 +6032,8 @@ function OfficeCustomers({ customers, onRefresh }) {
           <thead><tr>
             <th style={officeStyles.th}>Customer name</th>
             {editMode && <th style={officeStyles.th}>Usual delivery day</th>}
-            {editMode && <th style={officeStyles.th}>Abbrev. (PO)</th>}
-            {editMode && <th style={officeStyles.th}>Short name (memo)</th>}
+            {editMode && <th style={{ ...officeStyles.th, whiteSpace: 'nowrap' }}>Abbrev.</th>}
+            {editMode && <th style={{ ...officeStyles.th, whiteSpace: 'nowrap' }}>Short name</th>}
             {editMode && <th style={officeStyles.th}>Terms</th>}
             {editMode && <th style={officeStyles.th}>Ship-to</th>}
             {editMode && <th style={{ ...officeStyles.th, textAlign: 'center' }}>Print order</th>}
@@ -6072,12 +6072,12 @@ function OfficeCustomers({ customers, onRefresh }) {
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
-                    <CustomerTextField customer={c} field="abbreviation" value={c.abbreviation} placeholder="T2" width={48} onRefresh={onRefresh} />
+                    <CustomerTextField customer={c} field="abbreviation" value={c.abbreviation} placeholder="T2" width={38} onRefresh={onRefresh} />
                   </td>
                 )}
                 {editMode && (
                   <td style={officeStyles.td}>
-                    <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="Kahala" width={80} onRefresh={onRefresh} />
+                    <CustomerTextField customer={c} field="shortName" value={c.shortName} placeholder="Kahala" width={64} onRefresh={onRefresh} />
                   </td>
                 )}
                 {editMode && (
