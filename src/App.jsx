@@ -6150,7 +6150,11 @@ function InvoiceAuditReport({ onBack }) {
                             <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{m.appNumber}</td>
                             <td style={repStyles.tdItem}>{m.customer || ''}</td>
                             <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(m.appTotal)}</td>
-                            <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{m.qbNumber != null ? m.qbNumber : <span style={{ color: '#B5493B', fontWeight: 400 }}>no match</span>}</td>
+                            <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{m.qbNumber != null ? m.qbNumber : (
+                              m.closestNumber != null
+                                ? <span style={{ fontWeight: 400, color: '#8A8F87' }}>no match<br /><span style={{ fontSize: 11 }}>closest: #{m.closestNumber} ({m.closestDiff > 0 ? '+' : ''}{formatMoney(m.closestDiff)})</span></span>
+                                : <span style={{ color: '#B5493B', fontWeight: 400 }}>no match</span>
+                            )}</td>
                             <td style={{ ...repStyles.tdItem, textAlign: 'center', fontWeight: 700, color: m.numbersAgree == null ? '#B9BDB2' : (m.numbersAgree ? '#2B5D50' : '#B5793B') }}>
                               {m.numbersAgree == null ? '—' : (m.numbersAgree ? '✓' : '✗')}
                             </td>
@@ -6163,8 +6167,8 @@ function InvoiceAuditReport({ onBack }) {
                     </div>
                     <div style={{ fontSize: 11.5, color: '#8A8F87', marginTop: 4 }}>Red = no QB match found. Amber = matched by content but the numbers differ (drift). ✓ in "#s agree" = numbers also line up. Items = overlap confidence.</div>
                     <button style={{ ...officeStyles.smallBtn, marginTop: 8 }} onClick={() => {
-                      const cols = ['App #', 'Customer', 'App total', 'QB match #', 'QB total', 'Numbers agree', 'Customer match', 'Items matched', 'App items', 'Item %'];
-                      const lines = [cols, ...recon.contentMatches.map(m => [m.appNumber, m.customer || '', m.appTotal, m.qbNumber != null ? m.qbNumber : '', m.qbTotal != null ? m.qbTotal : '', m.numbersAgree == null ? '' : (m.numbersAgree ? 'yes' : 'no'), m.customerMatch ? 'yes' : 'no', m.itemsMatched, m.appItems, m.itemScore != null ? m.itemScore : ''])];
+                      const cols = ['App #', 'Customer', 'App total', 'QB match #', 'QB total', 'Numbers agree', 'Customer match', 'Items matched', 'App items', 'Item %', 'Closest QB #', 'Closest diff'];
+                      const lines = [cols, ...recon.contentMatches.map(m => [m.appNumber, m.customer || '', m.appTotal, m.qbNumber != null ? m.qbNumber : '', m.qbTotal != null ? m.qbTotal : '', m.numbersAgree == null ? '' : (m.numbersAgree ? 'yes' : 'no'), m.customerMatch ? 'yes' : 'no', m.itemsMatched, m.appItems, m.itemScore != null ? m.itemScore : '', m.closestNumber != null ? m.closestNumber : '', m.closestDiff != null ? m.closestDiff : ''])];
                       const csv = lines.map(r => r.map(csvEscape).join(',')).join('\n');
                       const blob = new Blob([csv], { type: 'text/csv' });
                       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'invoice-content-matches.csv'; a.click();
