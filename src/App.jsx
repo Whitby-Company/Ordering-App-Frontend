@@ -724,7 +724,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 20px; width: auto; max-width: 100%; }' +
     'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
     'td.c-price, td.c-total { text-align: right; white-space: nowrap; }' +
-    '.contd { text-align: center; font-size: 12px; font-weight: bold; font-style: italic; margin: 4px 0 0; }' +
+    '.contd { text-align: right; font-size: 12px; font-weight: bold; font-style: italic; margin: 4px 0 0; }' +
     /* Contains-below sub-lines under a shipper item */
     'tr.containrow td { padding-top: 0; padding-bottom: 4px; vertical-align: top; }' +
     '.contains-lbl { font-size: 12px; font-style: italic; margin: 0 0 1px; }' +
@@ -772,7 +772,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     'var totBlock=isLast?(TOT+SIG):"";' +
     'var pageLine=\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';' +
     'var contLine=(!isLast)?\'<div class="contd">Continued on next page\\u2026</div>\':"";' +
-    'all[p].querySelector(".pg-footer").innerHTML=totBlock+pageLine+contLine;}' +
+    'all[p].querySelector(".pg-footer").innerHTML=totBlock+contLine+pageLine;}' +
     '})();';
 
   const savePdf = !!opts.savePdf;
