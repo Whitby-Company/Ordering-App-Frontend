@@ -511,7 +511,7 @@ function printOrder(order, printSequence, options = {}) {
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
-  const orderedLines = sortLinesForPrint(order.lines, printSequence, getPrintInvOrder() || !!(customer && customer.usePrintOrder));
+  const orderedLines = sortLinesForPrint(order.lines, printSequence, options.forcePrintOrder || getPrintInvOrder() || !!(customer && customer.usePrintOrder));
   // Print title / suggested PDF name: "MM.DD.YY <short name> PO#<po>".
   const _dd = order.deliveryDate ? String(order.deliveryDate).split('-') : null;
   const _delivMMDDYY = _dd ? `${_dd[1]}.${_dd[2]}.${_dd[0].slice(2)}` : '';
@@ -609,7 +609,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   // items stay plain (no $).
   const moneyD = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const ordered = sortLinesForPrint(order.lines, printSequence, getPrintInvOrder() || !!(c && c.usePrintOrder));
+  const ordered = sortLinesForPrint(order.lines, printSequence, opts.forcePrintOrder || getPrintInvOrder() || !!(c && c.usePrintOrder));
   const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
   const zeros = ordered.filter(l => (Number(l.qty) || 0) === 0);
   const lines = [...positive, ...zeros];
@@ -3318,7 +3318,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                       </button>
                     )}
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
                   </div>
                 </div>
               )}
