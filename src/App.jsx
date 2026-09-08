@@ -3581,14 +3581,33 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
 
   const itemById = useMemo(() => { const m = {}; for (const it of items) m[String(it.id).toLowerCase()] = it; return m; }, [items]);
   const itemByCode = useMemo(() => { const m = {}; for (const it of items) m[displayCode(it.id).toLowerCase()] = it; return m; }, [items]);
+  // Index of codes with trailing letters stripped, so a file code like "4936"
+  // matches an item code "4936A", and "53348" matches "53348c".
+  const itemByBareCode = useMemo(() => {
+    const m = {};
+    for (const it of items) {
+      const code = displayCode(it.id).toLowerCase();
+      const bare = code.replace(/[a-z]+$/, ''); // drop trailing letters
+      if (bare && bare !== code && !(bare in m)) m[bare] = it;
+    }
+    return m;
+  }, [items]);
   const itemByUpc = useMemo(() => { const m = {}; for (const it of items) if (it.upc) m[String(it.upc).replace(/\D/g, '')] = it; return m; }, [items]);
 
   function findItem(raw) {
     const v = String(raw ?? '').trim().toLowerCase();
     if (!v) return null;
-    return itemByCode[v] || itemById[v] || itemByUpc[v.replace(/\D/g, '')] ||
-      // also try stripping a brand prefix or trailing letters
-      itemByCode[v.replace(/[^a-z0-9]/g, '')] || null;
+    // 1) exact code, id, or UPC
+    let hit = itemByCode[v] || itemById[v] || itemByUpc[v.replace(/\D/g, '')] || itemByCode[v.replace(/[^a-z0-9]/g, '')];
+    if (hit) return hit;
+    // 2) file code + a trailing letter suffix (4936 -> 4936A, 53348 -> 53348c)
+    for (const suf of ['a', 'c', 'b', 'p', 's', 't', 'ah']) {
+      if (itemByCode[v + suf]) return itemByCode[v + suf];
+    }
+    // 3) file code equals an item code with its trailing letters stripped
+    const bare = v.replace(/[a-z]+$/, '');
+    if (bare && itemByBareCode[bare]) return itemByBareCode[bare];
+    return null;
   }
   // Best fuzzy name match against the item list (for formats without codes).
   const itemWordSets = useMemo(() => items.map(it => ({ it, ws: wordSet(it.name) })), [items]);
