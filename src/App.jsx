@@ -4207,6 +4207,8 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
         case 'units': return o.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
         case 'total': return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
         case 'submittedBy': return (o.submittedBy || '').toLowerCase();
+        case 'invoiceNumber': return o.status === 'pending' ? -1 : (invoiceNumberFor(o) || 0);
+        case 'exportedAt': return o.exported ? (new Date(o.exportedAt).getTime() || 1) : 0;
         default: return 0;
       }
     };
@@ -4291,13 +4293,13 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
               <th style={officeStyles.th}></th>
               <SortableTh field="submittedAt" label="Submitted" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              <th style={officeStyles.th}>Invoice #</th>
+              <SortableTh field="invoiceNumber" label="Invoice #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="deliveryDate" label="Delivery date" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="status" label="Status" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="items" label="Items" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="units" label="Units" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="total" label="Order total" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
-              <th style={officeStyles.th} title="When this order was downloaded for the QuickBooks/TP import">Exported</th>
+              <SortableTh field="exportedAt" label="Exported" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <th style={officeStyles.th}></th>
             </tr>
           </thead>
