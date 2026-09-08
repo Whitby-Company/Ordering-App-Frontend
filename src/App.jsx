@@ -724,7 +724,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 20px; width: auto; max-width: 100%; }' +
     'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
     'td.c-price, td.c-total { text-align: right; white-space: nowrap; }' +
-    '.contd { text-align: right; font-size: 12px; font-weight: bold; font-style: italic; margin: 4px 0 0; }' +
+    '.contd { position: absolute; right: 0; bottom: 0; font-size: 12px; font-weight: bold; font-style: italic; }' +
     /* Contains-below sub-lines under a shipper item */
     'tr.containrow td { padding-top: 0; padding-bottom: 4px; vertical-align: top; }' +
     '.contains-lbl { font-size: 12px; font-style: italic; margin: 0 0 1px; }' +
@@ -739,7 +739,8 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '.tf-right tr.grand td { font-weight: bold; }' +
     '.sigrow { width: 100%; margin-top: 16px; }' +
     '.sigrow td { text-align: center; font-size: 11px; border-top: 1px solid #000; padding-top: 3px; }' +
-    '.pnum { text-align: center; font-size: 10px; color: #444; font-family: Arial, sans-serif; margin-top: 6px; }' +
+    '.pnumrow { position: relative; text-align: center; margin-top: 6px; }' +
+    '.pnum { font-size: 10px; color: #444; font-family: Arial, sans-serif; }' +
     '@media print { html, body { background: #fff; } .no-print { display: none; }' +
     ' .page { margin: 0; box-shadow: none; page-break-after: always; }' +
     ' .page:last-child { page-break-after: auto; }' +
@@ -778,9 +779,9 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     'var all=pagesEl.querySelectorAll(".page"),N=all.length;' +
     'for(var p=0;p<N;p++){var isLast=(p===N-1);' +
     'var totBlock=isLast?(TOT+SIG):"";' +
-    'var pageLine=\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';' +
-    'var contLine=(!isLast)?\'<div class="contd">Continued on next page\\u2026</div>\':"";' +
-    'all[p].querySelector(".pg-footer").innerHTML=totBlock+contLine+pageLine;}' +
+    'var cont=(!isLast)?\'<span class="contd">Continued on next page\\u2026</span>\':"";' +
+    'var pageRow=\'<div class="pnumrow"><span class="pnum">Page \'+(p+1)+\' of \'+N+\'</span>\'+cont+\'</div>\';' +
+    'all[p].querySelector(".pg-footer").innerHTML=totBlock+pageRow;}' +
     '})();';
 
   const savePdf = !!opts.savePdf;
