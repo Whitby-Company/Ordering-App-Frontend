@@ -1774,7 +1774,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [screen, setScreen] = useState('brands');
   const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
-  const [quickEntry, setQuickEntry] = useState(desktop && !editOrder); // desktop default: QuickBooks-style grid entry
+  const [quickEntry, setQuickEntry] = useState(desktop); // desktop default: QuickBooks-style grid entry (new + edit)
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
     if (distributorTouched) return;
@@ -1918,17 +1918,21 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // In edit mode, keep the full item set. Otherwise, once a customer is chosen,
   // restrict to their catalog and apply their per-each prices.
   const catalogItems = useMemo(() => {
-    if (isEdit || !catalog) return items;
+    if (!catalog) return items;
     const seasonalFilter = arr => hideSeasonal ? arr.filter(i => !isSeasonal(i)) : arr;
+    // Items already on the order being edited stay available even if off-catalog,
+    // so editing never hides a line that's part of the order.
+    const onOrderIds = isEdit && editOrder ? new Set(editOrder.lines.map(l => l.id)) : null;
+    const withPrice = i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i);
     // Escape hatch: show every item (still apply the store's price if they have one).
     if (showAllItems) {
-      return seasonalFilter(items.map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)));
+      return seasonalFilter(items.map(withPrice));
     }
-    if (catalog.off) return [];
+    if (catalog.off) return isEdit && onOrderIds ? items.filter(i => onOrderIds.has(i.id)).map(withPrice) : [];
     return seasonalFilter(items
-      .filter(i => catalog.ids.has(i.id))
-      .map(i => (catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)));
-  }, [items, catalog, isEdit, showAllItems, hideSeasonal]);
+      .filter(i => catalog.ids.has(i.id) || (onOrderIds && onOrderIds.has(i.id)))
+      .map(withPrice));
+  }, [items, catalog, isEdit, editOrder, showAllItems, hideSeasonal]);
 
   const brandList = useMemo(() => Array.from(new Set(catalogItems.map(i => i.brand))), [catalogItems]);
   const brandCounts = useMemo(() => {
@@ -2329,7 +2333,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       </div>
 
       <div style={desktop ? { ...styles.searchWrap, padding: '8px 16px 4px' } : styles.searchWrap}>
-        {!(desktop && quickEntry && !isEdit) && (
+        {!(desktop && quickEntry) && (
           <div style={styles.searchInputWrap}>
             <Search size={16} color="#8A8F87" style={styles.searchIconInner} />
             <input
@@ -2345,13 +2349,13 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             )}
           </div>
         )}
-        {desktop && quickEntry && !isEdit && <div style={{ flex: 1 }} />}
-        {!(desktop && quickEntry && !isEdit) && (
+        {desktop && quickEntry && <div style={{ flex: 1 }} />}
+        {!(desktop && quickEntry) && (
         <button style={styles.gridSizeBtn} onClick={toggleGridSize} title={`Tile size: ${gridSize} (tap to change)`}>
           <GridSizeIcon variant={gridSize} size={16} color="#5B6058" />
         </button>
         )}
-        {!isEdit && customerId != null && (
+        {customerId != null && (
           <button
             style={{ ...styles.allItemsChip, ...(showAllItems ? styles.allItemsChipOn : {}) }}
             onClick={() => setShowAllItems(v => !v)}
@@ -2360,7 +2364,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             {showAllItems ? 'All items ✓' : 'All items'}
           </button>
         )}
-        {desktop && !isEdit && (
+        {desktop && (
           <button
             style={{ ...styles.allItemsChip, ...(quickEntry ? styles.allItemsChipOn : {}) }}
             onClick={() => setQuickEntry(v => !v)}
@@ -2386,7 +2390,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       {!isEdit && customerId != null && catalog && catalog.off && !showAllItems && (
         <div style={styles.catalogNote}>This store has no catalog set up yet — set one up on the desktop (Catalogs tab), or tap "All items" to browse everything.</div>
       )}
-      {quickEntry && !isEdit && (customerId != null) && (
+      {quickEntry && (customerId != null) && (
         <QuickEntryGrid
           allItems={items.map(i => (catalog && catalog.prices.has(i.id) ? { ...i, price: catalog.prices.get(i.id) } : i)).filter(i => !hideSeasonal || !isSeasonal(i))}
           catalog={catalog}
@@ -2400,7 +2404,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           showAllItems={showAllItems}
         />
       )}
-      {quickEntry && !isEdit && customerId == null && (
+      {quickEntry && customerId == null && (
         <div style={styles.catalogNote}>Pick a customer to start bulk entry.</div>
       )}
       {!quickEntry && screen === 'brands' && !searching && (customerId != null || isEdit) && !(catalog && catalog.off && !showAllItems) && (
