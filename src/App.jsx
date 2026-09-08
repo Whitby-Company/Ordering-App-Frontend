@@ -4079,6 +4079,59 @@ function PdfRowItemPicker({ items, value, onChange }) {
 }
 const pickRow = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '7px 6px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 
+// Editable invoice number for an order (click to fix it, e.g. to match QuickBooks).
+function InvoiceNumberCell({ order, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const current = invoiceNumberFor(order);
+  const [value, setValue] = useState(String(current || ''));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const trimmed = value.trim();
+    // No change (either same number, or blank when it was auto anyway).
+    const isExplicit = order.invoiceNumber != null && order.invoiceNumber !== '';
+    if ((trimmed === String(current) && isExplicit) || (!trimmed && !isExplicit)) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      const res = await apiPatch(`/orders/${order.id}/invoice-number`, { invoiceNumber: trimmed === '' ? null : Number(trimmed) });
+      if (res && res.duplicateOf) {
+        window.alert(`Heads up: invoice #${trimmed} is also used by order #${res.duplicateOf}. It was still saved — you may want to fix the duplicate.`);
+      }
+      await onSaved();
+    } catch (e) {
+      window.alert(e.message || 'Could not update the invoice number.');
+      setValue(String(current || ''));
+    } finally { setSaving(false); setEditing(false); }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        style={{ background: 'none', border: '1px solid transparent', borderRadius: 6, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#14181F', fontWeight: order.invoiceNumber != null && order.invoiceNumber !== '' ? 700 : 400 }}
+        title="Click to change this invoice number (e.g. to match QuickBooks)"
+        onClick={() => { setValue(String(current || '')); setEditing(true); }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = '#D6D3C6'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; }}
+      >
+        {current}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      style={{ width: 72, background: '#fff', border: '1px solid #2B5D50', borderRadius: 6, padding: '3px 6px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+      value={value}
+      inputMode="numeric"
+      disabled={saving}
+      onChange={e => setValue(e.target.value.replace(/[^0-9]/g, ''))}
+      onBlur={save}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setValue(String(current || '')); setEditing(false); } }}
+      title="Type the correct invoice number, or clear it to use the automatic number"
+    />
+  );
+}
+
 function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
@@ -4382,7 +4435,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                       {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {o.submittedBy}</div>}
                     </td>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : invoiceNumberFor(o)}</td>
+                    <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       {o.status === 'pending'
