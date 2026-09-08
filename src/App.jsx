@@ -3519,6 +3519,363 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
   );
 }
 
+// ---- Order-file PDF parsers ----
+// Fuzzy name match: fraction of the shorter word-set found in the other.
+function nameMatchScore(descWords, itemWords) {
+  if (!descWords.size || !itemWords.size) return 0;
+  let overlap = 0;
+  for (const w of descWords) if (itemWords.has(w)) overlap++;
+  return overlap / Math.max(descWords.size, 1);
+}
+function wordSet(s) {
+  return new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2));
+}
+// Parse a 7-Eleven "Combined Shipping Instruction" PDF text.
+function parseSevenEleven(text) {
+  const lines = text.split('\n');
+  const out = [];
+  const re = /(?:^|\s)(\d{2,6})?\s+(\d{11,13})\s+(.+?)\s+(\d+)\s+(\d+)\s+[\d,]+\.\d{2}\s*$/;
+  for (const line of lines) {
+    const m = line.match(re);
+    if (m) out.push({ code: (m[1] || '').trim(), upc: m[2], desc: m[3].trim(), qty: parseInt(m[4], 10), unit: 'box' });
+  }
+  return out;
+}
+// Parse a K&K / Asia-Trans purchase-order PDF text (case units, match by name).
+function parseKandK(text) {
+  const lines = text.split('\n');
+  const out = [];
+  const re = /^\s*([\dA-Z][\dA-Z-]*)\s+([A-Z][A-Za-z0-9 '&\/.\-]+?)\s+(\d+)\.00\s+CS\s+/;
+  for (const line of lines) {
+    const m = line.match(re);
+    if (m) out.push({ code: m[1].trim(), upc: '', desc: m[2].trim(), qty: parseInt(m[3], 10), unit: 'case' });
+  }
+  return out;
+}
+// Detect which known format a PDF's text is, and parse it.
+function detectAndParsePdf(text) {
+  const t = text.toLowerCase();
+  if (t.includes('seven-eleven') || t.includes('combined shipping instruction')) {
+    return { format: '7-Eleven', customerHint: 'Seven-Eleven', rows: parseSevenEleven(text) };
+  }
+  if (t.includes('k & k distributors') || t.includes('kkdistributors')) {
+    return { format: 'K&K', customerHint: 'K & K Distributors', rows: parseKandK(text) };
+  }
+  return { format: null, customerHint: '', rows: [] };
+}
+
+// Upload an order from a CSV/Excel file: map columns, confirm customer, match
+// items, then create the order (as a pending draft to review).
+function OrderUploadModal({ items, customers, onClose, onCreated }) {
+  const [step, setStep] = useState('file'); // file | map | pdfreview
+  const [rows, setRows] = useState([]);      // array of arrays (raw sheet rows)
+  const [pdfRows, setPdfRows] = useState([]); // [{rawItem, desc, qty, unit, item, score}]
+  const [headers, setHeaders] = useState([]);
+  const [itemCol, setItemCol] = useState(-1);
+  const [qtyCol, setQtyCol] = useState(-1);
+  const [custText, setCustText] = useState('');
+  const [customerId, setCustomerId] = useState(null);
+  const [unit, setUnit] = useState('box');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const itemById = useMemo(() => { const m = {}; for (const it of items) m[String(it.id).toLowerCase()] = it; return m; }, [items]);
+  const itemByCode = useMemo(() => { const m = {}; for (const it of items) m[displayCode(it.id).toLowerCase()] = it; return m; }, [items]);
+  const itemByUpc = useMemo(() => { const m = {}; for (const it of items) if (it.upc) m[String(it.upc).replace(/\D/g, '')] = it; return m; }, [items]);
+
+  function findItem(raw) {
+    const v = String(raw ?? '').trim().toLowerCase();
+    if (!v) return null;
+    return itemByCode[v] || itemById[v] || itemByUpc[v.replace(/\D/g, '')] ||
+      // also try stripping a brand prefix or trailing letters
+      itemByCode[v.replace(/[^a-z0-9]/g, '')] || null;
+  }
+  // Best fuzzy name match against the item list (for formats without codes).
+  const itemWordSets = useMemo(() => items.map(it => ({ it, ws: wordSet(it.name) })), [items]);
+  function findItemByName(desc) {
+    const dw = wordSet(desc);
+    let best = null, score = 0;
+    for (const { it, ws } of itemWordSets) {
+      const sc = nameMatchScore(dw, ws);
+      if (sc > score) { score = sc; best = it; }
+    }
+    return score >= 0.5 ? { item: best, score } : { item: null, score };
+  }
+
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setErr('');
+    const isPdf = /\.pdf$/i.test(file.name);
+    if (isPdf) return onPdf(file);
+    try {
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
+      if (!data.length) { setErr('That file looks empty.'); return; }
+      const hdr = data[0].map(h => String(h).trim());
+      const body = data.slice(1);
+      setHeaders(hdr); setRows(body);
+      const findCol = (names) => hdr.findIndex(h => names.some(n => h.toLowerCase().includes(n)));
+      const ic = findCol(['item #', 'item#', 'item no', 'itemnum', 'sku', 'item number', 'product', 'code']);
+      const qc = findCol(['qty', 'quantity', 'cases', 'order', 'cs', 'each']);
+      setItemCol(ic >= 0 ? ic : 0);
+      setQtyCol(qc >= 0 ? qc : (hdr.length > 1 ? 1 : 0));
+      const custCol = findCol(['customer', 'ship to', 'store', 'account', 'name']);
+      let guess = '';
+      if (custCol >= 0 && body[0]) guess = String(body[0][custCol] || '').trim();
+      setCustText(guess);
+      if (guess) matchCustomer(guess);
+      setStep('map');
+    } catch (e2) { setErr('Could not read that file: ' + (e2.message || e2)); }
+  }
+
+  // Read a PDF, detect its format, parse the lines, and pre-match items.
+  async function onPdf(file) {
+    setBusy(true); setErr('');
+    try {
+      const pdfjs = await import('pdfjs-dist/build/pdf');
+      // Use a worker from the same package (bundled).
+      pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min?url')).default;
+      const buf = await file.arrayBuffer();
+      const doc = await pdfjs.getDocument({ data: buf }).promise;
+      let text = '';
+      for (let p = 1; p <= doc.numPages; p++) {
+        const page = await doc.getPage(p);
+        const content = await page.getTextContent();
+        // Reconstruct lines by Y position.
+        const byY = {};
+        for (const item of content.items) {
+          const y = Math.round(item.transform[5]);
+          (byY[y] = byY[y] || []).push({ x: item.transform[4], s: item.str });
+        }
+        const ys = Object.keys(byY).map(Number).sort((a, b) => b - a);
+        for (const y of ys) {
+          const lineStr = byY[y].sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ');
+          text += lineStr + '\n';
+        }
+      }
+      const { format, customerHint, rows: prows } = detectAndParsePdf(text);
+      if (!format || prows.length === 0) {
+        setErr('Could not recognize this PDF format. Try a CSV/Excel export instead.');
+        setBusy(false); return;
+      }
+      // Match each parsed row: code first, then fuzzy name.
+      const matched = prows.map(r => {
+        let item = r.code ? findItem(r.code) : null;
+        let score = item ? 1 : 0;
+        if (!item && r.desc) { const nm = findItemByName(r.desc); item = nm.item; score = nm.score; }
+        return { rawItem: r.code || r.desc, desc: r.desc, qty: r.qty, unit: r.unit, item, score };
+      });
+      setPdfRows(matched);
+      setUnit(prows[0] && prows[0].unit === 'case' ? 'case' : 'box');
+      setCustText(customerHint);
+      matchCustomer(customerHint);
+      setStep('pdfreview');
+    } catch (e2) { setErr('Could not read that PDF: ' + (e2.message || e2)); }
+    finally { setBusy(false); }
+  }
+
+  function matchCustomer(text) {
+    const s = (text || '').trim().toLowerCase();
+    if (!s) { setCustomerId(null); return; }
+    let best = null, bestScore = 0;
+    for (const c of customers) {
+      const sc = fuzzyScore(s, c.name.toLowerCase());
+      if (sc > bestScore) { bestScore = sc; best = c; }
+    }
+    setCustomerId(best ? best.id : null);
+  }
+
+  const parsed = useMemo(() => {
+    if (itemCol < 0 || qtyCol < 0) return [];
+    const out = [];
+    for (const r of rows) {
+      const rawItem = r[itemCol];
+      const rawQty = r[qtyCol];
+      if ((rawItem == null || String(rawItem).trim() === '') && (rawQty == null || String(rawQty).trim() === '')) continue;
+      const qty = parseInt(String(rawQty).replace(/[^0-9-]/g, ''), 10);
+      const match = findItem(rawItem);
+      out.push({ rawItem: String(rawItem ?? '').trim(), qty: Number.isFinite(qty) ? qty : 0, item: match });
+    }
+    return out;
+  }, [rows, itemCol, qtyCol, items]);
+
+  const matchedCount = parsed.filter(p => p.item && p.qty > 0).length;
+  const unmatched = parsed.filter(p => !p.item && p.rawItem);
+  const selectedCustomer = customers.find(c => c.id === customerId);
+
+  async function createOrder() {
+    if (!customerId) { setErr('Pick a customer first.'); return; }
+    const source = step === 'pdfreview' ? pdfRows : parsed;
+    const lines = source.filter(p => p.item && p.qty > 0).map(p => ({ itemId: p.item.id, qty: p.qty, unit: p.unit || unit }));
+    if (!lines.length) { setErr('No matched items with a quantity to order.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await apiPost('/orders', {
+        customerId,
+        deliveryDate: todayISODate(),
+        status: 'pending',   // create as a draft to review
+        lines,
+      });
+      await onCreated();
+      onClose();
+    } catch (e3) { setErr(e3.message || 'Could not create the order.'); setBusy(false); }
+  }
+
+  return (
+    <div style={styles.editOverlay} onClick={() => !busy && onClose()}>
+      <div style={{ ...officeStyles.confirmCard, width: 720, maxWidth: '95vw', maxHeight: '88vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={officeStyles.confirmTitle}>Upload an order</div>
+
+        {step === 'file' && (
+          <div style={{ padding: '16px 0' }}>
+            <p style={{ fontSize: 13.5, color: '#5B6058', marginTop: 0 }}>Choose an order file — a <strong>PDF</strong> (7-Eleven, K&K) or a <strong>CSV/Excel</strong>. PDFs are matched automatically; you confirm everything before it becomes an order.</p>
+            <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={onFile} />
+            {busy && <div style={{ marginTop: 10, color: '#8A8F87' }}>Reading…</div>}
+            {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{err}</div>}
+          </div>
+        )}
+
+        {step === 'pdfreview' && (
+          <div>
+            <label style={uplStyles.field}><span style={uplStyles.lbl}>Customer (auto-filled — edit if needed)</span>
+              <input style={{ ...uplStyles.input, width: 340 }} value={custText} onChange={e => { setCustText(e.target.value); matchCustomer(e.target.value); }} placeholder="Type a customer name…" />
+            </label>
+            <div style={{ fontSize: 12.5, margin: '4px 0 12px', color: selectedCustomer ? '#2B5D50' : '#B5493B' }}>
+              {selectedCustomer ? `Matched: ${selectedCustomer.name}` : 'No customer matched — type to search.'}
+            </div>
+            <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 6 }}>
+              <strong>{pdfRows.filter(r => r.item && r.qty > 0).length}</strong> of {pdfRows.length} lines matched. Review each — fix any wrong or unmatched item below.
+            </div>
+            <div style={uplStyles.previewWrap}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr><th style={uplStyles.th}>From file</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>Qty</th><th style={uplStyles.th}>Matched item (edit)</th></tr></thead>
+                <tbody>
+                  {pdfRows.map((r, i) => (
+                    <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
+                      <td style={uplStyles.td}>{r.desc}{r.rawItem && r.rawItem !== r.desc ? <span style={{ color: '#8A8F87' }}> ({r.rawItem})</span> : ''}</td>
+                      <td style={{ ...uplStyles.td, textAlign: 'right' }}>{r.qty} {r.unit === 'case' ? 'cs' : ''}</td>
+                      <td style={uplStyles.td}>
+                        <PdfRowItemPicker items={items} value={r.item} onChange={it => setPdfRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x))} />
+                        {r.item && r.score < 0.9 && r.score > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#B5793B' }}>uncertain — confirm</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{err}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
+              <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={createOrder} disabled={busy || !customerId || pdfRows.filter(r => r.item && r.qty > 0).length === 0}>
+                {busy ? 'Creating…' : `Create draft order (${pdfRows.filter(r => r.item && r.qty > 0).length} items)`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'map' && (
+          <div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '10px 0 14px' }}>
+              <label style={uplStyles.field}><span style={uplStyles.lbl}>Item # column</span>
+                <select style={uplStyles.input} value={itemCol} onChange={e => setItemCol(Number(e.target.value))}>
+                  {headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}</option>)}
+                </select>
+              </label>
+              <label style={uplStyles.field}><span style={uplStyles.lbl}>Quantity column</span>
+                <select style={uplStyles.input} value={qtyCol} onChange={e => setQtyCol(Number(e.target.value))}>
+                  {headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}</option>)}
+                </select>
+              </label>
+              <label style={uplStyles.field}><span style={uplStyles.lbl}>Unit</span>
+                <div style={{ display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 8, overflow: 'hidden' }}>
+                  {[['box', 'Box'], ['case', 'Case']].map(([id, l]) => (
+                    <button key={id} style={{ background: unit === id ? '#2B5D50' : '#fff', color: unit === id ? '#fff' : '#8A8F87', border: 'none', padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => setUnit(id)}>{l}</button>
+                  ))}
+                </div>
+              </label>
+            </div>
+            <label style={uplStyles.field}><span style={uplStyles.lbl}>Customer (auto-filled from file — edit if needed)</span>
+              <input style={{ ...uplStyles.input, width: 340 }} value={custText} onChange={e => { setCustText(e.target.value); matchCustomer(e.target.value); }} placeholder="Type a customer name…" />
+            </label>
+            <div style={{ fontSize: 12.5, margin: '4px 0 12px', color: selectedCustomer ? '#2B5D50' : '#B5493B' }}>
+              {selectedCustomer ? `Matched: ${selectedCustomer.name}` : 'No customer matched — type to search.'}
+            </div>
+            <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 6 }}>
+              <strong>{matchedCount}</strong> item{matchedCount === 1 ? '' : 's'} matched{unmatched.length ? ` · ${unmatched.length} not found` : ''}.
+            </div>
+            <div style={uplStyles.previewWrap}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr><th style={uplStyles.th}>From file</th><th style={uplStyles.th}>Matched item</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>Qty</th></tr></thead>
+                <tbody>
+                  {parsed.slice(0, 100).map((p, i) => (
+                    <tr key={i} style={!p.item ? { background: '#FBEEE7' } : undefined}>
+                      <td style={uplStyles.td}>{p.rawItem}</td>
+                      <td style={uplStyles.td}>{p.item ? <span><strong>{displayCode(p.item.id)}</strong> {p.item.name}</span> : <span style={{ color: '#B5493B' }}>not found</span>}</td>
+                      <td style={{ ...uplStyles.td, textAlign: 'right' }}>{p.qty || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{err}</div>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
+              <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={createOrder} disabled={busy || !customerId || matchedCount === 0}>
+                {busy ? 'Creating…' : `Create draft order (${matchedCount} items)`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+const uplStyles = {
+  field: { display: 'flex', flexDirection: 'column', gap: 4 },
+  lbl: { fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  input: { background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' },
+  previewWrap: { border: '1px solid #E3E1D6', borderRadius: 8, maxHeight: 320, overflowY: 'auto' },
+  th: { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', padding: '6px 8px', borderBottom: '1px solid #E3E1D6', position: 'sticky', top: 0, background: '#F7F8F4' },
+  td: { padding: '5px 8px', borderBottom: '1px solid #F0EEE6', color: '#14181F', verticalAlign: 'top' },
+};
+
+// Small searchable item picker to correct a matched row.
+function PdfRowItemPicker({ items, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const matches = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return [];
+    return items.filter(i => i.name.toLowerCase().includes(s) || String(i.id).toLowerCase().includes(s)).slice(0, 25);
+  }, [items, q]);
+  return (
+    <div style={{ position: 'relative', display: 'inline-block', minWidth: 220 }}>
+      <button style={{ ...uplStyles.input, textAlign: 'left', cursor: 'pointer', width: '100%', fontSize: 12.5, padding: '5px 8px', borderColor: value ? '#C4DDD2' : '#E6C6B4', background: value ? '#fff' : '#FBEEE7' }} onClick={() => { setOpen(o => !o); setQ(''); }}>
+        {value ? <span><strong>{displayCode(value.id)}</strong> {value.name}</span> : <span style={{ color: '#B5493B' }}>Pick an item…</span>}
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', left: 0, top: '100%', zIndex: 20, minWidth: 320, marginTop: 2, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 30px rgba(20,24,31,0.2)', padding: 6 }}>
+          <input autoFocus style={{ ...uplStyles.input, width: '100%', padding: '6px 8px', marginBottom: 4 }} placeholder="Search item…" value={q} onChange={e => setQ(e.target.value)} />
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {value && <button style={pickRow} onMouseDown={e => { e.preventDefault(); onChange(null); setOpen(false); }}><span style={{ color: '#B5493B' }}>✕ Skip this line</span></button>}
+            {matches.map(it => (
+              <button key={it.id} style={pickRow} onMouseDown={e => { e.preventDefault(); onChange(it); setOpen(false); }}>
+                <strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(it.id)}</strong>{it.name}
+              </button>
+            ))}
+            {q && matches.length === 0 && <div style={{ padding: 8, color: '#8A8F87', fontSize: 12.5 }}>No items match.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+const pickRow = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '7px 6px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+
 function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all' }) {
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
@@ -3529,6 +3886,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [readyBusyId, setReadyBusyId] = useState(null);
 
   // Toggle the shared "ready for import" flag on an order (saved server-side so
@@ -3734,6 +4092,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
             {unprocessedCount > 0 && ` (${unprocessedCount})`}
           </button>
         )}
+        <button style={officeStyles.smallBtn} onClick={() => setUploadOpen(true)} title="Create an order from a CSV/Excel file">↑ Upload order</button>
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
       </div>
 
@@ -3750,6 +4109,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
         </div>
       )}
 
+      {uploadOpen && <OrderUploadModal items={items} customers={customers} onClose={() => setUploadOpen(false)} onCreated={onRefresh} />}
       {readyOrders.length > 0 && (
         <div style={officeStyles.batchBar}>
           <span style={{ fontWeight: 700 }}>{readyOrders.length} order{readyOrders.length === 1 ? '' : 's'} ready for import</span>
