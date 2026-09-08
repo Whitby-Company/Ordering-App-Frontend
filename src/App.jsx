@@ -5,7 +5,7 @@ import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
   AlertTriangle, ChevronRight, Loader2, WifiOff, RefreshCw, Monitor,
-  Grid2x2, Rows, Image as ImageIcon,
+  Grid2x2, Rows, Image as ImageIcon, Trash2,
 } from 'lucide-react';
 
 const GRID_SIZES = [
@@ -5059,7 +5059,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           onEdit={() => { setEditingOrder(viewingOrder); setViewingOrder(null); }}
         />
       )}
-      {historyItem && <StockHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}
+      {historyItem && <StockHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} onChanged={onRefresh} />}
       {confirmOpen && (
         <div style={styles.editOverlay} onClick={() => !savingStock && setConfirmOpen(false)}>
           <div style={officeStyles.confirmCard} onClick={e => e.stopPropagation()}>
@@ -5477,16 +5477,33 @@ function ItemNotesField({ item, onRefresh }) {
 }
 
 // Modal showing an item's stock-change history.
-function StockHistoryModal({ item, onClose }) {
+function StockHistoryModal({ item, onClose, onChanged }) {
   const [log, setLog] = useState(null);
-  useEffect(() => {
-    apiGet(`/items/${encodeURIComponent(item.id)}/stock-log`).then(setLog).catch(() => setLog([]));
-  }, [item.id]);
+  const [busyId, setBusyId] = useState(null);
+  const [err, setErr] = useState('');
+  function load() { apiGet(`/items/${encodeURIComponent(item.id)}/stock-log`).then(setLog).catch(() => setLog([])); }
+  useEffect(() => { load(); }, [item.id]);
+
+  async function deleteEntry(r, isLatest) {
+    const msg = isLatest
+      ? `Delete this change and revert stock to ${r.oldStock}?`
+      : `Delete this history entry? (Stock will NOT change — this isn't the most recent change, so reverting would overwrite later changes.)`;
+    if (!window.confirm(msg)) return;
+    setBusyId(r.id); setErr('');
+    try {
+      await apiDelete(`/items/stock-log/${r.id}`);
+      load();
+      if (onChanged) await onChanged();
+    } catch (e) { setErr(e.message || 'Could not delete that entry.'); }
+    finally { setBusyId(null); }
+  }
+
   return (
     <div style={styles.editOverlay} onClick={onClose}>
-      <div style={{ ...officeStyles.confirmCard, width: 560, maxWidth: '94vw', maxHeight: '82vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div style={{ ...officeStyles.confirmCard, width: 620, maxWidth: '94vw', maxHeight: '82vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>Stock history</div>
         <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>{displayCode(item.id)} · {item.name}</div>
+        {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 8 }}>{err}</div>}
         <div style={{ overflowY: 'auto' }}>
           {log === null ? <div style={{ color: '#8A8F87', padding: 12 }}>Loading…</div>
             : log.length === 0 ? <div style={{ color: '#8A8F87', fontStyle: 'italic', padding: 12 }}>No stock changes recorded yet.</div>
@@ -5498,9 +5515,10 @@ function StockHistoryModal({ item, onClose }) {
                   <th style={{ ...shStyles.th, textAlign: 'right' }}>To</th>
                   <th style={{ ...shStyles.th, textAlign: 'right' }}>Change</th>
                   <th style={shStyles.th}>Reason</th>
+                  <th style={shStyles.th} />
                 </tr></thead>
                 <tbody>
-                  {log.map(r => (
+                  {log.map((r, idx) => (
                     <tr key={r.id}>
                       <td style={shStyles.td}>{formatDateTime(r.changedAt)}</td>
                       <td style={shStyles.td}>{r.changedBy || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
@@ -5508,6 +5526,16 @@ function StockHistoryModal({ item, onClose }) {
                       <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.newStock}</td>
                       <td style={{ ...shStyles.td, textAlign: 'right', color: r.delta < 0 ? '#B5493B' : '#2B5D50', fontWeight: 700 }}>{r.delta > 0 ? '+' : ''}{r.delta}</td>
                       <td style={{ ...shStyles.td, whiteSpace: 'normal', color: '#5B6058' }}>{r.reason || ''}</td>
+                      <td style={{ ...shStyles.td, textAlign: 'center' }}>
+                        <button
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#B5493B', opacity: busyId === r.id ? 0.4 : 1 }}
+                          title={idx === 0 ? 'Delete this change and revert the stock' : 'Delete this history entry (no stock change)'}
+                          onClick={() => deleteEntry(r, idx === 0)}
+                          disabled={busyId === r.id}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
