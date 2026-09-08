@@ -680,6 +680,12 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const COLG = '<colgroup>' + colDefs.join('') + '</colgroup>';
   const COLH = '<tr class="colhdr">' + headCells.join('') + '</tr>';
 
+  // Taiyo PDF filename: "MM.DD.YY <short name> <PO#>.pdf".
+  const dd = order.deliveryDate ? order.deliveryDate.split('-') : null;
+  const delivMMDDYY = dd ? `${dd[1]}.${dd[2]}.${dd[0].slice(2)}` : '';
+  const shortNm = (c.shortName || c.name || '').trim();
+  const pdfName = [delivMMDDYY, shortNm, poNumber].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]/g, '') + '.pdf';
+
   const win = window.open('', '_blank', 'width=880,height=1000');
   if (!win) return;
   const style =
@@ -765,11 +771,27 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     'all[p].querySelector(".pg-footer").innerHTML=cont+TOT+SIG+\'<div class="pnum">Page \'+(p+1)+\' of \'+N+\'</div>\';}' +
     '})();';
 
-  win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>Invoice ' + invoiceNumberFor(order) + '</title><style>' + style + '</style></head><body>' +
-    '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>' +
+  const savePdf = !!opts.savePdf;
+  const pdfLibs = savePdf
+    ? '<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>' +
+      '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>'
+    : '';
+  const pdfScript = savePdf
+    ? '(function(){function go(){if(!window.jspdf||!window.html2canvas){return setTimeout(go,150);}' +
+      'var pages=document.querySelectorAll(".page");if(!pages.length){return setTimeout(go,150);}' +
+      'var jsPDF=window.jspdf.jsPDF;var pdf=new jsPDF({unit:"in",format:"letter"});var i=0;' +
+      'function next(){if(i>=pages.length){pdf.save(' + JSON.stringify(pdfName) + ');setTimeout(function(){window.close();},300);return;}' +
+      'html2canvas(pages[i],{scale:2,backgroundColor:"#ffffff"}).then(function(canvas){' +
+      'var img=canvas.toDataURL("image/jpeg",0.95);if(i>0)pdf.addPage();pdf.addImage(img,"JPEG",0,0,8.5,11);i++;next();});}' +
+      'next();}setTimeout(go,400);})();'
+    : '';
+
+  win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>Invoice ' + invoiceNumberFor(order) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
+    (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
     '<div id="pages"></div>' +
     '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
-    '<script>' + script + '<\/script></body></html>');
+    '<script>' + script + '<\/script>' +
+    (savePdf ? '<script>' + pdfScript + '<\/script>' : '') + '</body></html>');
   win.document.close();
   win.focus();
 }
@@ -3760,6 +3782,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items, { savePdf: true })} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
                           </button>{' '}
