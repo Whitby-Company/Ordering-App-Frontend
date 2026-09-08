@@ -2657,18 +2657,26 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             )}
             {isEdit ? (
               <>
-                <button
-                  style={{ ...styles.submitBtn, ...((customerId && deliveryDate && orderLines.length > 0 && !submitting) ? {} : styles.submitBtnDisabled) }}
-                  disabled={!customerId || !deliveryDate || orderLines.length === 0 || submitting || deleting}
-                  onClick={saveEdit}
-                >
-                  {submitting ? <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} /> : <Check size={16} color="#F7F8F4" />}
-                  {submitting ? 'Saving…' : 'Save changes'}
-                </button>
                 {!confirmDelete ? (
-                  <button style={editStyles.deleteLink} onClick={() => setConfirmDelete(true)} disabled={submitting || deleting}>
-                    Delete this order
-                  </button>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      style={{ ...styles.submitBtn, flex: '0 0 auto', width: 'auto', padding: '13px 18px', background: '#FBEEE7', color: '#B5493B', border: '1px solid #E6C6B4' }}
+                      onClick={() => setConfirmDelete(true)}
+                      disabled={submitting || deleting}
+                      title="Delete this order permanently"
+                    >
+                      <Trash2 size={16} color="#B5493B" />
+                      Delete
+                    </button>
+                    <button
+                      style={{ ...styles.submitBtn, flex: 1, ...((customerId && deliveryDate && orderLines.length > 0 && !submitting) ? {} : styles.submitBtnDisabled) }}
+                      disabled={!customerId || !deliveryDate || orderLines.length === 0 || submitting || deleting}
+                      onClick={saveEdit}
+                    >
+                      {submitting ? <Loader2 size={16} color="#F7F8F4" style={{ animation: 'spin 0.8s linear infinite' }} /> : <Check size={16} color="#F7F8F4" />}
+                      {submitting ? 'Saving…' : 'Save changes'}
+                    </button>
+                  </div>
                 ) : (
                   <div style={editStyles.confirmDeleteRow}>
                     <span>Delete this order permanently?</span>
