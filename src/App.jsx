@@ -3176,10 +3176,14 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
     const q = query.trim().toLowerCase();
     let list = showUnprocessedOnly ? orders.filter(o => !o.processed) : orders;
     if (!q) return list;
-    return list.filter(o =>
-      o.customer.toLowerCase().includes(q) ||
-      o.lines.some(l => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q))
-    );
+    const qDigits = q.replace(/\D/g, '');
+    return list.filter(o => {
+      const inv = String(invoiceNumberFor(o) || '');
+      if (qDigits && inv.includes(qDigits)) return true;
+      if (o.poNumber && String(o.poNumber).toLowerCase().includes(q)) return true;
+      if (o.customer && (o.customer.toLowerCase().includes(q) || fuzzyScore(q, o.customer.toLowerCase()) >= 60)) return true;
+      return o.lines.some(l => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q) || fuzzyScore(q, l.name.toLowerCase()) >= 60);
+    });
   }, [orders, query, showUnprocessedOnly]);
 
   return (
@@ -3202,7 +3206,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
         <Search size={16} color="#8A8F87" style={styles.searchIcon} />
         <input
           style={styles.searchInput}
-          placeholder="Search by customer or item"
+          placeholder="Search by customer, item, invoice # or PO"
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
@@ -4227,10 +4231,22 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
     if (activeScope) list = list.filter(o => o.status === 'pending' || !o.processed);
     if (showUnprocessedOnly) list = list.filter(o => !o.processed);
     if (q) {
-      list = list.filter(o =>
-        o.customer.toLowerCase().includes(q) ||
-        o.lines.some(l => l.name.toLowerCase().includes(q) || l.id.toLowerCase().includes(q))
-      );
+      const qDigits = q.replace(/\D/g, '');
+      const matchOrder = (o) => {
+        // Invoice # and PO # — exact/partial numeric match.
+        const inv = String(invoiceNumberFor(o) || '');
+        if (qDigits && inv.includes(qDigits)) return true;
+        if (o.poNumber && String(o.poNumber).toLowerCase().includes(q)) return true;
+        // Customer — fuzzy (loose) match.
+        if (o.customer && (o.customer.toLowerCase().includes(q) || fuzzyScore(q, o.customer.toLowerCase()) >= 60)) return true;
+        // Items — name (fuzzy) or code (substring).
+        return o.lines.some(l =>
+          l.name.toLowerCase().includes(q) ||
+          l.id.toLowerCase().includes(q) ||
+          fuzzyScore(q, l.name.toLowerCase()) >= 60
+        );
+      };
+      list = list.filter(matchOrder);
     }
     const dir = sortDir === 'asc' ? 1 : -1;
     const val = (o) => {
@@ -4269,7 +4285,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
         <div style={officeStyles.sectionTitle}>{activeScope ? 'New & pending orders' : 'Order history'}</div>
         <input
           style={officeStyles.search}
-          placeholder="Search by customer or item…"
+          placeholder="Search by customer, item, invoice # or PO…"
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
