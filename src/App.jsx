@@ -5879,10 +5879,10 @@ function InvoiceAuditReport({ onBack }) {
       const ws = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
       // Find the header row (has "Num" and "Type"), then read invoice numbers from the Num column.
-      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, amtCol = -1, custCol = -1;
+      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, amtCol = -1, memoCol = -1;
       for (let i = 0; i < Math.min(rows.length, 15); i++) {
         const r = rows[i].map(c => String(c).trim().toLowerCase());
-        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); amtCol = r.indexOf('amount'); break; }
+        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); amtCol = r.indexOf('amount'); memoCol = r.indexOf('memo'); break; }
       }
       if (numCol < 0) { setReconErr('Could not find a "Num" column in the export. Make sure it\u2019s the QuickBooks invoice detail sheet.'); setReconBusy(false); return; }
       const seen = new Map();
@@ -5896,8 +5896,9 @@ function InvoiceAuditReport({ onBack }) {
         const num = String(r[numCol] || '').trim();
         if (!num || !/^\d+$/.test(num)) continue;
         const n = Number(num);
-        if (!seen.has(n)) seen.set(n, { number: n, customer: curCustomer, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), total: 0 });
+        if (!seen.has(n)) seen.set(n, { number: n, customer: curCustomer, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), total: 0, memos: [] });
         if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(n).total += a; }
+        if (memoCol >= 0) { const m = String(r[memoCol] || '').trim(); if (m) seen.get(n).memos.push(m); }
       }
       const qbNumbers = [...seen.values()];
       if (!qbNumbers.length) { setReconErr('No invoices found in that file.'); setReconBusy(false); return; }
@@ -6029,6 +6030,34 @@ function InvoiceAuditReport({ onBack }) {
                     <div style={{ fontWeight: 700, marginBottom: 6, color: '#B5493B' }}>Missing from both ({recon.gapCount})</div>
                     <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>Numbers in the overall range that neither system uses — the ones actually worth investigating (skipped or voided).</div>
                     <div style={gapBox}>{recon.gaps.join(', ')}</div>
+                  </div>
+                )}
+
+                {recon.suggestionCount > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>Possible matches — same invoice, different number ({recon.suggestionCount})</div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>Unmatched invoices where the customer and total agree — likely the same invoice numbered differently. Item overlap shown as confidence. <strong>Suggestions to review — please confirm each.</strong></div>
+                    <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                        <thead><tr>
+                          <th style={repStyles.th}>App #</th><th style={repStyles.th}>QB #</th><th style={repStyles.th}>Customer</th>
+                          <th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th>
+                          <th style={{ ...repStyles.th, textAlign: 'center' }}>Items match</th>
+                        </tr></thead>
+                        <tbody>{recon.suggestions.map((s, i) => (
+                          <tr key={i}>
+                            <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{s.appNumber}</td>
+                            <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{s.qbNumber}</td>
+                            <td style={repStyles.tdItem}>{s.customer || ''}</td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(s.appTotal)}</td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'center', fontWeight: 700, color: s.itemScore == null ? '#B9BDB2' : (s.itemScore >= 80 ? '#2B5D50' : (s.itemScore >= 40 ? '#B5793B' : '#B5493B')) }}>
+                              {s.itemScore == null ? '—' : `${s.itemsMatched}/${s.appItems} (${s.itemScore}%)`}
+                            </td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#8A8F87', marginTop: 4 }}>Green = strong item overlap (very likely the same). Amber/red = totals match but items overlap less — verify before trusting.</div>
                   </div>
                 )}
 
