@@ -5174,6 +5174,7 @@ const REPORT_LIST = [
   { id: 'sales-by-month', name: 'Sales by month', desc: 'Sales for every item, broken out by month across a period you choose.' },
   { id: 'margin', name: 'Margin', desc: 'Sell vs. landed cost per customer & item — exact margin $ and %.' },
   { id: 'order-margin', name: 'Order margin', desc: 'Pick any order and see the margin per item and total profit instantly.' },
+  { id: 'stock-changes', name: 'Stock changes', desc: 'Full audit trail of inventory changes — who changed what, when, and by how much.' },
   // Add more reports here as they\u2019re built.
 ];
 // Purchasing tab: list purchase orders, create new ones, and receive stock.
@@ -5444,11 +5445,71 @@ const poStyles = {
   rm: { width: 26, height: 26, borderRadius: 6, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 15, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
 };
 
+// App-wide inventory change trail.
+function StockChangesReport({ onBack }) {
+  const [log, setLog] = useState(null);
+  const [q, setQ] = useState('');
+  function load() { apiGet('/items/stock-log/recent').then(setLog).catch(() => setLog([])); }
+  useEffect(() => { load(); }, []);
+  const rows = useMemo(() => {
+    if (!log) return [];
+    const s = q.trim().toLowerCase();
+    if (!s) return log;
+    return log.filter(r => (r.item || '').toLowerCase().includes(s) || (r.itemId || '').toLowerCase().includes(s) || (r.changedBy || '').toLowerCase().includes(s));
+  }, [log, q]);
+
+  function downloadCSV() {
+    if (!log) return;
+    const cols = ['When', 'Item #', 'Item', 'Brand', 'By', 'From', 'To', 'Change'];
+    const lines = [cols, ...rows.map(r => [formatDateTime(r.changedAt), displayCode(r.itemId), r.item || '', r.brand || '', r.changedBy || '', r.oldStock, r.newStock, r.delta])];
+    downloadTextFile('stock-changes.csv', lines.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n'));
+  }
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Stock changes</div>
+        <button style={officeStyles.smallBtn} onClick={load}>Refresh</button>
+        <button style={officeStyles.smallBtn} onClick={downloadCSV} disabled={!rows.length}>Download CSV</button>
+      </div>
+      <input style={{ ...officeStyles.search, marginBottom: 12 }} placeholder="Search item or person…" value={q} onChange={e => setQ(e.target.value)} />
+      <div style={repStyles.tableWrap}>
+        <table style={repStyles.table}>
+          <thead><tr>
+            <th style={{ ...repStyles.th, textAlign: 'left' }}>When</th>
+            <th style={{ ...repStyles.th, textAlign: 'left' }}>Item</th>
+            <th style={{ ...repStyles.th, textAlign: 'left' }}>By</th>
+            <th style={repStyles.th}>From</th>
+            <th style={repStyles.th}>To</th>
+            <th style={repStyles.th}>Change</th>
+          </tr></thead>
+          <tbody>
+            {log === null && <tr><td colSpan={6} style={{ ...repStyles.tdItem, color: '#8A8F87' }}>Loading…</td></tr>}
+            {log !== null && rows.length === 0 && <tr><td colSpan={6} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No stock changes recorded.</td></tr>}
+            {rows.map(r => (
+              <tr key={r.id}>
+                <td style={repStyles.tdItem}>{formatDateTime(r.changedAt)}</td>
+                <td style={repStyles.tdItem}><span style={{ color: '#2B5D50', fontWeight: 700, marginRight: 6, fontFamily: "'JetBrains Mono', monospace" }}>{displayCode(r.itemId)}</span>{r.item}</td>
+                <td style={repStyles.tdItem}>{r.changedBy || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                <td style={repStyles.tdNum}>{r.oldStock}</td>
+                <td style={repStyles.tdNum}>{r.newStock}</td>
+                <td style={{ ...repStyles.tdNum, color: r.delta < 0 ? '#B5493B' : '#2B5D50', fontWeight: 700 }}>{r.delta > 0 ? '+' : ''}{r.delta}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function OfficeReports() {
   const [active, setActive] = useState(null);
   if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
   if (active === 'margin') return <MarginReport onBack={() => setActive(null)} />;
   if (active === 'order-margin') return <OrderMarginReport onBack={() => setActive(null)} />;
+  if (active === 'stock-changes') return <StockChangesReport onBack={() => setActive(null)} />;
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
