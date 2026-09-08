@@ -3532,28 +3532,20 @@ function wordSet(s) {
 }
 // Parse a 7-Eleven "Combined Shipping Instruction" PDF text.
 function parseSevenEleven(text) {
-  const lines = text.split('\n');
+  // PDF.js can split a visual row across several text lines, so parse the whole
+  // blob by anchoring on each UPC (11-13 digits) and reading the fields around it.
+  // Row shape: [vendCode] UPC Description qty ldu extendedCost
   const out = [];
-  for (let raw of lines) {
-    const line = raw.replace(/\s+/g, ' ').trim();
-    if (!line) continue;
-    if (/vend prod code|shipment total|description\s+qty/i.test(line)) continue;
-    // A data line contains a 11-13 digit UPC. Optional vend code before it.
-    const upcM = line.match(/(?:^|\s)(\d{2,6})?\s*\b(\d{11,13})\b\s+(.+)$/);
-    if (!upcM) continue;
-    const code = (upcM[1] || '').trim();
-    const upc = upcM[2];
-    let rest = upcM[3];
-    // The tail of the line is: description ... qty ldu extendedCost.
-    // Pull the last three numbers; qty is the first of the three.
-    const tail = rest.match(/^(.+?)\s+(\d+)\s+(\d+)\s+[\d,]+\.\d{2}\s*$/);
-    if (tail) {
-      out.push({ code, upc, desc: tail[1].trim(), qty: parseInt(tail[2], 10), unit: 'box' });
-    } else {
-      // Fallback: description then a lone quantity somewhere before a money value.
-      const q = rest.match(/^(.+?)\s+(\d+)\s+\d+\s+[\d,]+\.\d{2}/) || rest.match(/^(.+?)\s+(\d+)\b/);
-      if (q) out.push({ code, upc, desc: q[1].trim(), qty: parseInt(q[2], 10), unit: 'box' });
-    }
+  const flat = text.replace(/\s+/g, ' ');
+  // Match: optional 2-6 digit code, a UPC, a description (non-greedy up to the
+  // trailing "qty ldu money"), then qty, ldu, extended cost.
+  const re = /(?:(\d{2,6})\s+)?(\d{11,13})\s+([A-Za-z][^\d]*?[A-Za-z0-9.)]+?)\s+(\d{1,4})\s+(\d{1,4})\s+([\d,]+\.\d{2})/g;
+  let m;
+  while ((m = re.exec(flat)) !== null) {
+    const [, code, upc, desc, qty, ldu, cost] = m;
+    // Skip false positives where "description" is actually a header/total.
+    if (/vend prod|shipment total|extended cost/i.test(desc)) continue;
+    out.push({ code: (code || '').trim(), upc, desc: desc.trim(), qty: parseInt(qty, 10), ldu: parseInt(ldu, 10), unit: 'box' });
   }
   return out;
 }
@@ -3711,7 +3703,7 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
         let score = item ? 1 : 0;
         if (!item && r.upc) { const u = itemByUpc[String(r.upc).replace(/\D/g, '').replace(/^0+/, '')] || itemByUpc[String(r.upc).replace(/\D/g, '')]; if (u) { item = u; score = 1; } }
         if (!item && r.desc) { const nm = findItemByName(r.desc); item = nm.item; score = nm.score; }
-        return { rawItem: r.code || r.upc || r.desc, desc: r.desc, qty: r.qty, unit: r.unit, item, score };
+        return { rawItem: r.code || '', upc: r.upc || '', desc: r.desc, qty: r.qty, unit: r.unit, item, score };
       });
       setPdfRows(matched);
       setUnit(prows[0] && prows[0].unit === 'case' ? 'case' : 'box');
@@ -3800,7 +3792,10 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
                 <tbody>
                   {pdfRows.map((r, i) => (
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
-                      <td style={uplStyles.td}>{r.desc}{r.rawItem && r.rawItem !== r.desc ? <span style={{ color: '#8A8F87' }}> ({r.rawItem})</span> : ''}</td>
+                      <td style={uplStyles.td}>
+                        <div style={{ fontWeight: 600 }}>{r.desc}</div>
+                        <div style={{ fontSize: 11, color: '#8A8F87' }}>{r.rawItem ? `#${r.rawItem}` : ''}{r.upc ? ` · UPC ${r.upc}` : ''}</div>
+                      </td>
                       <td style={{ ...uplStyles.td, textAlign: 'right' }}>{r.qty} {r.unit === 'case' ? 'cs' : ''}</td>
                       <td style={uplStyles.td}>
                         <PdfRowItemPicker items={items} value={r.item} onChange={it => setPdfRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x))} />
