@@ -4419,7 +4419,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // editing" (after a confirmation), so nothing changes by accident.
   const [pendingStock, setPendingStock] = useState({}); // { itemId: newValue }
   const [historyItem, setHistoryItem] = useState(null);
-  const [stockNote, setStockNote] = useState('');
+  const [stockReasons, setStockReasons] = useState({}); // itemId -> reason text
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savingStock, setSavingStock] = useState(false);
   const [editingContents, setEditingContents] = useState(null); // item whose "contains" list is being edited
@@ -4468,11 +4468,12 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     setSavingStock(true);
     try {
       for (const ch of changes) {
-        await apiPatch(`/items/${encodeURIComponent(ch.id)}`, { stock: ch.to, changedBy: who || undefined, reason: stockNote.trim() || undefined });
+        const reason = (stockReasons[ch.id] || '').trim();
+        await apiPatch(`/items/${encodeURIComponent(ch.id)}`, { stock: ch.to, changedBy: who || undefined, reason: reason || undefined });
       }
       await onRefresh();
       setPendingStock({});
-      setStockNote('');
+      setStockReasons({});
       setConfirmOpen(false);
       setEditMode(false);
     } catch (err) {
@@ -5064,24 +5065,24 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           <div style={officeStyles.confirmCard} onClick={e => e.stopPropagation()}>
             <div style={officeStyles.confirmTitle}>Save stock changes?</div>
             <div style={officeStyles.confirmSub}>
-              You changed stock for {realStockChanges().length} item{realStockChanges().length === 1 ? '' : 's'}:
+              You changed stock for {realStockChanges().length} item{realStockChanges().length === 1 ? '' : 's'}. Add an optional reason for each (saved to the change history):
             </div>
             <div style={officeStyles.confirmList}>
               {realStockChanges().map(ch => (
-                <div key={ch.id} style={officeStyles.confirmRow}>
-                  <span style={officeStyles.confirmItem}>{ch.name}</span>
-                  <span style={officeStyles.confirmDelta}>{ch.from} → <strong>{ch.to}</strong></span>
+                <div key={ch.id} style={{ ...officeStyles.confirmRow, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <span style={officeStyles.confirmItem}>{ch.name}</span>
+                    <span style={officeStyles.confirmDelta}>{ch.from} → <strong>{ch.to}</strong></span>
+                  </div>
+                  <input
+                    style={{ width: '100%', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 6, padding: '6px 9px', fontSize: 12.5, fontFamily: 'inherit', outline: 'none' }}
+                    placeholder="Reason (optional) — e.g. recount, damaged, received shipment"
+                    value={stockReasons[ch.id] || ''}
+                    onChange={e => setStockReasons(prev => ({ ...prev, [ch.id]: e.target.value }))}
+                  />
                 </div>
               ))}
             </div>
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#5B6058', margin: '12px 0 4px' }}>Reason / note (saved with the change history)</label>
-            <input
-              style={{ width: '100%', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' }}
-              placeholder="e.g. annual count, received shipment, damaged units…"
-              value={stockNote}
-              onChange={e => setStockNote(e.target.value)}
-              autoFocus
-            />
             <div style={officeStyles.confirmActions}>
               <button
                 style={officeStyles.confirmCancel}
