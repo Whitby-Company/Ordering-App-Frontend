@@ -5821,8 +5821,89 @@ const REPORT_LIST = [
   { id: 'margin', name: 'Margin', desc: 'Sell vs. landed cost per customer & item — exact margin $ and %.' },
   { id: 'order-margin', name: 'Order margin', desc: 'Pick any order and see the margin per item and total profit instantly.' },
   { id: 'stock-changes', name: 'Stock changes', desc: 'Full audit trail of inventory changes — who changed what, when, and by how much.' },
+  { id: 'invoice-numbers', name: 'Invoice numbers', desc: 'Check invoice numbers for gaps or duplicates, and reconcile against a QuickBooks export.' },
   // Add more reports here as they\u2019re built.
 ];
+// Invoice-number audit: range, gaps, and duplicates in the app's invoice numbers.
+function InvoiceAuditReport({ onBack }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    apiGet('/orders/invoice-audit').then(setData).catch(e => setErr(e.message || 'Could not load audit.'));
+  }, []);
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Invoice numbers</div>
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 12 }}>{err}</div>}
+      {!data && !err && <div style={{ color: '#8A8F87', padding: 20 }}>Checking…</div>}
+      {data && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 760 }}>
+          {/* Summary cards */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={auditCard}><div style={auditNum}>{data.count}</div><div style={auditLbl}>Invoices</div></div>
+            <div style={auditCard}><div style={auditNum}>{data.range.min ?? '—'}–{data.range.max ?? '—'}</div><div style={auditLbl}>Number range</div></div>
+            <div style={auditCard}><div style={auditNum}>{data.nextNumber}</div><div style={auditLbl}>Next number</div></div>
+            <div style={{ ...auditCard, background: data.gapCount ? '#FDF3E3' : '#EAF1EE', borderColor: data.gapCount ? '#EAD3A8' : '#C4DDD2' }}>
+              <div style={{ ...auditNum, color: data.gapCount ? '#B5793B' : '#2B5D50' }}>{data.gapCount}</div><div style={auditLbl}>Gaps (missing #s)</div>
+            </div>
+            <div style={{ ...auditCard, background: data.duplicateCount ? '#FBEEE7' : '#EAF1EE', borderColor: data.duplicateCount ? '#E6C6B4' : '#C4DDD2' }}>
+              <div style={{ ...auditNum, color: data.duplicateCount ? '#B5493B' : '#2B5D50' }}>{data.duplicateCount}</div><div style={auditLbl}>Duplicates</div>
+            </div>
+          </div>
+
+          {/* Verdict */}
+          <div style={{ fontSize: 14, color: (data.gapCount || data.duplicateCount) ? '#B5793B' : '#2B5D50', fontWeight: 600 }}>
+            {(!data.gapCount && !data.duplicateCount)
+              ? '✓ Invoice numbers are clean — sequential with no gaps or duplicates.'
+              : `Found ${data.gapCount} gap${data.gapCount === 1 ? '' : 's'} and ${data.duplicateCount} duplicate${data.duplicateCount === 1 ? '' : 's'} — details below.`}
+          </div>
+
+          {/* Gaps */}
+          {data.gapCount > 0 && (
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Missing invoice numbers ({data.gapCount})</div>
+              <div style={{ fontSize: 13, color: '#5B6058', background: '#FBFBF9', border: '1px solid #E3E1D6', borderRadius: 8, padding: 10, maxHeight: 160, overflowY: 'auto', fontFamily: "'JetBrains Mono', monospace" }}>
+                {data.gaps.join(', ')}{data.gapCount > data.gaps.length ? ` … (+${data.gapCount - data.gaps.length} more)` : ''}
+              </div>
+              <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 4 }}>These numbers aren't used by any app invoice. That's expected if they were used in QuickBooks directly, or voided.</div>
+            </div>
+          )}
+
+          {/* Duplicates */}
+          {data.duplicateCount > 0 && (
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6, color: '#B5493B' }}>Duplicate invoice numbers ({data.duplicateCount})</div>
+              <table style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr><th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Orders sharing it</th></tr></thead>
+                <tbody>
+                  {data.duplicates.map(d => (
+                    <tr key={d.number}>
+                      <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{d.number}</td>
+                      <td style={repStyles.tdItem}>{d.orders.map(o => `#${o.id} ${o.customer || ''}`).join('  •  ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* QuickBooks reconciliation note */}
+          <div style={{ fontSize: 12.5, color: '#5B6058', background: '#F3F4F0', border: '1px solid #E3E1D6', borderRadius: 8, padding: 12 }}>
+            <strong>Reconcile against QuickBooks:</strong> to check these against QuickBooks, export an invoice list from QuickBooks (Reports → an invoice/sales list, exported to Excel/CSV) and we can add an upload here that matches the two sets and flags anything in one but not the other. Tell Matt's dev which columns your QuickBooks export has.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+const auditCard = { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, padding: '12px 16px', minWidth: 110, textAlign: 'center' };
+const auditNum = { fontSize: 20, fontWeight: 800, color: '#14181F' };
+const auditLbl = { fontSize: 11.5, color: '#8A8F87', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' };
+
 // Purchasing tab: list purchase orders, create new ones, and receive stock.
 // Upload a supplier PO PDF (Whitby/Storck format) → parse, match items, create PO.
 function POUploadModal({ items, onClose, onCreated }) {
@@ -6293,6 +6374,7 @@ function OfficeReports() {
   if (active === 'margin') return <MarginReport onBack={() => setActive(null)} />;
   if (active === 'order-margin') return <OrderMarginReport onBack={() => setActive(null)} />;
   if (active === 'stock-changes') return <StockChangesReport onBack={() => setActive(null)} />;
+  if (active === 'invoice-numbers') return <InvoiceAuditReport onBack={() => setActive(null)} />;
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
