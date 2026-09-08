@@ -5824,13 +5824,60 @@ const REPORT_LIST = [
   { id: 'invoice-numbers', name: 'Invoice numbers', desc: 'Check invoice numbers for gaps or duplicates, and reconcile against a QuickBooks export.' },
   // Add more reports here as they\u2019re built.
 ];
-// Invoice-number audit: range, gaps, and duplicates in the app's invoice numbers.
+// Invoice-number audit: range, gaps, and duplicates in the app's invoice numbers,
+// plus reconciliation against a QuickBooks invoice export.
 function InvoiceAuditReport({ onBack }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
+  const [recon, setRecon] = useState(null);
+  const [reconBusy, setReconBusy] = useState(false);
+  const [reconErr, setReconErr] = useState('');
+  const fileRef = useRef(null);
+
   useEffect(() => {
     apiGet('/orders/invoice-audit').then(setData).catch(e => setErr(e.message || 'Could not load audit.'));
   }, []);
+
+  async function onQbFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setReconBusy(true); setReconErr(''); setRecon(null);
+    try {
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      // Prefer a sheet named Sheet1, else the last sheet (QB puts a tips sheet first).
+      const sheetName = wb.SheetNames.includes('Sheet1') ? 'Sheet1' : wb.SheetNames[wb.SheetNames.length - 1];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
+      // Find the header row (has "Num" and "Type"), then read invoice numbers from the Num column.
+      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, amtCol = -1, custCol = -1;
+      for (let i = 0; i < Math.min(rows.length, 15); i++) {
+        const r = rows[i].map(c => String(c).trim().toLowerCase());
+        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); amtCol = r.indexOf('amount'); break; }
+      }
+      if (numCol < 0) { setReconErr('Could not find a "Num" column in the export. Make sure it\u2019s the QuickBooks invoice detail sheet.'); setReconBusy(false); return; }
+      const seen = new Map();
+      let curCustomer = '';
+      for (let i = hdrIdx + 1; i < rows.length; i++) {
+        const r = rows[i];
+        const type = typeCol >= 0 ? String(r[typeCol] || '').trim() : '';
+        // Customer group header: a row with a name in col 1 and no Type.
+        if (!type && r[1] && String(r[1]).trim()) { curCustomer = String(r[1]).trim(); continue; }
+        if (type.toLowerCase() !== 'invoice') continue;
+        const num = String(r[numCol] || '').trim();
+        if (!num || !/^\d+$/.test(num)) continue;
+        const n = Number(num);
+        if (!seen.has(n)) seen.set(n, { number: n, customer: curCustomer, date: dateCol >= 0 ? String(r[dateCol] || '').slice(0, 10) : '', total: 0 });
+        if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(n).total += a; }
+      }
+      const qbNumbers = [...seen.values()];
+      if (!qbNumbers.length) { setReconErr('No invoices found in that file.'); setReconBusy(false); return; }
+      const result = await apiPost('/orders/invoice-reconcile', { qbNumbers });
+      setRecon(result);
+    } catch (e2) { setReconErr('Could not read that file: ' + (e2.message || e2)); }
+    finally { setReconBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+  }
 
   return (
     <div>
@@ -5841,68 +5888,98 @@ function InvoiceAuditReport({ onBack }) {
       {err && <div style={{ color: '#B5493B', padding: 12 }}>{err}</div>}
       {!data && !err && <div style={{ color: '#8A8F87', padding: 20 }}>Checking…</div>}
       {data && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 760 }}>
-          {/* Summary cards */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 820 }}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={auditCard}><div style={auditNum}>{data.count}</div><div style={auditLbl}>Invoices</div></div>
+            <div style={auditCard}><div style={auditNum}>{data.count}</div><div style={auditLbl}>App invoices</div></div>
             <div style={auditCard}><div style={auditNum}>{data.range.min ?? '—'}–{data.range.max ?? '—'}</div><div style={auditLbl}>Number range</div></div>
             <div style={auditCard}><div style={auditNum}>{data.nextNumber}</div><div style={auditLbl}>Next number</div></div>
             <div style={{ ...auditCard, background: data.gapCount ? '#FDF3E3' : '#EAF1EE', borderColor: data.gapCount ? '#EAD3A8' : '#C4DDD2' }}>
-              <div style={{ ...auditNum, color: data.gapCount ? '#B5793B' : '#2B5D50' }}>{data.gapCount}</div><div style={auditLbl}>Gaps (missing #s)</div>
+              <div style={{ ...auditNum, color: data.gapCount ? '#B5793B' : '#2B5D50' }}>{data.gapCount}</div><div style={auditLbl}>Gaps</div>
             </div>
             <div style={{ ...auditCard, background: data.duplicateCount ? '#FBEEE7' : '#EAF1EE', borderColor: data.duplicateCount ? '#E6C6B4' : '#C4DDD2' }}>
               <div style={{ ...auditNum, color: data.duplicateCount ? '#B5493B' : '#2B5D50' }}>{data.duplicateCount}</div><div style={auditLbl}>Duplicates</div>
             </div>
           </div>
-
-          {/* Verdict */}
           <div style={{ fontSize: 14, color: (data.gapCount || data.duplicateCount) ? '#B5793B' : '#2B5D50', fontWeight: 600 }}>
-            {(!data.gapCount && !data.duplicateCount)
-              ? '✓ Invoice numbers are clean — sequential with no gaps or duplicates.'
-              : `Found ${data.gapCount} gap${data.gapCount === 1 ? '' : 's'} and ${data.duplicateCount} duplicate${data.duplicateCount === 1 ? '' : 's'} — details below.`}
+            {(!data.gapCount && !data.duplicateCount) ? '✓ App invoice numbers are clean — sequential, no gaps or duplicates.' : `App has ${data.gapCount} gap${data.gapCount === 1 ? '' : 's'} and ${data.duplicateCount} duplicate${data.duplicateCount === 1 ? '' : 's'}.`}
           </div>
-
-          {/* Gaps */}
           {data.gapCount > 0 && (
             <div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Missing invoice numbers ({data.gapCount})</div>
-              <div style={{ fontSize: 13, color: '#5B6058', background: '#FBFBF9', border: '1px solid #E3E1D6', borderRadius: 8, padding: 10, maxHeight: 160, overflowY: 'auto', fontFamily: "'JetBrains Mono', monospace" }}>
-                {data.gaps.join(', ')}{data.gapCount > data.gaps.length ? ` … (+${data.gapCount - data.gaps.length} more)` : ''}
-              </div>
-              <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 4 }}>These numbers aren't used by any app invoice. That's expected if they were used in QuickBooks directly, or voided.</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>App gaps ({data.gapCount})</div>
+              <div style={gapBox}>{data.gaps.join(', ')}{data.gapCount > data.gaps.length ? ` … (+${data.gapCount - data.gaps.length} more)` : ''}</div>
             </div>
           )}
-
-          {/* Duplicates */}
           {data.duplicateCount > 0 && (
             <div>
-              <div style={{ fontWeight: 700, marginBottom: 6, color: '#B5493B' }}>Duplicate invoice numbers ({data.duplicateCount})</div>
+              <div style={{ fontWeight: 700, marginBottom: 6, color: '#B5493B' }}>Duplicate numbers ({data.duplicateCount})</div>
               <table style={{ borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead><tr><th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Orders sharing it</th></tr></thead>
-                <tbody>
-                  {data.duplicates.map(d => (
-                    <tr key={d.number}>
-                      <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{d.number}</td>
-                      <td style={repStyles.tdItem}>{d.orders.map(o => `#${o.id} ${o.customer || ''}`).join('  •  ')}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                <tbody>{data.duplicates.map(d => <tr key={d.number}><td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{d.number}</td><td style={repStyles.tdItem}>{d.orders.map(o => `#${o.id} ${o.customer || ''}`).join('  •  ')}</td></tr>)}</tbody>
               </table>
             </div>
           )}
 
-          {/* QuickBooks reconciliation note */}
-          <div style={{ fontSize: 12.5, color: '#5B6058', background: '#F3F4F0', border: '1px solid #E3E1D6', borderRadius: 8, padding: 12 }}>
-            <strong>Reconcile against QuickBooks:</strong> to check these against QuickBooks, export an invoice list from QuickBooks (Reports → an invoice/sales list, exported to Excel/CSV) and we can add an upload here that matches the two sets and flags anything in one but not the other. Tell Matt's dev which columns your QuickBooks export has.
+          {/* QuickBooks reconciliation */}
+          <div style={{ borderTop: '1px solid #E3E1D6', paddingTop: 16, marginTop: 4 }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Reconcile against QuickBooks</div>
+            <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 10 }}>Upload a QuickBooks invoice export (the sales-by-customer detail with a "Num" column). We'll match invoice numbers and show what's in one system but not the other.</div>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onQbFile} disabled={reconBusy} />
+            {reconBusy && <span style={{ marginLeft: 10, color: '#8A8F87' }}>Reconciling…</span>}
+            {reconErr && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{reconErr}</div>}
+
+            {recon && (
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={auditCard}><div style={auditNum}>{recon.qbCount}</div><div style={auditLbl}>QB invoices</div></div>
+                  <div style={{ ...auditCard, background: '#EAF1EE', borderColor: '#C4DDD2' }}><div style={{ ...auditNum, color: '#2B5D50' }}>{recon.inBothCount}</div><div style={auditLbl}>In both</div></div>
+                  <div style={{ ...auditCard, background: recon.onlyAppCount ? '#FDF3E3' : '#fff', borderColor: recon.onlyAppCount ? '#EAD3A8' : '#E3E1D6' }}><div style={{ ...auditNum, color: recon.onlyAppCount ? '#B5793B' : '#14181F' }}>{recon.onlyAppCount}</div><div style={auditLbl}>Only in app</div></div>
+                  <div style={{ ...auditCard, background: recon.onlyQbCount ? '#FDF3E3' : '#fff', borderColor: recon.onlyQbCount ? '#EAD3A8' : '#E3E1D6' }}><div style={{ ...auditNum, color: recon.onlyQbCount ? '#B5793B' : '#14181F' }}>{recon.onlyQbCount}</div><div style={auditLbl}>Only in QB</div></div>
+                  <div style={{ ...auditCard, background: recon.gapCount ? '#FBEEE7' : '#EAF1EE', borderColor: recon.gapCount ? '#E6C6B4' : '#C4DDD2' }}><div style={{ ...auditNum, color: recon.gapCount ? '#B5493B' : '#2B5D50' }}>{recon.gapCount}</div><div style={auditLbl}>Missing (neither)</div></div>
+                </div>
+
+                {recon.onlyQbCount > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>In QuickBooks but not the app ({recon.onlyQbCount})</div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>Invoices made directly in QuickBooks (not from the app). Usually fine — just not in the app.</div>
+                    <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                        <thead><tr><th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Date</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th></tr></thead>
+                        <tbody>{recon.onlyQb.map(q => <tr key={q.number}><td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{q.number}</td><td style={repStyles.tdItem}>{q.customer || ''}</td><td style={repStyles.tdItem}>{q.date || ''}</td><td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{q.total ? formatMoney(q.total) : ''}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {recon.onlyAppCount > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>In the app but not QuickBooks ({recon.onlyAppCount})</div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>App orders that don't have a matching QuickBooks invoice yet — may still need to be entered/imported into QuickBooks.</div>
+                    <div style={gapBox}>{recon.onlyApp.map(a => a.number).join(', ')}</div>
+                  </div>
+                )}
+
+                {recon.gapCount > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 6, color: '#B5493B' }}>Missing from both ({recon.gapCount})</div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>Numbers in the overall range that neither system uses — the ones actually worth investigating (skipped or voided).</div>
+                    <div style={gapBox}>{recon.gaps.join(', ')}</div>
+                  </div>
+                )}
+
+                {recon.onlyAppCount === 0 && recon.onlyQbCount === 0 && recon.gapCount === 0 && (
+                  <div style={{ fontSize: 14, color: '#2B5D50', fontWeight: 600 }}>✓ Fully reconciled — every invoice number matches between the app and QuickBooks, with no gaps.</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
     </div>
   );
 }
-const auditCard = { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, padding: '12px 16px', minWidth: 110, textAlign: 'center' };
+const auditCard = { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 10, padding: '12px 16px', minWidth: 108, textAlign: 'center' };
 const auditNum = { fontSize: 20, fontWeight: 800, color: '#14181F' };
-const auditLbl = { fontSize: 11.5, color: '#8A8F87', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' };
+const auditLbl = { fontSize: 11, color: '#8A8F87', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.03em' };
+const gapBox = { fontSize: 13, color: '#5B6058', background: '#FBFBF9', border: '1px solid #E3E1D6', borderRadius: 8, padding: 10, maxHeight: 160, overflowY: 'auto', fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-word' };
 
 // Purchasing tab: list purchase orders, create new ones, and receive stock.
 // Upload a supplier PO PDF (Whitby/Storck format) → parse, match items, create PO.
