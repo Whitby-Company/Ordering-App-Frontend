@@ -4960,7 +4960,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   )}
                 </td>
                 <td style={officeStyles.td}>
-                  {(isItems && canEdit('brand')) ? <TextFieldEditor item={item} field="brand" onSaved={onRefresh} /> : item.brand}
+                  {(isItems && canEdit('brand')) ? <BrandSelectEditor item={item} brands={brandList} onSaved={onRefresh} /> : item.brand}
                 </td>
                 {isItems && (
                 <td style={officeStyles.td}>
@@ -5276,6 +5276,52 @@ const contentsStyles = {
   cancel: { background: '#EDEBE3', color: '#14181F', border: '1px solid #E3E1D6', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   save: { background: '#2B5D50', color: '#F7F8F4', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
 };
+
+// Brand editor as a dropdown of existing brands (prevents typos / duplicate
+// brands). Includes a "+ New brand…" escape hatch for genuinely new brands.
+function BrandSelectEditor({ item, brands, onSaved }) {
+  const original = item.brand || '';
+  const [saving, setSaving] = useState(false);
+  const options = useMemo(() => {
+    const set = new Set(brands);
+    if (original) set.add(original);
+    return Array.from(set).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }, [brands, original]);
+
+  async function changeTo(next) {
+    if (next === original) return;
+    setSaving(true);
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { brand: next });
+      await onSaved();
+    } catch (err) { /* keep old value on failure */ }
+    finally { setSaving(false); }
+  }
+
+  async function onSelect(e) {
+    const v = e.target.value;
+    if (v === '__new__') {
+      const name = (window.prompt('New brand name:') || '').trim();
+      if (name && name !== original) await changeTo(name);
+      else e.target.value = original;
+      return;
+    }
+    await changeTo(v);
+  }
+
+  return (
+    <select
+      style={{ ...officeStyles.select, minWidth: 120, maxWidth: 200, padding: '4px 6px', fontSize: 13, opacity: saving ? 0.5 : 1 }}
+      value={original}
+      onChange={onSelect}
+      disabled={saving}
+      title="Choose the item's brand"
+    >
+      {options.map(b => <option key={b} value={b}>{b}</option>)}
+      <option value="__new__">+ New brand…</option>
+    </select>
+  );
+}
 
 function TextFieldEditor({ item, field, onSaved, placeholder, small }) {
   const [editing, setEditing] = useState(false);
