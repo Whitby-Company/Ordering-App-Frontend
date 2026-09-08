@@ -5971,7 +5971,7 @@ function InvoiceAuditReport({ onBack }) {
                       In both — matched invoices ({recon.inBothCount})
                       {recon.totalMismatchCount > 0 && <span style={{ color: '#B5493B', fontWeight: 700 }}> · {recon.totalMismatchCount} total mismatch{recon.totalMismatchCount === 1 ? '' : 'es'}</span>}
                     </div>
-                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>App total includes 0.5% tax to match the invoice. ✓ = totals agree (within 2¢); ✗ = they differ (check that invoice).</div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>Compares the app subtotal against the QuickBooks total (both before tax). ✓ = totals agree (within 2¢); ✗ = they differ (check that invoice).</div>
                     <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #E3E1D6', borderRadius: 8 }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead><tr>
