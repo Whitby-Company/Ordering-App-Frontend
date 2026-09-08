@@ -5966,17 +5966,36 @@ function InvoiceAuditReport({ onBack }) {
 
                 {recon.inBothCount > 0 && (
                   <div>
-                    <div style={{ fontWeight: 700, marginBottom: 6, color: '#2B5D50' }}>In both — matched invoices ({recon.inBothCount})</div>
-                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>These invoice numbers appear in both QuickBooks and the app.</div>
-                    <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 6, color: '#2B5D50' }}>
+                      In both — matched invoices ({recon.inBothCount})
+                      {recon.totalMismatchCount > 0 && <span style={{ color: '#B5493B', fontWeight: 700 }}> · {recon.totalMismatchCount} total mismatch{recon.totalMismatchCount === 1 ? '' : 'es'}</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>App total includes 0.5% tax to match the invoice. ✓ = totals agree (within 2¢); ✗ = they differ (check that invoice).</div>
+                    <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #E3E1D6', borderRadius: 8 }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                        <thead><tr><th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Date</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th></tr></thead>
-                        <tbody>{recon.inBoth.map(q => <tr key={q.number}><td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{q.number}</td><td style={repStyles.tdItem}>{q.customer || ''}</td><td style={repStyles.tdItem}>{q.date || ''}</td><td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{q.total ? formatMoney(q.total) : ''}</td></tr>)}</tbody>
+                        <thead><tr>
+                          <th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Date</th>
+                          <th style={{ ...repStyles.th, textAlign: 'right' }}>App total</th>
+                          <th style={{ ...repStyles.th, textAlign: 'right' }}>QB total</th>
+                          <th style={{ ...repStyles.th, textAlign: 'center' }}>Match</th>
+                        </tr></thead>
+                        <tbody>{recon.inBoth.map(q => (
+                          <tr key={q.number} style={q.totalsMatch === false ? { background: '#FBEEE7' } : undefined}>
+                            <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{q.number}</td>
+                            <td style={repStyles.tdItem}>{q.customer || ''}</td>
+                            <td style={repStyles.tdItem}>{q.date || ''}</td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{q.appTotal != null ? formatMoney(q.appTotal) : ''}</td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{q.qbTotal != null ? formatMoney(q.qbTotal) : ''}</td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'center', fontWeight: 700, color: q.totalsMatch === false ? '#B5493B' : (q.totalsMatch ? '#2B5D50' : '#B9BDB2') }}>
+                              {q.totalsMatch == null ? '—' : (q.totalsMatch ? '✓' : `✗ ${q.diff > 0 ? '+' : ''}${formatMoney(q.diff)}`)}
+                            </td>
+                          </tr>
+                        ))}</tbody>
                       </table>
                     </div>
                     <button style={{ ...officeStyles.smallBtn, marginTop: 8 }} onClick={() => {
-                      const cols = ['Invoice #', 'Customer', 'Date', 'Total'];
-                      const lines = [cols, ...recon.inBoth.map(q => [q.number, q.customer || '', q.date || '', q.total != null ? q.total : ''])];
+                      const cols = ['Invoice #', 'Customer', 'Date', 'App total', 'QB total', 'Difference', 'Match'];
+                      const lines = [cols, ...recon.inBoth.map(q => [q.number, q.customer || '', q.date || '', q.appTotal != null ? q.appTotal : '', q.qbTotal != null ? q.qbTotal : '', q.diff != null ? q.diff : '', q.totalsMatch == null ? '' : (q.totalsMatch ? 'match' : 'MISMATCH')])];
                       const csv = lines.map(r => r.map(csvEscape).join(',')).join('\n');
                       const blob = new Blob([csv], { type: 'text/csv' });
                       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'invoices-in-both.csv'; a.click();
