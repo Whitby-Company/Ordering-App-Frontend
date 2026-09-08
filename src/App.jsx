@@ -684,7 +684,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const dd = order.deliveryDate ? order.deliveryDate.split('-') : null;
   const delivMMDDYY = dd ? `${dd[1]}.${dd[2]}.${dd[0].slice(2)}` : '';
   const shortNm = (c.shortName || c.name || '').trim();
-  const pdfName = [delivMMDDYY, shortNm, poNumber].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]/g, '') + '.pdf';
+  const pdfName = [delivMMDDYY, shortNm, poNumber ? `PO# ${poNumber}` : ''].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]/g, '') + '.pdf';
 
   const win = window.open('', '_blank', 'width=880,height=1000');
   if (!win) return;
