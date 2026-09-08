@@ -3455,6 +3455,11 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
     setNavStack(stack => (stack.length > 1 ? stack.slice(0, -1) : stack));
   }, []);
   const canGoBack = navStack.length > 1;
+  const [editingOrder, setEditingOrder] = useState(null);
+  const editOrderInNewTab = useCallback((o) => { setEditingOrder(o); setSection("neworder"); }, [setSection]);
+  // If the user navigates away from the New Order tab, drop the edit context so
+  // coming back later starts a fresh order.
+  useEffect(() => { if (section !== 'neworder' && editingOrder) setEditingOrder(null); }, [section]); // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshing, setRefreshing] = useState(false);
   // Badge counts only submitted-but-new orders (real work to process). Pending
   // drafts still appear in the Orders tab but don't inflate this "to-do" count.
@@ -3552,6 +3557,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'neworder' && (
           <div style={officeStyles.orderFormWrap}>
             <OrderTab
+              key={editingOrder ? `edit-${editingOrder.id}` : 'new'}
               items={activeItems}
               customers={activeCustomers}
               customersAll={customersAll}
@@ -3560,13 +3566,15 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
               printSequence={printSequence}
               barcodesOff={barcodesOff}
               setBarcodesOff={setBarcodesOff}
-              onOrderSubmitted={async () => { await onRefresh(); }}
+              editOrder={editingOrder}
+              onClose={editingOrder ? (() => { setEditingOrder(null); setSection('orders'); }) : null}
+              onOrderSubmitted={async () => { setEditingOrder(null); await onRefresh(); }}
               desktop
             />
           </div>
         )}
-        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} />}
-        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} />}
+        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
+        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
         {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
@@ -4063,7 +4071,7 @@ function PdfRowItemPicker({ items, value, onChange }) {
 }
 const pickRow = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '7px 6px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 
-function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all' }) {
+function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
@@ -4383,12 +4391,12 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           >
                             {processingId === o.id ? '…' : 'Submit'}
                           </button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>
                         </>
                       ) : (
                         <>
-                          <button style={officeStyles.smallBtn} onClick={() => setEditingOrder(o)}>Edit</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items, { savePdf: true })} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>{' '}
