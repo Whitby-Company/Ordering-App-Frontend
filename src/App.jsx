@@ -5980,7 +5980,10 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   async function receive(all) {
     setBusy(true);
     try {
-      const body = all ? { all: true } : { receipts: Object.entries(recv).map(([itemId, qty]) => ({ itemId, qty: Number(qty) || 0 })).filter(r => r.qty > 0) };
+      const who = getSubmitterName() || undefined;
+      const body = all
+        ? { all: true, receivedBy: who }
+        : { receivedBy: who, receipts: Object.entries(recv).map(([itemId, qty]) => ({ itemId, qty: Number(qty) || 0 })).filter(r => r.qty > 0) };
       await apiPost(`/purchase-orders/${poId}/receive`, body);
       setRecv({});
       await load(); await onChanged();
