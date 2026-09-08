@@ -3952,6 +3952,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // editing" (after a confirmation), so nothing changes by accident.
   const [pendingStock, setPendingStock] = useState({}); // { itemId: newValue }
   const [historyItem, setHistoryItem] = useState(null);
+  const [stockNote, setStockNote] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savingStock, setSavingStock] = useState(false);
   const [editingContents, setEditingContents] = useState(null); // item whose "contains" list is being edited
@@ -4000,10 +4001,11 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     setSavingStock(true);
     try {
       for (const ch of changes) {
-        await apiPatch(`/items/${encodeURIComponent(ch.id)}`, { stock: ch.to, changedBy: who || undefined });
+        await apiPatch(`/items/${encodeURIComponent(ch.id)}`, { stock: ch.to, changedBy: who || undefined, reason: stockNote.trim() || undefined });
       }
       await onRefresh();
       setPendingStock({});
+      setStockNote('');
       setConfirmOpen(false);
       setEditMode(false);
     } catch (err) {
@@ -4389,7 +4391,6 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              <th style={officeStyles.th}>Notes</th>
               <th style={officeStyles.th}></th>
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
@@ -4401,7 +4402,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 13 : 12) : 8}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 12 : 11) : 7}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
@@ -4471,11 +4472,6 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 </td>
                 )}
                 <td style={officeStyles.td}>
-                  {editMode ? (
-                    <ItemNotesField item={item} onRefresh={onRefresh} />
-                  ) : (item.notes ? <span style={{ fontSize: 12.5, color: '#5B6058' }}>{item.notes}</span> : <span style={{ color: '#B9BDB2' }}>—</span>)}
-                </td>
-                <td style={officeStyles.td}>
                   <button style={{ ...officeStyles.smallBtn, padding: '4px 8px' }} title="View stock change history" onClick={() => setHistoryItem(item)}>History</button>
                 </td>
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
@@ -4511,7 +4507,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               </tr>
               {isOpen && (() => {
                 const hist = orderHistoryFor(item.id);
-                const colSpan = isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 13 : 12) : 8;
+                const colSpan = isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7;
                 return (
                   <tr>
                     <td colSpan={colSpan} style={officeStyles.itemHistoryCell}>
@@ -4608,6 +4604,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 </div>
               ))}
             </div>
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#5B6058', margin: '12px 0 4px' }}>Reason / note (saved with the change history)</label>
+            <input
+              style={{ width: '100%', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' }}
+              placeholder="e.g. annual count, received shipment, damaged units…"
+              value={stockNote}
+              onChange={e => setStockNote(e.target.value)}
+              autoFocus
+            />
             <div style={officeStyles.confirmActions}>
               <button
                 style={officeStyles.confirmCancel}
@@ -5022,6 +5026,7 @@ function StockHistoryModal({ item, onClose }) {
                   <th style={{ ...shStyles.th, textAlign: 'right' }}>From</th>
                   <th style={{ ...shStyles.th, textAlign: 'right' }}>To</th>
                   <th style={{ ...shStyles.th, textAlign: 'right' }}>Change</th>
+                  <th style={shStyles.th}>Reason</th>
                 </tr></thead>
                 <tbody>
                   {log.map(r => (
@@ -5031,6 +5036,7 @@ function StockHistoryModal({ item, onClose }) {
                       <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.oldStock}</td>
                       <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.newStock}</td>
                       <td style={{ ...shStyles.td, textAlign: 'right', color: r.delta < 0 ? '#B5493B' : '#2B5D50', fontWeight: 700 }}>{r.delta > 0 ? '+' : ''}{r.delta}</td>
+                      <td style={{ ...shStyles.td, whiteSpace: 'normal', color: '#5B6058' }}>{r.reason || ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -5459,8 +5465,8 @@ function StockChangesReport({ onBack }) {
 
   function downloadCSV() {
     if (!log) return;
-    const cols = ['When', 'Item #', 'Item', 'Brand', 'By', 'From', 'To', 'Change'];
-    const lines = [cols, ...rows.map(r => [formatDateTime(r.changedAt), displayCode(r.itemId), r.item || '', r.brand || '', r.changedBy || '', r.oldStock, r.newStock, r.delta])];
+    const cols = ['When', 'Item #', 'Item', 'Brand', 'By', 'From', 'To', 'Change', 'Reason'];
+    const lines = [cols, ...rows.map(r => [formatDateTime(r.changedAt), displayCode(r.itemId), r.item || '', r.brand || '', r.changedBy || '', r.oldStock, r.newStock, r.delta, r.reason || ''])];
     downloadTextFile('stock-changes.csv', lines.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n'));
   }
 
@@ -5482,10 +5488,11 @@ function StockChangesReport({ onBack }) {
             <th style={repStyles.th}>From</th>
             <th style={repStyles.th}>To</th>
             <th style={repStyles.th}>Change</th>
+            <th style={{ ...repStyles.th, textAlign: 'left' }}>Reason</th>
           </tr></thead>
           <tbody>
-            {log === null && <tr><td colSpan={6} style={{ ...repStyles.tdItem, color: '#8A8F87' }}>Loading…</td></tr>}
-            {log !== null && rows.length === 0 && <tr><td colSpan={6} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No stock changes recorded.</td></tr>}
+            {log === null && <tr><td colSpan={7} style={{ ...repStyles.tdItem, color: '#8A8F87' }}>Loading…</td></tr>}
+            {log !== null && rows.length === 0 && <tr><td colSpan={7} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No stock changes recorded.</td></tr>}
             {rows.map(r => (
               <tr key={r.id}>
                 <td style={repStyles.tdItem}>{formatDateTime(r.changedAt)}</td>
@@ -5494,6 +5501,7 @@ function StockChangesReport({ onBack }) {
                 <td style={repStyles.tdNum}>{r.oldStock}</td>
                 <td style={repStyles.tdNum}>{r.newStock}</td>
                 <td style={{ ...repStyles.tdNum, color: r.delta < 0 ? '#B5493B' : '#2B5D50', fontWeight: 700 }}>{r.delta > 0 ? '+' : ''}{r.delta}</td>
+                <td style={{ ...repStyles.tdItem, whiteSpace: 'normal', color: '#5B6058' }}>{r.reason || ''}</td>
               </tr>
             ))}
           </tbody>
