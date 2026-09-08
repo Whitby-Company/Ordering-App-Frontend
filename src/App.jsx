@@ -3948,6 +3948,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // Stock changes are held here while editing and committed together on "Done
   // editing" (after a confirmation), so nothing changes by accident.
   const [pendingStock, setPendingStock] = useState({}); // { itemId: newValue }
+  const [historyItem, setHistoryItem] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [savingStock, setSavingStock] = useState(false);
   const [editingContents, setEditingContents] = useState(null); // item whose "contains" list is being edited
@@ -3987,10 +3988,16 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
 
   async function commitStockChanges() {
     const changes = realStockChanges();
+    // Who's making the change — reuse the saved name, else ask once.
+    let who = getSubmitterName();
+    if (!who) {
+      who = (window.prompt('Your name (for the inventory change log):') || '').trim();
+      if (who) { storeSubmitterName(who); window.dispatchEvent(new Event('submitter-name-changed')); }
+    }
     setSavingStock(true);
     try {
       for (const ch of changes) {
-        await apiPatch(`/items/${encodeURIComponent(ch.id)}`, { stock: ch.to });
+        await apiPatch(`/items/${encodeURIComponent(ch.id)}`, { stock: ch.to, changedBy: who || undefined });
       }
       await onRefresh();
       setPendingStock({});
@@ -4379,6 +4386,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
+              {isItems && <th style={officeStyles.th}>Notes</th>}
+              {isItems && <th style={officeStyles.th}></th>}
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
@@ -4389,7 +4398,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 11 : 10) : 6}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 13 : 12) : 6}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
@@ -4456,6 +4465,18 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   {canEdit('cost') ? (
                     <NumberFieldEditor item={item} field="cost" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} placeholder="—" />
                   ) : (item.cost != null ? formatMoney(item.cost) : <span style={{ color: '#B9BDB2' }}>—</span>)}
+                </td>
+                )}
+                {isItems && (
+                <td style={officeStyles.td}>
+                  {editMode ? (
+                    <ItemNotesField item={item} onRefresh={onRefresh} />
+                  ) : (item.notes ? <span style={{ fontSize: 12.5, color: '#5B6058' }}>{item.notes}</span> : <span style={{ color: '#B9BDB2' }}>—</span>)}
+                </td>
+                )}
+                {isItems && (
+                <td style={officeStyles.td}>
+                  <button style={{ ...officeStyles.smallBtn, padding: '4px 8px' }} title="View stock change history" onClick={() => setHistoryItem(item)}>History</button>
                 </td>
                 )}
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
@@ -4572,6 +4593,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           onEdit={() => { setEditingOrder(viewingOrder); setViewingOrder(null); }}
         />
       )}
+      {historyItem && <StockHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}
       {confirmOpen && (
         <div style={styles.editOverlay} onClick={() => !savingStock && setConfirmOpen(false)}>
           <div style={officeStyles.confirmCard} onClick={e => e.stopPropagation()}>
@@ -4956,6 +4978,77 @@ function ActiveToggle({ active, onToggle }) {
     </button>
   );
 }
+
+// Editable per-item note (saves on blur).
+function ItemNotesField({ item, onRefresh }) {
+  const [value, setValue] = useState(item.notes || '');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setValue(item.notes || ''); }, [item.notes]);
+  async function save() {
+    if ((value || '') === (item.notes || '')) return;
+    setSaving(true);
+    try { await apiPatch(`/items/${encodeURIComponent(item.id)}`, { notes: value }); await onRefresh(); }
+    catch { /* ignore */ } finally { setSaving(false); }
+  }
+  return (
+    <input
+      style={{ width: 180, background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 6, padding: '5px 8px', fontSize: 12.5, fontFamily: 'inherit', outline: 'none', opacity: saving ? 0.6 : 1 }}
+      value={value}
+      placeholder="Add a note…"
+      onChange={e => setValue(e.target.value)}
+      onBlur={save}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+    />
+  );
+}
+
+// Modal showing an item's stock-change history.
+function StockHistoryModal({ item, onClose }) {
+  const [log, setLog] = useState(null);
+  useEffect(() => {
+    apiGet(`/items/${encodeURIComponent(item.id)}/stock-log`).then(setLog).catch(() => setLog([]));
+  }, [item.id]);
+  return (
+    <div style={styles.editOverlay} onClick={onClose}>
+      <div style={{ ...officeStyles.confirmCard, width: 560, maxWidth: '94vw', maxHeight: '82vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>Stock history</div>
+        <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>{displayCode(item.id)} · {item.name}</div>
+        <div style={{ overflowY: 'auto' }}>
+          {log === null ? <div style={{ color: '#8A8F87', padding: 12 }}>Loading…</div>
+            : log.length === 0 ? <div style={{ color: '#8A8F87', fontStyle: 'italic', padding: 12 }}>No stock changes recorded yet.</div>
+            : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr>
+                  <th style={shStyles.th}>When</th><th style={shStyles.th}>Who</th>
+                  <th style={{ ...shStyles.th, textAlign: 'right' }}>From</th>
+                  <th style={{ ...shStyles.th, textAlign: 'right' }}>To</th>
+                  <th style={{ ...shStyles.th, textAlign: 'right' }}>Change</th>
+                </tr></thead>
+                <tbody>
+                  {log.map(r => (
+                    <tr key={r.id}>
+                      <td style={shStyles.td}>{formatDateTime(r.changedAt)}</td>
+                      <td style={shStyles.td}>{r.changedBy || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                      <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.oldStock}</td>
+                      <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.newStock}</td>
+                      <td style={{ ...shStyles.td, textAlign: 'right', color: r.delta < 0 ? '#B5493B' : '#2B5D50', fontWeight: 700 }}>{r.delta > 0 ? '+' : ''}{r.delta}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+        <div style={{ marginTop: 14, textAlign: 'right' }}>
+          <button style={officeStyles.smallBtn} onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const shStyles = {
+  th: { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '6px 8px', borderBottom: '1px solid #E3E1D6' },
+  td: { padding: '6px 8px', borderBottom: '1px solid #F0EEE6', color: '#14181F', whiteSpace: 'nowrap' },
+};
 
 function StockEditor({ item, pendingValue, onPendingChange }) {
   // In edit mode the value is held in the parent's pending map and only saved
