@@ -777,13 +777,20 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>'
     : '';
   const pdfScript = savePdf
-    ? '(function(){function go(){if(!window.jspdf||!window.html2canvas){return setTimeout(go,150);}' +
-      'var pages=document.querySelectorAll(".page");if(!pages.length){return setTimeout(go,150);}' +
-      'var jsPDF=window.jspdf.jsPDF;var pdf=new jsPDF({unit:"in",format:"letter"});var i=0;' +
-      'function next(){if(i>=pages.length){pdf.save(' + JSON.stringify(pdfName) + ');setTimeout(function(){window.close();},300);return;}' +
-      'html2canvas(pages[i],{scale:2,backgroundColor:"#ffffff"}).then(function(canvas){' +
-      'var img=canvas.toDataURL("image/jpeg",0.95);if(i>0)pdf.addPage();pdf.addImage(img,"JPEG",0,0,8.5,11);i++;next();});}' +
-      'next();}setTimeout(go,400);})();'
+    ? '(function(){' +
+      'var s=document.createElement("div");s.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#2B5D50;color:#fff;font-family:Arial;font-size:15px;font-weight:700;padding:12px 16px;text-align:center";s.textContent="Preparing PDF\\u2026";document.body.insertBefore(s,document.body.firstChild);' +
+      'var tries=0;' +
+      'function fail(msg){s.style.background="#B5493B";s.textContent=msg+" \\u2014 you can print instead (Ctrl/Cmd+P). Close this window when done.";}' +
+      'function go(){tries++;' +
+      'if(tries>60){return fail("Could not load the PDF tool");}' +
+      'if(!window.jspdf||!window.html2canvas){return setTimeout(go,200);}' +
+      'var pages=document.querySelectorAll(".page");if(!pages.length){return setTimeout(go,200);}' +
+      'try{var jsPDF=window.jspdf.jsPDF;var pdf=new jsPDF({unit:"in",format:"letter"});var i=0;' +
+      'function next(){if(i>=pages.length){try{pdf.save(' + JSON.stringify(pdfName) + ');s.style.background="#2B5D50";s.textContent="Saved: ' + JSON.stringify(pdfName).replace(/^"|"$/g,'').replace(/'/g,"") + ' \\u2014 you can close this window.";}catch(e){fail("Save failed: "+e.message);}return;}' +
+      's.textContent="Rendering page "+(i+1)+" of "+pages.length+"\\u2026";' +
+      'html2canvas(pages[i],{scale:2,backgroundColor:"#ffffff"}).then(function(canvas){try{var img=canvas.toDataURL("image/jpeg",0.95);if(i>0)pdf.addPage();pdf.addImage(img,"JPEG",0,0,8.5,11);i++;next();}catch(e){fail("Render error: "+e.message);}}).catch(function(e){fail("Render error: "+(e&&e.message||e));});}' +
+      'next();}catch(e){fail("PDF error: "+e.message);}}' +
+      'setTimeout(go,500);})();'
     : '';
 
   win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>Invoice ' + invoiceNumberFor(order) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
