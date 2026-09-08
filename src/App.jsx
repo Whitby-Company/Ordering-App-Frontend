@@ -1115,6 +1115,24 @@ export default function App() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Auto-refresh so changes made on another device (e.g. a coworker editing
+  // stock) show up without a manual reload. Refresh when the app regains focus
+  // or becomes visible again (the common "reopen mobile" case), and gently in
+  // the background. In-progress orders/stock edits live in their own local
+  // state, so refreshing the shared data doesn't disturb them.
+  useEffect(() => {
+    const refresh = () => { if (!document.hidden) loadAll(); };
+    const onVisible = () => { if (!document.hidden) loadAll(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    const iv = setInterval(refresh, 60000); // every 60s while visible
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(iv);
+    };
+  }, [loadAll]);
+
   const containerStyle = isDesktop ? styles.appDesktop : styles.app;
 
   if (status === 'loading') {
