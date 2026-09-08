@@ -754,19 +754,27 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     'function newPage(){var pg=document.createElement("div");pg.className="page";' +
     'pg.innerHTML=\'<div class="pg-head">\'+HDR+\'</div><table class="sheet">\'+COLG+\'<thead>\'+COLH+\'</thead><tbody class="rowbody"></tbody></table><div class="pg-footer"></div>\';' +
     'pagesEl.appendChild(pg);return pg;}' +
-    'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=\'<div class="contd">Continued</div>\'+TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
-    'var footerH=probe.querySelector(".pg-footer").offsetHeight;pagesEl.removeChild(probe);' +
-    'var RESERVE=footerH-6;' +
+    // Measure two footer heights: small (continued + page #) for non-last pages,
+    // full (totals + signature + page #) for the last page.
+    'var probe=newPage();probe.querySelector(".pg-footer").innerHTML=TOT+SIG+\'<div class="pnum">Page 1 of 1</div>\';' +
+    'var fullFooterH=probe.querySelector(".pg-footer").offsetHeight;' +
+    'probe.querySelector(".pg-footer").innerHTML=\'<div class="contd">Continued on next page</div><div class="pnum">Page 1 of 1</div>\';' +
+    'var smallFooterH=probe.querySelector(".pg-footer").offsetHeight;pagesEl.removeChild(probe);' +
+    'var BOTTOM=(0.3*96);' +
     'var pg=newPage(),tbody=pg.querySelector("tbody.rowbody");' +
-    'function over(){var tb=pg.querySelector("table.sheet").getBoundingClientRect(),pr=pg.getBoundingClientRect();return tb.bottom>(pr.bottom-(0.3*96)-RESERVE);}' +
+    'function over(reserve){var tb=pg.querySelector("table.sheet").getBoundingClientRect(),pr=pg.getBoundingClientRect();return tb.bottom>(pr.bottom-BOTTOM-reserve);}' +
+    // Pack rows using only the SMALL footer reserve so pages fill up.
     'for(var i=0;i<srcRows.length;i++){var r=srcRows[i];tbody.appendChild(r);' +
-    'if(over()&&tbody.children.length>1){' +
+    'if(over(smallFooterH-6)&&tbody.children.length>1){' +
     'var isContain=r.className.indexOf("containrow")>=0;' +
     'var prev=isContain?r.previousElementSibling:null;' +
     'tbody.removeChild(r);if(prev&&prev.parentNode===tbody)tbody.removeChild(prev);' +
     'pg=newPage();tbody=pg.querySelector("tbody.rowbody");' +
     'if(prev)tbody.appendChild(prev);tbody.appendChild(r);}' +
     '}' +
+    // The totals go on the last page. If they do not fit under the rows there,
+    // start one more page just for the totals.
+    'if(over(fullFooterH-6)&&tbody.children.length>0){pg=newPage();}' +
     'var all=pagesEl.querySelectorAll(".page"),N=all.length;' +
     'for(var p=0;p<N;p++){var isLast=(p===N-1);' +
     'var totBlock=isLast?(TOT+SIG):"";' +
