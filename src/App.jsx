@@ -2148,14 +2148,20 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
         await onOrderSubmitted();
         return;
       }
+      // Which ordered items weren't in this customer's catalog — offer to add them.
+      const offCatalog = (catalog && catalog.ids && !catalog.off)
+        ? orderLines.filter(l => !catalog.ids.has(l.id)).map(l => ({ id: l.id, name: l.name }))
+        : [];
       setConfirmed({
         customer: customerName,
+        customerId,
         deliveryDate,
         submittedAt: 'Just now',
         submittedBy: result.submittedBy || submitterName || null,
         notes: result.notes || null,
         lines: result.lines,
         totalUnits,
+        offCatalog,
       });
       resetForm();
       await onOrderSubmitted(); // refresh items + order history from server
@@ -2926,6 +2932,16 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
 }
 
 function Confirmation({ data, onNewOrder }) {
+  const off = data.offCatalog || [];
+  const [addState, setAddState] = useState('idle'); // idle | adding | added
+  async function addToCatalog() {
+    if (!data.customerId || !off.length) return;
+    setAddState('adding');
+    try {
+      await apiPut(`/customers/${data.customerId}/catalog/items`, { add: off.map(o => o.id) });
+      setAddState('added');
+    } catch { setAddState('idle'); }
+  }
   return (
     <div style={styles.screenWrap}>
       <div style={styles.confirmWrap}>
@@ -2966,6 +2982,27 @@ function Confirmation({ data, onNewOrder }) {
             </div>
           )}
         </div>
+
+        {off.length > 0 && data.customerId && (
+          <div style={{ background: '#FDF3E3', border: '1px solid #EAD3A8', borderRadius: 10, padding: '12px 14px', marginBottom: 12, textAlign: 'left' }}>
+            {addState === 'added' ? (
+              <div style={{ fontSize: 13.5, color: '#2B5D50', fontWeight: 600 }}>✓ Added {off.length} item{off.length === 1 ? '' : 's'} to {data.customer}'s catalog.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#5B6058', marginBottom: 4 }}>{off.length} item{off.length === 1 ? '' : 's'} not in {data.customer}'s catalog</div>
+                <div style={{ fontSize: 12.5, color: '#8A8F87', marginBottom: 8 }}>{off.map(o => o.name).join(', ')}</div>
+                <button
+                  style={{ ...styles.allItemsChip, ...styles.allItemsChipOn, cursor: 'pointer' }}
+                  onClick={addToCatalog}
+                  disabled={addState === 'adding'}
+                >
+                  {addState === 'adding' ? 'Adding…' : `Add to ${data.customer}'s catalog`}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         <div style={styles.confirmNote}>
           Saved to your live database — inventory updated for the whole team. This is where the order would also queue for QuickBooks.
         </div>
