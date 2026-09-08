@@ -650,8 +650,8 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '<tr class="boxrow"><td class="lbl">INVOICE #</td><td class="val">' + invoiceNumberFor(order) + '</td></tr>' +
     '<tr class="termsrow"><td class="lbl">TERMS:</td><td class="val">' + esc((c.terms && String(c.terms).trim()) || '1% 10 Net 11') + '</td></tr></table></td></tr></table>' +
     '<table class="addrs"><tr>' +
-    '<td><div class="addr-lbl">BILL TO:</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></td>' +
-    '<td class="shipcol"><div class="addr-lbl">SHIP TO:</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></td></tr></table>' +
+    '<td><div class="addr-wrap"><div class="addr-vlbl">BILL TO</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></div></td>' +
+    '<td class="shipcol"><div class="addr-wrap"><div class="addr-vlbl">SHIP TO</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></div></td></tr></table>' +
     '<div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">' + (esc(poNumber) || '&nbsp;') + '</td></tr></table></div>';
 
   const TOT =
@@ -709,8 +709,9 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '.addrs { width: 100%; margin: 18px 0 0; }' +
     '.addrs td { vertical-align: top; width: 50%; padding: 0; }' +
     '.addrs td.shipcol { padding-left: 48px; }' +
-    ".addr-lbl { font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; margin-bottom: 4px; }" +
-    '.addr-body { font-size: 13px; line-height: 1.4; }' +
+    '.addr-wrap { display: flex; align-items: stretch; gap: 10px; }' +
+    '.addr-vlbl { writing-mode: vertical-lr; transform: rotate(180deg); text-align: center; font-weight: bold; font-size: 11px; font-family: Arial, sans-serif; letter-spacing: 1px; border: 1px solid #000; padding: 4px 2px; white-space: nowrap; }' +
+    '.addr-body { font-size: 13px; line-height: 1.4; padding-top: 1px; }' +
     '.pobox { margin: 20px 0 6px; }' +
     '.pobox table { border-collapse: collapse; }' +
     '.pobox td.lbl { border: 1px solid #000; font-weight: bold; padding: 8px 18px; font-size: 15px; text-align: center; }' +
