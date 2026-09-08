@@ -473,6 +473,11 @@ function printOrder(order, printSequence, options = {}) {
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
   const orderedLines = sortLinesForPrint(order.lines, printSequence, !!(customer && customer.usePrintOrder));
+  // Print title / suggested PDF name: "MM.DD.YY <short name> PO#<po>".
+  const _dd = order.deliveryDate ? String(order.deliveryDate).split('-') : null;
+  const _delivMMDDYY = _dd ? `${_dd[1]}.${_dd[2]}.${_dd[0].slice(2)}` : '';
+  const _shortNm = (customer && (customer.shortName || customer.name) || '').trim();
+  const printTitle = [_delivMMDDYY, _shortNm, poNumber ? `PO#${poNumber}` : ''].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]/g, '') || `Order ${order.id}`;
   const rows = orderedLines.map(l => {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
@@ -498,7 +503,7 @@ function printOrder(order, printSequence, options = {}) {
   const totalColspan = withUpc ? 7 : 6;     // columns before the final Order total value
   const win = window.open('', '_blank', 'width=800,height=900');
   if (!win) return;
-  win.document.write(`<!doctype html><html><head><title>Order ${order.id}${withUpc ? ' (UPC)' : ''}</title>
+  win.document.write(`<!doctype html><html><head><title>${printTitle}</title>
     <meta charset="utf-8" />
     <style>
       body { font-family: Arial, Helvetica, sans-serif; padding: 28px; color: #14181F; }
@@ -806,7 +811,8 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       'setTimeout(go,500);})();'
     : '';
 
-  win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>Invoice ' + invoiceNumberFor(order) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
+  const printTitle = pdfName.replace(/\.pdf$/, '');
+  win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
     (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
     '<div id="pages"></div>' +
     '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
