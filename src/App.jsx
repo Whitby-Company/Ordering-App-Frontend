@@ -3578,7 +3578,31 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
   );
 }
 
-// ---- Order-file PDF parsers ----
+// Parse a Whitby/Storck purchasing sales-order PDF (a PO for incoming stock).
+// Line shape: QTY Item# Pack Description Price Amount.
+function parseWhitbyPO(text) {
+  const flat = text.replace(/\s+/g, ' ');
+  const refM = flat.match(/CUSTOMER PO #:?\s*([A-Z0-9-]+)/i);
+  const dateM = flat.match(/ORDER DATE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  const supM = flat.match(/Representing:?\s*([A-Za-z0-9 .&]+?)\s+(?:Hawken|Bill|Ship|P\.?O\.?)/i);
+  const rows = [];
+  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z-]{3,12})\s+(\d+\/[\d.]+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
+  let m;
+  while ((m = lineRe.exec(flat)) !== null) {
+    const [, qty, code, pack, desc, price] = m;
+    if (/total|weight|cube/i.test(desc)) continue;
+    rows.push({
+      qty: parseInt(qty, 10),
+      code: code.trim(),
+      pack: pack.trim(),
+      desc: desc.trim().replace(/\s*\([0-9]+\)\*?\s*$/, ''),
+      price: parseFloat(price.replace(/,/g, '')),
+    });
+  }
+  return { reference: refM ? refM[1] : '', orderDate: dateM ? dateM[1] : '', supplier: supM ? supM[1].trim() : '', rows };
+}
+
+// Order-file PDF parsers (customer orders).
 // Fuzzy name match: fraction of the shorter word-set found in the other.
 function nameMatchScore(descWords, itemWords) {
   if (!descWords.size || !itemWords.size) return 0;
@@ -5800,12 +5824,142 @@ const REPORT_LIST = [
   // Add more reports here as they\u2019re built.
 ];
 // Purchasing tab: list purchase orders, create new ones, and receive stock.
+// Upload a supplier PO PDF (Whitby/Storck format) → parse, match items, create PO.
+function POUploadModal({ items, onClose, onCreated }) {
+  const [step, setStep] = useState('file'); // file | review
+  const [rows, setRows] = useState([]); // [{code, desc, qty, price, item, score}]
+  const [supplier, setSupplier] = useState('');
+  const [reference, setReference] = useState('');
+  const [rawText, setRawText] = useState('');
+  const [showRaw, setShowRaw] = useState(false);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const itemByCode = useMemo(() => { const m = {}; for (const it of items) m[displayCode(it.id).toLowerCase()] = it; return m; }, [items]);
+  const itemWordSets = useMemo(() => items.map(it => ({ it, ws: wordSet(it.name) })), [items]);
+  function matchItem(code, desc) {
+    const v = String(code || '').trim().toLowerCase();
+    // exact, then code+trailing letter (399554 -> 399554c), then fuzzy name
+    let hit = itemByCode[v];
+    if (!hit) for (const suf of ['c', 'a', 'b']) { if (itemByCode[v + suf]) { hit = itemByCode[v + suf]; break; } }
+    if (hit) return { item: hit, score: 1 };
+    if (desc) {
+      const dw = wordSet(desc);
+      let best = null, score = 0;
+      for (const { it, ws } of itemWordSets) { const sc = nameMatchScore(dw, ws); if (sc > score) { score = sc; best = it; } }
+      if (score >= 0.5) return { item: best, score };
+    }
+    return { item: null, score: 0 };
+  }
+
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setBusy(true); setErr('');
+    try {
+      const pdfjs = await import('pdfjs-dist/build/pdf');
+      pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min?url')).default;
+      const buf = await file.arrayBuffer();
+      const doc = await pdfjs.getDocument({ data: buf }).promise;
+      let text = '';
+      for (let p = 1; p <= doc.numPages; p++) {
+        const page = await doc.getPage(p);
+        const content = await page.getTextContent();
+        const its = content.items.filter(i => i.str && i.str.trim() !== '').map(i => ({ x: i.transform[4], y: i.transform[5], s: i.str })).sort((a, b) => b.y - a.y || a.x - b.x);
+        const TOL = 3; const lines = []; let cur = null, curY = null;
+        for (const it of its) { if (cur && Math.abs(it.y - curY) <= TOL) cur.push(it); else { if (cur) lines.push(cur); cur = [it]; curY = it.y; } }
+        if (cur) lines.push(cur);
+        for (const line of lines) { const s = line.sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ').trim(); if (s) text += s + '\n'; }
+      }
+      setRawText(text);
+      const parsed = parseWhitbyPO(text);
+      if (!parsed.rows.length) { setErr('Could not find PO lines in this PDF. Use "Show extracted text" to check.'); setShowRaw(true); setBusy(false); return; }
+      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, item: m.item, score: m.score }; });
+      setRows(matched);
+      setReference(parsed.reference || '');
+      setSupplier(parsed.supplier || 'Storck');
+      setStep('review');
+    } catch (e2) { setErr('Could not read that PDF: ' + (e2.message || e2)); }
+    finally { setBusy(false); }
+  }
+
+  const matchedCount = rows.filter(r => r.item && r.qty > 0).length;
+
+  async function createPO() {
+    const lines = rows.filter(r => r.item && r.qty > 0).map(r => ({ itemId: r.item.id, qty: r.qty }));
+    if (!lines.length) { setErr('No matched items to add.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await apiPost('/purchase-orders', { supplier: supplier || 'Storck', reference: reference || null, lines });
+      await onCreated();
+    } catch (e3) { setErr(e3.message || 'Could not create the PO.'); setBusy(false); }
+  }
+
+  return (
+    <div style={styles.editOverlay} onClick={() => !busy && onClose()}>
+      <div style={{ ...officeStyles.confirmCard, width: 720, maxWidth: '95vw', maxHeight: '88vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={officeStyles.confirmTitle}>Upload a purchase order</div>
+        {step === 'file' && (
+          <div style={{ padding: '16px 0' }}>
+            <p style={{ fontSize: 13.5, color: '#5B6058', marginTop: 0 }}>Choose a supplier order PDF. It'll be matched to your items and turned into a PO you can review before creating.</p>
+            <input type="file" accept=".pdf" onChange={onFile} />
+            {busy && <div style={{ marginTop: 10, color: '#8A8F87' }}>Reading…</div>}
+            {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{err}</div>}
+          </div>
+        )}
+        {step === 'review' && (
+          <div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '10px 0 12px' }}>
+              <label style={uplStyles.field}><span style={uplStyles.lbl}>Supplier</span>
+                <input style={{ ...uplStyles.input, width: 200 }} value={supplier} onChange={e => setSupplier(e.target.value)} />
+              </label>
+              <label style={uplStyles.field}><span style={uplStyles.lbl}>Reference / PO #</span>
+                <input style={{ ...uplStyles.input, width: 200 }} value={reference} onChange={e => setReference(e.target.value)} />
+              </label>
+            </div>
+            <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 6 }}>
+              <strong>{matchedCount}</strong> of {rows.length} lines matched. Fix any unmatched item below.
+            </div>
+            <div style={uplStyles.previewWrap}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>Qty</th><th style={uplStyles.th}>Matched item</th></tr></thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
+                      <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
+                      <td style={{ ...uplStyles.td, textAlign: 'right' }}>{r.qty}</td>
+                      <td style={uplStyles.td}>
+                        <PdfRowItemPicker items={items} value={r.item} onChange={it => setRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x))} />
+                        {r.item && r.score < 0.9 && r.score > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#B5793B' }}>uncertain — confirm</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{err}</div>}
+            <div style={{ marginTop: 10 }}>
+              <button style={{ background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }} onClick={() => setShowRaw(v => !v)}>{showRaw ? 'Hide extracted text' : 'Show extracted text (for troubleshooting)'}</button>
+              {showRaw && <textarea readOnly value={rawText} style={{ width: '100%', height: 130, marginTop: 6, fontSize: 11, fontFamily: 'monospace', border: '1px solid #D6D3C6', borderRadius: 6, padding: 8, boxSizing: 'border-box' }} />}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
+              <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={createPO} disabled={busy || matchedCount === 0}>{busy ? 'Creating…' : `Create PO (${matchedCount} items)`}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OfficePurchasing({ items, onRefresh }) {
   const [pos, setPos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list'); // list | new | detail
   const [selId, setSelId] = useState(null);
   const [statusFilter, setStatusFilter] = useState('open');
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -5831,9 +5985,11 @@ function OfficePurchasing({ items, onRefresh }) {
 
   return (
     <div>
+      {uploadOpen && <POUploadModal items={items} onClose={() => setUploadOpen(false)} onCreated={async () => { setUploadOpen(false); await load(); }} />}
       <div style={officeStyles.sectionHeader}>
         <div style={officeStyles.sectionTitle}>Purchasing</div>
         <button style={officeStyles.smallBtn} onClick={() => setView('new')}>+ New PO</button>
+        <button style={officeStyles.smallBtn} onClick={() => setUploadOpen(true)} title="Create a PO from a supplier order PDF">↑ Upload PO</button>
         <div style={{ display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 8, overflow: 'hidden' }}>
           {[['open', 'Open'], ['received', 'Received'], ['all', 'All']].map(([id, label]) => (
             <button key={id} style={{ background: statusFilter === id ? '#2B5D50' : '#FFFFFF', color: statusFilter === id ? '#F7F8F4' : '#8A8F87', border: 'none', padding: '7px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => setStatusFilter(id)}>{label}</button>
