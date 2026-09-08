@@ -3586,6 +3586,18 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
   const [unit, setUnit] = useState('box');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [savedMap, setSavedMap] = useState({}); // "source|key" -> itemId
+  const [pdfFormat, setPdfFormat] = useState('');
+
+  // Load remembered manual matches once.
+  useEffect(() => {
+    apiGet('/items/import-map').then(rows => {
+      const m = {};
+      for (const r of rows) m[`${r.source || ''}|${String(r.fileKey).toLowerCase()}`] = r.itemId;
+      setSavedMap(m);
+    }).catch(() => {});
+  }, []);
+  const itemByIdExact = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
 
   const itemById = useMemo(() => { const m = {}; for (const it of items) m[String(it.id).toLowerCase()] = it; return m; }, [items]);
   const itemByCode = useMemo(() => { const m = {}; for (const it of items) m[displayCode(it.id).toLowerCase()] = it; return m; }, [items]);
@@ -3708,10 +3720,18 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
         setErr('Could not recognize this PDF format. Try a CSV/Excel export instead.');
         setBusy(false); return;
       }
-      // Match each parsed row: item code first, then UPC, then fuzzy name.
+      setPdfFormat(format);
+      // Match each parsed row: remembered manual match first, then item code,
+      // then UPC, then fuzzy name.
+      const remember = (key) => {
+        if (!key) return null;
+        const id = savedMap[`${format}|${String(key).toLowerCase()}`] || savedMap[`|${String(key).toLowerCase()}`];
+        return id ? itemByIdExact[id] : null;
+      };
       const matched = prows.map(r => {
-        let item = r.code ? findItem(r.code) : null;
+        let item = remember(r.code) || remember(r.upc);
         let score = item ? 1 : 0;
+        if (!item && r.code) { item = findItem(r.code); score = item ? 1 : 0; }
         if (!item && r.upc) { const u = matchUpc(r.upc); if (u) { item = u; score = 1; } }
         if (!item && r.desc) { const nm = findItemByName(r.desc); item = nm.item; score = nm.score; }
         return { rawItem: r.code || '', upc: r.upc || '', desc: r.desc, qty: r.qty, unit: r.unit, item, score };
@@ -3809,7 +3829,17 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
                       </td>
                       <td style={{ ...uplStyles.td, textAlign: 'right' }}>{r.qty} {r.unit === 'case' ? 'cs' : ''}</td>
                       <td style={uplStyles.td}>
-                        <PdfRowItemPicker items={items} value={r.item} onChange={it => setPdfRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x))} />
+                        <PdfRowItemPicker items={items} value={r.item} onChange={it => {
+                          setPdfRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x));
+                          // Remember this manual match for next time (keyed by the
+                          // file's code, else its UPC).
+                          const key = r.rawItem || r.upc;
+                          if (it && key) {
+                            const m = { ...savedMap, [`${pdfFormat}|${String(key).toLowerCase()}`]: it.id };
+                            setSavedMap(m);
+                            apiPost('/items/import-map', { source: pdfFormat, fileKey: key, itemId: it.id }).catch(() => {});
+                          }
+                        }} />
                         {r.item && r.score < 0.9 && r.score > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#B5793B' }}>uncertain — confirm</span>}
                       </td>
                     </tr>
