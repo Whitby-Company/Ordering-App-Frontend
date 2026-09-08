@@ -3035,6 +3035,20 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
 
+  // Finalize a pending draft order -> submitted (reserves stock).
+  async function submitPending(orderId) {
+    setProcessingId(orderId);
+    setIifError('');
+    try {
+      await apiPatch(`/orders/${orderId}/submit`, {});
+      if (onOrderChanged) await onOrderChanged();
+    } catch (err) {
+      setIifError(err.message || 'Could not submit this pending order.');
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
   async function setProcessed(orderId, processed) {
     setProcessingId(orderId);
     try {
@@ -3168,6 +3182,15 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                     </div>
                   )}
                   <div style={styles.orderCardActions}>
+                    {o.status === 'pending' && (
+                      <button
+                        style={{ ...styles.orderCardActionBtn, background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' }}
+                        onClick={() => submitPending(o.id)}
+                        disabled={processingId === o.id}
+                      >
+                        {processingId === o.id ? 'Submitting…' : 'Submit order'}
+                      </button>
+                    )}
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
                   </div>
