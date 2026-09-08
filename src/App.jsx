@@ -3534,10 +3534,26 @@ function wordSet(s) {
 function parseSevenEleven(text) {
   const lines = text.split('\n');
   const out = [];
-  const re = /(?:^|\s)(\d{2,6})?\s+(\d{11,13})\s+(.+?)\s+(\d+)\s+(\d+)\s+[\d,]+\.\d{2}\s*$/;
-  for (const line of lines) {
-    const m = line.match(re);
-    if (m) out.push({ code: (m[1] || '').trim(), upc: m[2], desc: m[3].trim(), qty: parseInt(m[4], 10), unit: 'box' });
+  for (let raw of lines) {
+    const line = raw.replace(/\s+/g, ' ').trim();
+    if (!line) continue;
+    if (/vend prod code|shipment total|description\s+qty/i.test(line)) continue;
+    // A data line contains a 11-13 digit UPC. Optional vend code before it.
+    const upcM = line.match(/(?:^|\s)(\d{2,6})?\s*\b(\d{11,13})\b\s+(.+)$/);
+    if (!upcM) continue;
+    const code = (upcM[1] || '').trim();
+    const upc = upcM[2];
+    let rest = upcM[3];
+    // The tail of the line is: description ... qty ldu extendedCost.
+    // Pull the last three numbers; qty is the first of the three.
+    const tail = rest.match(/^(.+?)\s+(\d+)\s+(\d+)\s+[\d,]+\.\d{2}\s*$/);
+    if (tail) {
+      out.push({ code, upc, desc: tail[1].trim(), qty: parseInt(tail[2], 10), unit: 'box' });
+    } else {
+      // Fallback: description then a lone quantity somewhere before a money value.
+      const q = rest.match(/^(.+?)\s+(\d+)\s+\d+\s+[\d,]+\.\d{2}/) || rest.match(/^(.+?)\s+(\d+)\b/);
+      if (q) out.push({ code, upc, desc: q[1].trim(), qty: parseInt(q[2], 10), unit: 'box' });
+    }
   }
   return out;
 }
@@ -3592,7 +3608,15 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
     }
     return m;
   }, [items]);
-  const itemByUpc = useMemo(() => { const m = {}; for (const it of items) if (it.upc) m[String(it.upc).replace(/\D/g, '')] = it; return m; }, [items]);
+  const itemByUpc = useMemo(() => {
+    const m = {};
+    for (const it of items) {
+      if (!it.upc) continue;
+      const digits = String(it.upc).replace(/\D/g, '');
+      if (digits) { m[digits] = it; m[digits.replace(/^0+/, '')] = it; }
+    }
+    return m;
+  }, [items]);
 
   function findItem(raw) {
     const v = String(raw ?? '').trim().toLowerCase();
@@ -3681,12 +3705,13 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
         setErr('Could not recognize this PDF format. Try a CSV/Excel export instead.');
         setBusy(false); return;
       }
-      // Match each parsed row: code first, then fuzzy name.
+      // Match each parsed row: item code first, then UPC, then fuzzy name.
       const matched = prows.map(r => {
         let item = r.code ? findItem(r.code) : null;
         let score = item ? 1 : 0;
+        if (!item && r.upc) { const u = itemByUpc[String(r.upc).replace(/\D/g, '').replace(/^0+/, '')] || itemByUpc[String(r.upc).replace(/\D/g, '')]; if (u) { item = u; score = 1; } }
         if (!item && r.desc) { const nm = findItemByName(r.desc); item = nm.item; score = nm.score; }
-        return { rawItem: r.code || r.desc, desc: r.desc, qty: r.qty, unit: r.unit, item, score };
+        return { rawItem: r.code || r.upc || r.desc, desc: r.desc, qty: r.qty, unit: r.unit, item, score };
       });
       setPdfRows(matched);
       setUnit(prows[0] && prows[0].unit === 'case' ? 'case' : 'box');
