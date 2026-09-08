@@ -162,6 +162,26 @@ function useHideSeasonal() {
   }, []);
   return [on, update];
 }
+// Persisted "print in inventory (warehouse) order" preference — when on, all
+// Print/Invoice output sorts items by the inventory print sequence.
+const PRINT_INV_ORDER_KEY = 'printInventoryOrder';
+function getPrintInvOrder() {
+  try { return localStorage.getItem(PRINT_INV_ORDER_KEY) === '1'; } catch { return false; }
+}
+function usePrintInvOrder() {
+  const [on, setOn] = useState(getPrintInvOrder);
+  useEffect(() => {
+    const h = () => setOn(getPrintInvOrder());
+    window.addEventListener('print-inv-order-changed', h);
+    return () => window.removeEventListener('print-inv-order-changed', h);
+  }, []);
+  const update = useCallback((next) => {
+    try { localStorage.setItem(PRINT_INV_ORDER_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    setOn(next);
+    window.dispatchEvent(new Event('print-inv-order-changed'));
+  }, []);
+  return [on, update];
+}
 function getSubmitterName() {
   try { return localStorage.getItem(SUBMITTER_KEY) || ''; } catch { return ''; }
 }
@@ -491,7 +511,7 @@ function printOrder(order, printSequence, options = {}) {
   const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
-  const orderedLines = sortLinesForPrint(order.lines, printSequence, !!(customer && customer.usePrintOrder));
+  const orderedLines = sortLinesForPrint(order.lines, printSequence, getPrintInvOrder() || !!(customer && customer.usePrintOrder));
   // Print title / suggested PDF name: "MM.DD.YY <short name> PO#<po>".
   const _dd = order.deliveryDate ? String(order.deliveryDate).split('-') : null;
   const _delivMMDDYY = _dd ? `${_dd[1]}.${_dd[2]}.${_dd[0].slice(2)}` : '';
@@ -589,7 +609,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   // items stay plain (no $).
   const moneyD = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const ordered = sortLinesForPrint(order.lines, printSequence, !!(c && c.usePrintOrder));
+  const ordered = sortLinesForPrint(order.lines, printSequence, getPrintInvOrder() || !!(c && c.usePrintOrder));
   const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
   const zeros = ordered.filter(l => (Number(l.qty) || 0) === 0);
   const lines = [...positive, ...zeros];
@@ -1774,6 +1794,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [screen, setScreen] = useState('brands');
   const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
+  const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
   const [quickEntry, setQuickEntry] = useState(desktop); // desktop default: QuickBooks-style grid entry (new + edit)
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
@@ -2380,6 +2401,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             title="Hide seasonal items (Halloween, Easter, Christmas, Valentines)"
           >
             {hideSeasonal ? 'Seasonal hidden ✓' : 'Hide seasonal'}
+          </button>
+        )}
+        {desktop && (
+          <button
+            style={{ ...styles.allItemsChip, ...(printInvOrder ? styles.allItemsChipOn : {}) }}
+            onClick={() => setPrintInvOrder(!printInvOrder)}
+            title="Print invoices/order sheets with items in inventory (warehouse pick) order"
+          >
+            {printInvOrder ? 'Inventory order ✓' : 'Inventory order'}
           </button>
         )}
       </div>
