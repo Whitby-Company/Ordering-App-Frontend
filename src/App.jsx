@@ -1259,7 +1259,7 @@ function TicketQtyInput({ qty, onSet, disabled }) {
 // Desktop bulk entry: a QuickBooks-style grid. Type an item # (or search),
 // enter cases, and it builds the order. Uses the store's catalog prices and
 // warns (amber) on items not in the store's catalog.
-function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, desktop }) {
+function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, desktop, showAllItems = false }) {
   const BLANK_ROWS = 8;
   // Each entry row has its own draft text + dropdown highlight index.
   const [drafts, setDrafts] = useState(() => Array.from({ length: BLANK_ROWS }, () => ''));
@@ -1272,8 +1272,10 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
   const matchesFor = (text) => {
     const c = (text || '').trim().toLowerCase();
     if (!c) return [];
+    // Default to the store's catalog only; "All items" expands to everything.
+    const pool = showAllItems ? allItems : allItems.filter(i => inCatalog(i.id));
     const starts = [], contains = [];
-    for (const i of allItems) {
+    for (const i of pool) {
       const code = displayCode(i.id).toLowerCase();
       if (code === c) return [i]; // exact code → single match
       if (code.startsWith(c) || i.name.toLowerCase().startsWith(c)) starts.push(i);
@@ -2299,7 +2301,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           <GridSizeIcon variant={gridSize} size={16} color="#5B6058" />
         </button>
         )}
-        {!isEdit && customerId != null && !(desktop && quickEntry) && (
+        {!isEdit && customerId != null && (
           <button
             style={{ ...styles.allItemsChip, ...(showAllItems ? styles.allItemsChipOn : {}) }}
             onClick={() => setShowAllItems(v => !v)}
@@ -2336,6 +2338,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           setUnit={setUnit}
           removeLine={removeLine}
           desktop={desktop}
+          showAllItems={showAllItems}
         />
       )}
       {quickEntry && !isEdit && customerId == null && (
