@@ -1710,8 +1710,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // Effective per-each price for an item at a given unit for the selected customer.
   const priceOf = React.useCallback((item, unit) => {
     const u = unit || unitOf(item);
-    // The store's catalog price applies to their default unit.
-    if (catalog && catalog.prices.has(item.id) && unitOf(item) === u) return catalog.prices.get(item.id);
+    // The store's catalog price is per-each, so it applies to either unit.
+    if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
     if (u === 'case') return Number(item.casePrice != null ? item.casePrice : item.price) || 0;
     return Number(item.price) || 0;
   }, [catalog, unitOf]);
