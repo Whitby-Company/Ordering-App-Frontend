@@ -1274,12 +1274,15 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
     if (!c) return [];
     // Default to the store's catalog only; "All items" expands to everything.
     const pool = showAllItems ? allItems : allItems.filter(i => inCatalog(i.id));
+    const cDigits = c.replace(/\D/g, '');
     const starts = [], contains = [];
     for (const i of pool) {
       const code = displayCode(i.id).toLowerCase();
+      const upcDigits = i.upc ? String(i.upc).replace(/\D/g, '') : '';
       if (code === c) return [i]; // exact code → single match
+      if (cDigits.length >= 6 && upcDigits && upcDigits === cDigits) return [i]; // exact UPC
       if (code.startsWith(c) || i.name.toLowerCase().startsWith(c)) starts.push(i);
-      else if (code.includes(c) || i.name.toLowerCase().includes(c)) contains.push(i);
+      else if (code.includes(c) || i.name.toLowerCase().includes(c) || (cDigits.length >= 4 && upcDigits && upcDigits.includes(cDigits))) contains.push(i);
     }
     return [...starts, ...contains].slice(0, 50);
   };
@@ -1902,7 +1905,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     const filtered = catalogItems.filter(i => {
       const brandMatch = effectiveBrand === 'All' || i.brand === effectiveBrand;
       const q = query.trim().toLowerCase();
-      const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
+      const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (q.replace(/\D/g,'').length >= 4 && i.upc && String(i.upc).replace(/\D/g,'').includes(q.replace(/\D/g,'')));
       return brandMatch && queryMatch;
     });
     return sortItemsBy(filtered, sortBy, popularity, printSequence);
@@ -2916,7 +2919,7 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
     const filtered = items.filter(i => {
       const brandMatch = effectiveBrand === 'All' || i.brand === effectiveBrand;
       const q = query.trim().toLowerCase();
-      const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
+      const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (q.replace(/\D/g,'').length >= 4 && i.upc && String(i.upc).replace(/\D/g,'').includes(q.replace(/\D/g,'')));
       const lowMatch = !lowOnly || i.stock <= 5;
       return brandMatch && queryMatch && lowMatch;
     });
@@ -3954,7 +3957,7 @@ function PdfRowItemPicker({ items, value, onChange }) {
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return [];
-    return items.filter(i => i.name.toLowerCase().includes(s) || String(i.id).toLowerCase().includes(s)).slice(0, 25);
+    return items.filter(i => i.name.toLowerCase().includes(s) || String(i.id).toLowerCase().includes(s) || (s.replace(/\D/g, '').length >= 4 && i.upc && String(i.upc).replace(/\D/g, '').includes(s.replace(/\D/g, '')))).slice(0, 25);
   }, [items, q]);
   return (
     <div style={{ position: 'relative', display: 'inline-block', minWidth: 220 }}>
@@ -4531,7 +4534,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     const matches = items.filter(i => {
       if (!showInactive && !i.active) return false;
       const brandMatch = brand === 'All' || i.brand === brand;
-      const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
+      const qDigits = q.replace(/\D/g, '');
+      const upcDigits = i.upc ? String(i.upc).replace(/\D/g, '') : '';
+      const queryMatch = !q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) ||
+        (qDigits.length >= 4 && upcDigits && upcDigits.includes(qDigits));
       return brandMatch && queryMatch;
     });
     return sortInventoryItems(matches, sortField, sortDir, popularity, printSequence);
