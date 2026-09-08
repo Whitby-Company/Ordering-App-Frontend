@@ -3602,13 +3602,24 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
   }, [items]);
   const itemByUpc = useMemo(() => {
     const m = {};
+    const add = (key, it) => { if (key && !(key in m)) m[key] = it; };
     for (const it of items) {
       if (!it.upc) continue;
-      const digits = String(it.upc).replace(/\D/g, '');
-      if (digits) { m[digits] = it; m[digits.replace(/^0+/, '')] = it; }
+      const d = String(it.upc).replace(/\D/g, '');
+      if (!d) continue;
+      add(d, it);
+      add(d.replace(/^0+/, ''), it);        // strip leading zeros
+      if (d.length >= 12) add(d.slice(-12), it); // last 12 (UPC-A core)
+      if (d.length >= 11) add(d.slice(-11).replace(/^0+/, ''), it);
     }
     return m;
   }, [items]);
+  function matchUpc(fileUpc) {
+    const d = String(fileUpc || '').replace(/\D/g, '');
+    if (!d) return null;
+    return itemByUpc[d] || itemByUpc[d.replace(/^0+/, '')] || itemByUpc[d.slice(-12)] ||
+      itemByUpc[d.slice(-11).replace(/^0+/, '')] || null;
+  }
 
   function findItem(raw) {
     const v = String(raw ?? '').trim().toLowerCase();
@@ -3701,7 +3712,7 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
       const matched = prows.map(r => {
         let item = r.code ? findItem(r.code) : null;
         let score = item ? 1 : 0;
-        if (!item && r.upc) { const u = itemByUpc[String(r.upc).replace(/\D/g, '').replace(/^0+/, '')] || itemByUpc[String(r.upc).replace(/\D/g, '')]; if (u) { item = u; score = 1; } }
+        if (!item && r.upc) { const u = matchUpc(r.upc); if (u) { item = u; score = 1; } }
         if (!item && r.desc) { const nm = findItemByName(r.desc); item = nm.item; score = nm.score; }
         return { rawItem: r.code || '', upc: r.upc || '', desc: r.desc, qty: r.qty, unit: r.unit, item, score };
       });
