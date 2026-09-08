@@ -4389,8 +4389,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              {isItems && <th style={officeStyles.th}>Notes</th>}
-              {isItems && <th style={officeStyles.th}></th>}
+              <th style={officeStyles.th}>Notes</th>
+              <th style={officeStyles.th}></th>
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
@@ -4401,7 +4401,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 13 : 12) : 6}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 13 : 12) : 8}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
@@ -4470,18 +4470,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   ) : (item.cost != null ? formatMoney(item.cost) : <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
                 )}
-                {isItems && (
                 <td style={officeStyles.td}>
                   {editMode ? (
                     <ItemNotesField item={item} onRefresh={onRefresh} />
                   ) : (item.notes ? <span style={{ fontSize: 12.5, color: '#5B6058' }}>{item.notes}</span> : <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
-                )}
-                {isItems && (
                 <td style={officeStyles.td}>
                   <button style={{ ...officeStyles.smallBtn, padding: '4px 8px' }} title="View stock change history" onClick={() => setHistoryItem(item)}>History</button>
                 </td>
-                )}
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   {canEdit('stock') ? (
@@ -4515,7 +4511,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               </tr>
               {isOpen && (() => {
                 const hist = orderHistoryFor(item.id);
-                const colSpan = isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 11 : 10) : 6;
+                const colSpan = isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 13 : 12) : 8;
                 return (
                   <tr>
                     <td colSpan={colSpan} style={officeStyles.itemHistoryCell}>
