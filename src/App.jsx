@@ -5944,6 +5944,26 @@ function InvoiceAuditReport({ onBack }) {
                   <div style={{ ...auditCard, background: recon.gapCount ? '#FBEEE7' : '#EAF1EE', borderColor: recon.gapCount ? '#E6C6B4' : '#C4DDD2' }}><div style={{ ...auditNum, color: recon.gapCount ? '#B5493B' : '#2B5D50' }}>{recon.gapCount}</div><div style={auditLbl}>Missing (neither)</div></div>
                 </div>
 
+                {recon.inBothCount > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 6, color: '#2B5D50' }}>In both — matched invoices ({recon.inBothCount})</div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>These invoice numbers appear in both QuickBooks and the app.</div>
+                    <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                        <thead><tr><th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Date</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th></tr></thead>
+                        <tbody>{recon.inBoth.map(q => <tr key={q.number}><td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{q.number}</td><td style={repStyles.tdItem}>{q.customer || ''}</td><td style={repStyles.tdItem}>{q.date || ''}</td><td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{q.total ? formatMoney(q.total) : ''}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                    <button style={{ ...officeStyles.smallBtn, marginTop: 8 }} onClick={() => {
+                      const cols = ['Invoice #', 'Customer', 'Date', 'Total'];
+                      const lines = [cols, ...recon.inBoth.map(q => [q.number, q.customer || '', q.date || '', q.total != null ? q.total : ''])];
+                      const csv = lines.map(r => r.map(csvEscape).join(',')).join('\n');
+                      const blob = new Blob([csv], { type: 'text/csv' });
+                      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'invoices-in-both.csv'; a.click();
+                    }}>Download CSV</button>
+                  </div>
+                )}
+
                 {recon.onlyQbCount > 0 && (
                   <div>
                     <div style={{ fontWeight: 700, marginBottom: 6 }}>In QuickBooks but not the app ({recon.onlyQbCount})</div>
