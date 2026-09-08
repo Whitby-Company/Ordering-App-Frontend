@@ -2262,7 +2262,18 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                       if (e.key === 'Escape') { setComboOpen(false); }
                     }}
                   />
-                  <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
+                  <button
+                    type="button"
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', padding: 4, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                    title={comboOpen ? 'Close list' : 'Show all customers'}
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      if (comboOpen) { setComboOpen(false); }
+                      else { setComboText(''); setComboHi(0); setComboOpen(true); }
+                    }}
+                  >
+                    <ChevronDown size={16} color="#8A8F87" style={{ transform: comboOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                  </button>
                 </div>
                 {comboOpen && comboMatches.length > 0 && (
                   <div style={styles.comboDropdown}>
