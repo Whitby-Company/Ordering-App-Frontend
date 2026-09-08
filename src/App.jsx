@@ -6049,6 +6049,46 @@ function InvoiceAuditReport({ onBack }) {
                   </div>
                 )}
 
+                {recon.contentMatchCount > 0 && (
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>All app invoices — best QuickBooks match ({recon.contentMatchCount})</div>
+                    <div style={{ fontSize: 12, color: '#8A8F87', marginBottom: 4 }}>For every app invoice, its best QuickBooks match by customer + total (item overlap as confidence). "#" shows whether the invoice numbers also agree.</div>
+                    <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                        <thead><tr>
+                          <th style={repStyles.th}>App #</th><th style={repStyles.th}>Customer</th>
+                          <th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th>
+                          <th style={repStyles.th}>QB match #</th>
+                          <th style={{ ...repStyles.th, textAlign: 'center' }}>#s agree</th>
+                          <th style={{ ...repStyles.th, textAlign: 'center' }}>Items</th>
+                        </tr></thead>
+                        <tbody>{recon.contentMatches.map((m, i) => (
+                          <tr key={i} style={!m.hasMatch ? { background: '#FBEEE7' } : (m.numbersAgree === false ? { background: '#FDF3E3' } : undefined)}>
+                            <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{m.appNumber}</td>
+                            <td style={repStyles.tdItem}>{m.customer || ''}</td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(m.appTotal)}</td>
+                            <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{m.qbNumber != null ? m.qbNumber : <span style={{ color: '#B5493B', fontWeight: 400 }}>no match</span>}</td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'center', fontWeight: 700, color: m.numbersAgree == null ? '#B9BDB2' : (m.numbersAgree ? '#2B5D50' : '#B5793B') }}>
+                              {m.numbersAgree == null ? '—' : (m.numbersAgree ? '✓' : '✗')}
+                            </td>
+                            <td style={{ ...repStyles.tdItem, textAlign: 'center', fontWeight: 700, color: m.itemScore == null ? '#B9BDB2' : (m.itemScore >= 80 ? '#2B5D50' : (m.itemScore >= 40 ? '#B5793B' : '#B5493B')) }}>
+                              {m.itemScore == null ? '—' : `${m.itemsMatched}/${m.appItems} (${m.itemScore}%)`}
+                            </td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#8A8F87', marginTop: 4 }}>Red = no QB match found. Amber = matched by content but the numbers differ (drift). ✓ in "#s agree" = numbers also line up. Items = overlap confidence.</div>
+                    <button style={{ ...officeStyles.smallBtn, marginTop: 8 }} onClick={() => {
+                      const cols = ['App #', 'Customer', 'App total', 'QB match #', 'QB total', 'Numbers agree', 'Customer match', 'Items matched', 'App items', 'Item %'];
+                      const lines = [cols, ...recon.contentMatches.map(m => [m.appNumber, m.customer || '', m.appTotal, m.qbNumber != null ? m.qbNumber : '', m.qbTotal != null ? m.qbTotal : '', m.numbersAgree == null ? '' : (m.numbersAgree ? 'yes' : 'no'), m.customerMatch ? 'yes' : 'no', m.itemsMatched, m.appItems, m.itemScore != null ? m.itemScore : ''])];
+                      const csv = lines.map(r => r.map(csvEscape).join(',')).join('\n');
+                      const blob = new Blob([csv], { type: 'text/csv' });
+                      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'invoice-content-matches.csv'; a.click();
+                    }}>Download CSV</button>
+                  </div>
+                )}
+
                 {recon.suggestionCount > 0 && (
                   <div>
                     <div style={{ fontWeight: 700, marginBottom: 6 }}>Possible matches — same invoice, different number ({recon.suggestionCount})</div>
