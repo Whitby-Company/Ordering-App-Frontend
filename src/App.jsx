@@ -3588,6 +3588,8 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
   const [busy, setBusy] = useState(false);
   const [savedMap, setSavedMap] = useState({}); // "source|key" -> itemId
   const [pdfFormat, setPdfFormat] = useState('');
+  const [rawText, setRawText] = useState('');
+  const [showRaw, setShowRaw] = useState(false);
 
   // Load remembered manual matches once.
   useEffect(() => {
@@ -3703,21 +3705,35 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
       for (let p = 1; p <= doc.numPages; p++) {
         const page = await doc.getPage(p);
         const content = await page.getTextContent();
-        // Reconstruct lines by Y position.
-        const byY = {};
-        for (const item of content.items) {
-          const y = Math.round(item.transform[5]);
-          (byY[y] = byY[y] || []).push({ x: item.transform[4], s: item.str });
+        // Group text into visual rows. PDF y-coordinates for one row can vary by
+        // a pixel or two, so cluster items whose y is within a tolerance instead
+        // of requiring an exact match (which was splitting rows and dropping lines).
+        const items = content.items
+          .filter(it => it.str && it.str.trim() !== '')
+          .map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str }))
+          .sort((a, b) => b.y - a.y || a.x - b.x);
+        const TOL = 3;
+        const lines = [];
+        let cur = null, curY = null;
+        for (const it of items) {
+          if (cur && Math.abs(it.y - curY) <= TOL) {
+            cur.push(it);
+          } else {
+            if (cur) lines.push(cur);
+            cur = [it]; curY = it.y;
+          }
         }
-        const ys = Object.keys(byY).map(Number).sort((a, b) => b - a);
-        for (const y of ys) {
-          const lineStr = byY[y].sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ');
-          text += lineStr + '\n';
+        if (cur) lines.push(cur);
+        for (const line of lines) {
+          const lineStr = line.sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ').trim();
+          if (lineStr) text += lineStr + '\n';
         }
       }
+      setRawText(text);
       const { format, customerHint, rows: prows } = detectAndParsePdf(text);
       if (!format || prows.length === 0) {
-        setErr('Could not recognize this PDF format. Try a CSV/Excel export instead.');
+        setErr('Could not recognize this PDF format. Use "Show extracted text" to see what was read, or try a CSV/Excel export.');
+        setShowRaw(true);
         setBusy(false); return;
       }
       setPdfFormat(format);
@@ -3848,6 +3864,14 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
               </table>
             </div>
             {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{err}</div>}
+            <div style={{ marginTop: 10 }}>
+              <button style={{ background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }} onClick={() => setShowRaw(v => !v)}>
+                {showRaw ? 'Hide extracted text' : 'Show extracted text (for troubleshooting)'}
+              </button>
+              {showRaw && (
+                <textarea readOnly value={rawText} style={{ width: '100%', height: 140, marginTop: 6, fontSize: 11, fontFamily: 'monospace', border: '1px solid #D6D3C6', borderRadius: 6, padding: 8, boxSizing: 'border-box' }} />
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
               <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
               <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={createOrder} disabled={busy || !customerId || pdfRows.filter(r => r.item && r.qty > 0).length === 0}>
