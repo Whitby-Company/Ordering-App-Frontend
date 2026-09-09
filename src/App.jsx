@@ -4279,6 +4279,43 @@ function InvoiceNumberCell({ order, onSaved }) {
   );
 }
 
+// Editable custom status for an order (e.g. Invoiced, Shipped, On hold).
+const STATUS_PRESETS = ['Invoiced', 'Shipped', 'Delivered', 'On hold', 'Backordered'];
+function CustomStatusEditor({ order, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const current = order.customStatus || '';
+  async function setStatus(value) {
+    setSaving(true); setOpen(false);
+    try {
+      await apiPatch(`/orders/${order.id}/custom-status`, { status: value || null });
+      await onSaved();
+    } catch { /* ignore */ }
+    finally { setSaving(false); }
+  }
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: '1px 8px', cursor: 'pointer', fontFamily: 'inherit',
+          background: current ? '#EEF2FA' : 'transparent', color: current ? '#2E4C8A' : '#B9BDB2',
+          border: current ? '1px solid #C3D3EE' : '1px dashed #D6D3C6', opacity: saving ? 0.5 : 1 }}
+        onClick={() => setOpen(o => !o)}
+        title="Set a status for this order"
+      >
+        {current || '+ status'}
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', left: 0, top: '100%', zIndex: 30, marginTop: 2, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 10px 26px rgba(20,24,31,0.18)', padding: 4, minWidth: 130 }}>
+          {STATUS_PRESETS.map(s => (
+            <button key={s} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '6px 8px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', color: '#14181F' }} onMouseDown={e => { e.preventDefault(); setStatus(s); }}>{s}</button>
+          ))}
+          {current && <button style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderTop: '1px solid #F0EEE6', padding: '6px 8px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', color: '#B5493B' }} onMouseDown={e => { e.preventDefault(); setStatus(null); }}>✕ Clear status</button>}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
@@ -4597,13 +4634,15 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
+                    <td style={officeStyles.td}>
                       {o.status === 'pending'
                         ? <span style={officeStyles.badgePending}>Pending</span>
                         : o.processed
                           ? <span style={officeStyles.badgeProcessed}>Processed</span>
                           : <span style={officeStyles.badgeUnprocessed}>New</span>}
                       {o.exported ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 7px' }} title={o.exportedAt ? `Exported ${formatDateTime(o.exportedAt)}` : 'Exported'}>exported</span> : null}
+                      {o.editedAt ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FDF3E3', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' }} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {formatDate(o.editedAt)}</span> : null}
+                      <div style={{ marginTop: 4 }}><CustomStatusEditor order={o} onSaved={onRefresh} /></div>
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
