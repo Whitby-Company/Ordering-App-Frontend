@@ -2064,6 +2064,29 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   function setUnit(id, unit) {
     setOrder(prev => prev.map(o => (o.id === id ? { ...o, unit } : o)));
   }
+  // Flip the whole order to cases (or back to boxes). Only items that have a case
+  // size can become cases; others stay boxes so nothing is priced/counted wrong.
+  const [allCases, setAllCases] = useState(false);
+  function toggleAllCases() {
+    const next = !allCases;
+    setAllCases(next);
+    setOrder(prev => prev.map(o => {
+      const it = catalogItems.find(x => x.id === o.id) || items.find(x => x.id === o.id);
+      const hasCase = it && Number(it.caseSize) > 0;
+      if (next) return hasCase ? { ...o, unit: 'case' } : { ...o, unit: 'box' };
+      return { ...o, unit: 'box' };
+    }));
+  }
+  // Keep new lines in cases while All-cases is on (if they have a case size).
+  useEffect(() => {
+    if (!allCases) return;
+    setOrder(prev => prev.map(o => {
+      if (o.unit) return o;
+      const it = catalogItems.find(x => x.id === o.id) || items.find(x => x.id === o.id);
+      return (it && Number(it.caseSize) > 0) ? { ...o, unit: 'case' } : o;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.length, allCases]);
 
   function resetForm() {
     setOrder([]);
@@ -2427,6 +2450,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             title="Print invoices/order sheets with items in inventory (warehouse pick) order"
           >
             {printInvOrder ? 'Inventory order ✓' : 'Inventory order'}
+          </button>
+        )}
+        {customerId != null && (
+          <button
+            style={{ ...styles.allItemsChip, ...(allCases ? styles.allItemsChipOn : {}) }}
+            onClick={toggleAllCases}
+            title="Order this whole order in cases (items with a case size). Items without a case size stay as boxes."
+          >
+            {allCases ? 'All cases ✓' : 'All cases'}
           </button>
         )}
       </div>
