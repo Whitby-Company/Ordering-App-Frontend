@@ -6330,6 +6330,15 @@ function POUploadModal({ items, onClose, onCreated }) {
   const [showRaw, setShowRaw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [savedMap, setSavedMap] = useState({}); // "po|key" -> itemId
+  const itemById = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
+  useEffect(() => {
+    apiGet('/items/import-map').then(rows => {
+      const m = {};
+      for (const r of rows) if ((r.source || '') === 'po') m[String(r.fileKey).toLowerCase()] = r.itemId;
+      setSavedMap(m);
+    }).catch(() => {});
+  }, []);
 
   const itemByCode = useMemo(() => { const m = {}; for (const it of items) m[displayCode(it.id).toLowerCase()] = it; return m; }, [items]);
   const itemWordSets = useMemo(() => items.map(it => ({ it, ws: wordSet(it.name) })), [items]);
@@ -6343,6 +6352,9 @@ function POUploadModal({ items, onClose, onCreated }) {
     return m;
   }, [items]);
   function matchItem(code, desc, upc) {
+    // Remembered manual match first (keyed by code, else description).
+    const remKey = (code && String(code).trim()) ? String(code).trim().toLowerCase() : String(desc || '').trim().toLowerCase();
+    if (remKey && savedMap[remKey] && itemById[savedMap[remKey]]) return { item: itemById[savedMap[remKey]], score: 1 };
     const raw = String(code || '').trim().toLowerCase();
     // Strip any non-alphanumeric decoration (asterisks, spaces, dots, dashes).
     const v = raw.replace(/[^a-z0-9]/g, '');
@@ -6461,7 +6473,15 @@ function POUploadModal({ items, onClose, onCreated }) {
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right' }}>{r.qty}</td>
                       <td style={uplStyles.td}>
-                        <PdfRowItemPicker items={items} value={r.item} onChange={it => setRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x))} />
+                        <PdfRowItemPicker items={items} value={r.item} onChange={it => {
+                          setRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x));
+                          // Remember this manual match for next time (keyed by code, else description).
+                          const key = (r.code && String(r.code).trim()) ? String(r.code).trim() : String(r.desc || '').trim();
+                          if (it && key) {
+                            setSavedMap(m => ({ ...m, [key.toLowerCase()]: it.id }));
+                            apiPost('/items/import-map', { source: 'po', fileKey: key, itemId: it.id }).catch(() => {});
+                          }
+                        }} />
                         {r.item && r.score < 0.9 && r.score > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#B5793B' }}>uncertain — confirm</span>}
                       </td>
                     </tr>
