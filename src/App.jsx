@@ -6507,7 +6507,10 @@ function POUploadModal({ items, onClose, onCreated }) {
   // item's caseSize (boxes per case). Items without a caseSize receive as-is.
   const boxesFor = (r) => {
     const cs = r.item && Number(r.item.caseSize);
-    return cs && cs > 0 ? r.qty * cs : r.qty;
+    if (cs && cs > 0) return r.qty * cs;
+    const ov = Number(r.packOverride);
+    if (ov > 0) return r.qty * ov; // manually-entered boxes per case
+    return r.qty; // no case size and no override — receive as raw cases
   };
   async function createPO() {
     const lines = rows.filter(r => r.item && r.qty > 0).map(r => ({ itemId: r.item.id, qty: boxesFor(r) }));
@@ -6566,9 +6569,27 @@ function POUploadModal({ items, onClose, onCreated }) {
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right' }}>
                         <div>{r.qty} cs</div>
-                        {r.item && Number(r.item.caseSize) > 0
-                          ? <div style={{ fontSize: 11, color: '#2B5D50', fontWeight: 600 }}>→ {r.qty * Number(r.item.caseSize)} bx</div>
-                          : (r.item ? <div style={{ fontSize: 10.5, color: '#8A8F87' }}>(no case size)</div> : null)}
+                        {r.item && Number(r.item.caseSize) > 0 ? (
+                          <div style={{ fontSize: 11, color: '#2B5D50', fontWeight: 600 }}>→ {r.qty * Number(r.item.caseSize)} bx</div>
+                        ) : r.item ? (
+                          Number(r.packOverride) > 0 ? (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: '#2B5D50', fontWeight: 600 }}>→ {r.qty * Number(r.packOverride)} bx</span>
+                              <span style={{ fontSize: 10, color: '#8A8F87' }}>(×</span>
+                              <input type="text" inputMode="numeric" value={r.packOverride}
+                                onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
+                                style={{ width: 34, fontSize: 11, textAlign: 'center', border: '1px solid #C4DDD2', borderRadius: 4, padding: '1px 2px' }} title="Boxes per case" />
+                              <span style={{ fontSize: 10, color: '#8A8F87' }}>)</span>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                              <span style={{ fontSize: 10, color: '#B5793B' }}>boxes/case:</span>
+                              <input type="text" inputMode="numeric" placeholder="?" value={r.packOverride || ''}
+                                onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
+                                style={{ width: 34, fontSize: 11, textAlign: 'center', border: '1px solid #E6C6B4', borderRadius: 4, padding: '1px 2px', background: '#FBEEE7' }} title="This item has no case size — enter boxes per case to convert" />
+                            </div>
+                          )
+                        ) : null}
                       </td>
                       <td style={uplStyles.td}>
                         <PdfRowItemPicker items={items} value={r.item} onChange={it => {
@@ -6598,7 +6619,7 @@ function POUploadModal({ items, onClose, onCreated }) {
                 <span><strong>{rows.length}</strong> line{rows.length === 1 ? '' : 's'}</span>
                 <span><strong>{matchedCount}</strong> matched</span>
                 <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> cases</span>
-                <span><strong>{rows.reduce((s, r) => s + (r.item && Number(r.item.caseSize) > 0 ? r.qty * Number(r.item.caseSize) : r.qty), 0)}</strong> boxes to receive</span>
+                <span><strong>{rows.reduce((s, r) => s + boxesFor(r), 0)}</strong> boxes to receive</span>
               </span>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
