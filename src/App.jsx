@@ -1800,6 +1800,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
   const [showAllItems, setShowAllItems] = useState(false); // escape hatch: show full catalog, not just the store's
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
   const [quickEntry, setQuickEntry] = useState(desktop); // desktop default: QuickBooks-style grid entry (new + edit)
@@ -2446,6 +2447,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             {quickEntry ? 'Quick entry ✓' : 'Quick entry'}
           </button>
         )}
+        {desktop && !isEdit && (
+          <button
+            style={styles.allItemsChip}
+            onClick={() => setUploadOpen(true)}
+            title="Create an order from a CSV/Excel/PDF file"
+          >
+            ↑ Upload order
+          </button>
+        )}
         {desktop && !isEdit && customerId != null && (
           <button
             style={{ ...styles.allItemsChip, ...(hideSeasonal ? styles.allItemsChipOn : {}) }}
@@ -2474,6 +2484,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           </button>
         )}
       </div>
+
+      {uploadOpen && <OrderUploadModal items={items} customers={customersAll || customers} onClose={() => setUploadOpen(false)} onCreated={async () => { setUploadOpen(false); await onOrderSubmitted(); }} />}
 
       {!isEdit && customerId == null && (
         <div style={styles.catalogNote}>Pick a customer to see the items they carry.</div>
@@ -4324,7 +4336,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
-  const [uploadOpen, setUploadOpen] = useState(false);
   const [readyBusyId, setReadyBusyId] = useState(null);
 
   // Toggle the shared "ready for import" flag on an order (saved server-side so
@@ -4559,7 +4570,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
             {unprocessedCount > 0 && ` (${unprocessedCount})`}
           </button>
         )}
-        <button style={officeStyles.smallBtn} onClick={() => setUploadOpen(true)} title="Create an order from a CSV/Excel file">↑ Upload order</button>
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
       </div>
 
@@ -4576,7 +4586,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
         </div>
       )}
 
-      {uploadOpen && <OrderUploadModal items={items} customers={customers} onClose={() => setUploadOpen(false)} onCreated={onRefresh} />}
       {readyOrders.length > 0 && (
         <div style={officeStyles.batchBar}>
           <span style={{ fontWeight: 700 }}>{readyOrders.length} order{readyOrders.length === 1 ? '' : 's'} ready for import</span>
