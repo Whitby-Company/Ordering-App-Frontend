@@ -6488,6 +6488,7 @@ function POUploadModal({ items, onClose, onCreated }) {
   const [supplier, setSupplier] = useState('');
   const [reference, setReference] = useState('');
   const [poNotes, setPoNotes] = useState('');
+  const [caseMode, setCaseMode] = useState(true); // true = PO qty is cases (convert to boxes); false = qty is boxes
   const [expectedDate, setExpectedDate] = useState('');
   const [rawText, setRawText] = useState('');
   const [showRaw, setShowRaw] = useState(false);
@@ -6639,6 +6640,7 @@ function POUploadModal({ items, onClose, onCreated }) {
   // item's caseSize (boxes per case). Items without a caseSize receive as-is.
   const boxesFor = (r) => {
     if (!r.item) return r.qty;
+    if (!caseMode) return r.qty; // receiving boxes: quantity is already in boxes
     // The user's edited pack wins; otherwise the item's case size.
     const eff = (r.packOverride !== undefined && r.packOverride !== '')
       ? Number(r.packOverride)
@@ -6696,18 +6698,34 @@ function POUploadModal({ items, onClose, onCreated }) {
                 <input style={{ ...uplStyles.input, width: 260 }} value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Optional notes" />
               </label>
             </div>
-            <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 6 }}>
-              <strong>{matchedCount}</strong> of {rows.length} lines matched. Fix any unmatched item below.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 13, color: '#5B6058' }}>
+                <strong>{matchedCount}</strong> of {rows.length} lines matched. Fix any unmatched item below.
+              </div>
+              <div style={{ display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 8, overflow: 'hidden', fontSize: 12.5, fontWeight: 700 }}>
+                <button
+                  onClick={() => setCaseMode(true)}
+                  style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: caseMode ? '#2B5D50' : '#fff', color: caseMode ? '#fff' : '#5B6058' }}
+                  title="The PO quantities are in cases — convert to boxes using the case pack"
+                >Receiving cases</button>
+                <button
+                  onClick={() => setCaseMode(false)}
+                  style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: !caseMode ? '#2B5D50' : '#fff', color: !caseMode ? '#fff' : '#5B6058' }}
+                  title="The PO quantities are already in boxes — no case-pack conversion"
+                >Receiving boxes</button>
+              </div>
             </div>
             <div style={uplStyles.previewWrap}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>Qty (cs → bx)</th><th style={uplStyles.th}>Matched item</th></tr></thead>
+                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>{caseMode ? 'Qty (cs → bx)' : 'Qty (boxes)'}</th><th style={uplStyles.th}>Matched item</th></tr></thead>
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.pack ? ` · ${r.pack}` : ''}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        {r.item ? (() => {
+                        {!r.item ? <span style={{ color: '#8A8F87' }}>{r.qty}</span>
+                          : !caseMode ? <span style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}><strong>{r.qty} bx</strong></span>
+                          : (() => {
                           // Whether we have a real pack (from the item's case size or a
                           // manual override). If not, default to 1 for the math but flag it red.
                           const hasOverride = r.packOverride !== undefined && r.packOverride !== '';
@@ -6728,7 +6746,7 @@ function POUploadModal({ items, onClose, onCreated }) {
                               <span>bx/cs = <strong>{boxes} bx</strong></span>
                             </div>
                           );
-                        })() : <span style={{ color: '#8A8F87' }}>{r.qty} cs</span>}
+                        })()}
                       </td>
                       <td style={uplStyles.td}>
                         <PdfRowItemPicker items={items} value={r.item} onChange={it => {
@@ -6757,7 +6775,7 @@ function POUploadModal({ items, onClose, onCreated }) {
               <span style={{ display: 'flex', gap: 18 }}>
                 <span><strong>{rows.length}</strong> line{rows.length === 1 ? '' : 's'}</span>
                 <span><strong>{matchedCount}</strong> matched</span>
-                <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> cases</span>
+                <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> {caseMode ? 'cases' : 'boxes'}</span>
                 <span><strong>{rows.reduce((s, r) => s + boxesFor(r), 0)}</strong> boxes to receive</span>
               </span>
             </div>
