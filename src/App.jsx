@@ -6401,6 +6401,7 @@ function POUploadModal({ items, onClose, onCreated }) {
   const [supplier, setSupplier] = useState('');
   const [reference, setReference] = useState('');
   const [poNotes, setPoNotes] = useState('');
+  const [expectedDate, setExpectedDate] = useState('');
   const [rawText, setRawText] = useState('');
   const [showRaw, setShowRaw] = useState(false);
   const [err, setErr] = useState('');
@@ -6518,6 +6519,7 @@ function POUploadModal({ items, onClose, onCreated }) {
       setRows(matched);
       setReference(parsed.reference || '');
       setPoNotes('');
+      setExpectedDate('');
       setSupplier(parsed.supplier || 'Storck');
       setStep('review');
     } catch (e2) { setErr(`Could not read "${file.name}": ` + (e2.message || e2)); }
@@ -6561,7 +6563,7 @@ function POUploadModal({ items, onClose, onCreated }) {
     if (!lines.length) { setErr('No matched items to add.'); return; }
     setBusy(true); setErr('');
     try {
-      await apiPost('/purchase-orders', { supplier: supplier || 'Storck', reference: reference || null, notes: poNotes || null, lines });
+      await apiPost('/purchase-orders', { supplier: supplier || 'Storck', reference: reference || null, expectedDate: expectedDate || null, notes: poNotes || null, lines });
       setCreatedCount(c => c + 1);
       // In a multi-file batch, move to the next PO; onCreated refreshes the list.
       if (queue.length > 1) {
@@ -6599,6 +6601,9 @@ function POUploadModal({ items, onClose, onCreated }) {
               </label>
               <label style={uplStyles.field}><span style={uplStyles.lbl}>Reference / PO #</span>
                 <input style={{ ...uplStyles.input, width: 200 }} value={reference} onChange={e => setReference(e.target.value)} />
+              </label>
+              <label style={uplStyles.field}><span style={uplStyles.lbl}>Expected date</span>
+                <input style={{ ...uplStyles.input, width: 160 }} type="date" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} />
               </label>
               <label style={uplStyles.field}><span style={uplStyles.lbl}>Notes</span>
                 <input style={{ ...uplStyles.input, width: 260 }} value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Optional notes" />
