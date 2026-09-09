@@ -4340,6 +4340,11 @@ function InvoiceNumberCell({ order, onSaved }) {
   );
 }
 
+// A uniform status badge — same font/size for every status, exported, edited.
+function statusBadge(color, bg, border) {
+  return { display: 'inline-block', fontSize: 11, fontWeight: 700, lineHeight: 1.2, color, background: bg, border: `1px solid ${border}`, borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
+}
+
 function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
@@ -4657,13 +4662,15 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
-                      {o.status === 'pending'
-                        ? <span style={officeStyles.badgePending}>Pending</span>
-                        : o.processed
-                          ? <span style={officeStyles.badgeProcessed}>Processed</span>
-                          : <span style={officeStyles.badgeUnprocessed}>New</span>}
-                      {o.exported ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 7px' }} title={o.exportedAt ? `Exported ${formatDateTime(o.exportedAt)}` : 'Exported'}>exported</span> : null}
-                      {o.editedAt ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FDF3E3', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px', whiteSpace: 'nowrap' }} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {new Date(o.editedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> : null}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
+                        {o.status === 'pending'
+                          ? <span style={statusBadge('#5B6058', '#E8E6DC', '#D2CFC0')}>Pending</span>
+                          : o.processed
+                            ? <span style={statusBadge('#2B5D50', '#E3EFE9', '#C4DDD2')}>Processed</span>
+                            : <span style={statusBadge('#9A6B12', '#FBE7C2', '#F0D28F')}>New</span>}
+                        {o.exported ? <span style={statusBadge('#2B5D50', '#EAF1EE', '#C4DDD2')} title={o.exportedAt ? `Exported ${formatDateTime(o.exportedAt)}` : 'Exported'}>exported</span> : null}
+                        {o.editedAt ? <span style={statusBadge('#B5793B', '#FDF3E3', '#EAD3A8')} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {new Date(o.editedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> : null}
+                      </div>
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
