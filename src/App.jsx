@@ -6503,8 +6503,14 @@ function POUploadModal({ items, onClose, onCreated }) {
 
   const matchedCount = rows.filter(r => r.item && r.qty > 0).length;
 
+  // The PO quantity is in CASES. Stock is tracked in boxes, so convert using each
+  // item's caseSize (boxes per case). Items without a caseSize receive as-is.
+  const boxesFor = (r) => {
+    const cs = r.item && Number(r.item.caseSize);
+    return cs && cs > 0 ? r.qty * cs : r.qty;
+  };
   async function createPO() {
-    const lines = rows.filter(r => r.item && r.qty > 0).map(r => ({ itemId: r.item.id, qty: r.qty }));
+    const lines = rows.filter(r => r.item && r.qty > 0).map(r => ({ itemId: r.item.id, qty: boxesFor(r) }));
     if (!lines.length) { setErr('No matched items to add.'); return; }
     setBusy(true); setErr('');
     try {
@@ -6553,12 +6559,17 @@ function POUploadModal({ items, onClose, onCreated }) {
             </div>
             <div style={uplStyles.previewWrap}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>Qty</th><th style={uplStyles.th}>Matched item</th></tr></thead>
+                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>Qty (cs → bx)</th><th style={uplStyles.th}>Matched item</th></tr></thead>
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
-                      <td style={{ ...uplStyles.td, textAlign: 'right' }}>{r.qty}</td>
+                      <td style={{ ...uplStyles.td, textAlign: 'right' }}>
+                        <div>{r.qty} cs</div>
+                        {r.item && Number(r.item.caseSize) > 0
+                          ? <div style={{ fontSize: 11, color: '#2B5D50', fontWeight: 600 }}>→ {r.qty * Number(r.item.caseSize)} bx</div>
+                          : (r.item ? <div style={{ fontSize: 10.5, color: '#8A8F87' }}>(no case size)</div> : null)}
+                      </td>
                       <td style={uplStyles.td}>
                         <PdfRowItemPicker items={items} value={r.item} onChange={it => {
                           setRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x));
@@ -6586,7 +6597,8 @@ function POUploadModal({ items, onClose, onCreated }) {
               <span style={{ display: 'flex', gap: 18 }}>
                 <span><strong>{rows.length}</strong> line{rows.length === 1 ? '' : 's'}</span>
                 <span><strong>{matchedCount}</strong> matched</span>
-                <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> total cases</span>
+                <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> cases</span>
+                <span><strong>{rows.reduce((s, r) => s + (r.item && Number(r.item.caseSize) > 0 ? r.qty * Number(r.item.caseSize) : r.qty), 0)}</strong> boxes to receive</span>
               </span>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
