@@ -6106,6 +6106,7 @@ const REPORT_LIST = [
   { id: 'order-margin', name: 'Order margin', desc: 'Pick any order and see the margin per item and total profit instantly.' },
   { id: 'stock-changes', name: 'Stock changes', desc: 'Full audit trail of inventory changes — who changed what, when, and by how much.' },
   { id: 'invoice-numbers', name: 'Invoice numbers', desc: 'Check invoice numbers for gaps or duplicates, and reconcile against a QuickBooks export.' },
+  { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
 // Format a date value from a QuickBooks/Excel export. Handles Excel serial-date
@@ -6126,6 +6127,90 @@ function fmtQbDate(v) {
 
 // Invoice-number audit: range, gaps, and duplicates in the app's invoice numbers,
 // plus reconciliation against a QuickBooks invoice export.
+// Sales by person: total submitted-order dollars grouped by who submitted them.
+function SalesByPersonReport({ onBack }) {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run() {
+    setLoading(true); setErr('');
+    try {
+      const qs = [];
+      if (from) qs.push(`from=${from}`);
+      if (to) qs.push(`to=${to}`);
+      const d = await apiGet(`/orders/sales-by-person${qs.length ? '?' + qs.join('&') : ''}`);
+      setData(d);
+    } catch (e) { setErr(e.message || 'Could not load the report.'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { run(); /* initial: all-time */ /* eslint-disable-next-line */ }, []);
+
+  const maxDollars = data && data.people.length ? Math.max(...data.people.map(p => p.dollars)) : 0;
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Sales by person</div>
+      </div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 14 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#5B6058', gap: 3 }}>From (submitted)
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...officeStyles.searchSlim, width: 160 }} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#5B6058', gap: 3 }}>To
+          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ ...officeStyles.searchSlim, width: 160 }} />
+        </label>
+        <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={run} disabled={loading}>{loading ? 'Loading…' : 'Run'}</button>
+        {(from || to) && <button style={officeStyles.smallBtn} onClick={() => { setFrom(''); setTo(''); }}>Clear dates (all time)</button>}
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
+      {data && (
+        <div style={{ maxWidth: 620 }}>
+          <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 10 }}>
+            <strong>{formatMoney(data.grandTotal)}</strong> across <strong>{data.totalOrders}</strong> order{data.totalOrders === 1 ? '' : 's'}
+            {data.from || data.to ? ` · ${data.from || '…'} to ${data.to || '…'}` : ' · all time'}
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+            <thead><tr>
+              <th style={repStyles.th}>Person</th>
+              <th style={{ ...repStyles.th, textAlign: 'right' }}>Orders</th>
+              <th style={{ ...repStyles.th, textAlign: 'right' }}>Total sales</th>
+              <th style={repStyles.th}></th>
+            </tr></thead>
+            <tbody>
+              {data.people.map(p => (
+                <tr key={p.person}>
+                  <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{p.person}</td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{p.orders}</td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700 }}>{formatMoney(p.dollars)}</td>
+                  <td style={{ ...repStyles.tdItem, width: 160 }}>
+                    <div style={{ height: 10, background: '#EAF1EE', borderRadius: 5, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${maxDollars > 0 ? (p.dollars / maxDollars) * 100 : 0}%`, background: '#2B5D50' }} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {data.people.length === 0 && <tr><td colSpan={4} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No submitted orders in this range.</td></tr>}
+            </tbody>
+          </table>
+          {data.people.length > 0 && (
+            <button style={{ ...officeStyles.smallBtn, marginTop: 10 }} onClick={() => {
+              const cols = ['Person', 'Orders', 'Total sales'];
+              const lines = [cols, ...data.people.map(p => [p.person, p.orders, p.dollars])];
+              const csv = lines.map(r => r.map(csvEscape).join(',')).join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'sales-by-person.csv'; a.click();
+            }}>Download CSV</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InvoiceAuditReport({ onBack }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
@@ -7049,6 +7134,7 @@ function OfficeReports() {
   if (active === 'order-margin') return <OrderMarginReport onBack={() => setActive(null)} />;
   if (active === 'stock-changes') return <StockChangesReport onBack={() => setActive(null)} />;
   if (active === 'invoice-numbers') return <InvoiceAuditReport onBack={() => setActive(null)} />;
+  if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
