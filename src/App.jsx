@@ -4682,6 +4682,15 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                       )}
                     </td>
                   </tr>
+                  {o.notes && !isOpen && (
+                    <tr>
+                      <td style={{ padding: '0 12px 8px', background: o.processed ? undefined : '#FFFDF7' }} colSpan={11}>
+                        <div style={{ fontSize: 12, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '5px 10px', display: 'inline-block' }}>
+                          <span style={{ fontWeight: 700 }}>📝 Notes:</span> {o.notes}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {isOpen && (
                     <tr>
                       <td style={officeStyles.detailCell} colSpan={11}>
@@ -6742,16 +6751,27 @@ function OfficePurchasing({ items, onRefresh }) {
             </tr></thead>
             <tbody>
               {shown.map(p => (
-                <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => { setSelId(p.id); setView('detail'); }}>
-                  <td style={{ ...officeStyles.td, fontWeight: 700 }}>#{p.id}</td>
-                  <td style={officeStyles.td}>{p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
-                  <td style={officeStyles.td}>{p.reference || ''}</td>
-                  <td style={officeStyles.td}>{p.expectedDate ? formatDate(p.expectedDate) : ''}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'center' }}>{p.itemCount}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrdered}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalReceived}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'center' }}><span style={statusChip(p.status)}>{p.status}</span></td>
-                </tr>
+                <React.Fragment key={p.id}>
+                  <tr style={{ cursor: 'pointer' }} onClick={() => { setSelId(p.id); setView('detail'); }}>
+                    <td style={{ ...officeStyles.td, fontWeight: 700 }}>#{p.id}</td>
+                    <td style={officeStyles.td}>{p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                    <td style={officeStyles.td}>{p.reference || ''}</td>
+                    <td style={officeStyles.td}>{p.expectedDate ? formatDate(p.expectedDate) : ''}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'center' }}>{p.itemCount}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrdered}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalReceived}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'center' }}><span style={statusChip(p.status)}>{p.status}</span></td>
+                  </tr>
+                  {p.notes && (
+                    <tr onClick={() => { setSelId(p.id); setView('detail'); }} style={{ cursor: 'pointer' }}>
+                      <td colSpan={8} style={{ padding: '0 12px 8px' }}>
+                        <div style={{ fontSize: 12, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '5px 10px', display: 'inline-block' }}>
+                          <span style={{ fontWeight: 700 }}>📝 Notes:</span> {p.notes}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
               {shown.length === 0 && <tr><td colSpan={8} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>No purchase orders.</td></tr>}
             </tbody>
