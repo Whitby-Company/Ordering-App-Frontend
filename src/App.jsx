@@ -3688,7 +3688,7 @@ function parseWhitbyPO(text) {
   const dateM = flat.match(/ORDER DATE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   const supM = flat.match(/Representing:?\s*([A-Za-z0-9 .&]+?)\s+(?:Hawken|Bill|Ship|P\.?O\.?)/i);
   const rows = [];
-  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z][0-9A-Za-z*.\-\/]{1,14})\s+(\d+\/[\d.]+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
+  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z][0-9A-Za-z*.\-\/]{1,14})\s+(\d+(?:\/[\d.]+)+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
   let m;
   while ((m = lineRe.exec(flat)) !== null) {
     const [, qty, code, pack, desc, price] = m;
@@ -6353,11 +6353,23 @@ function POUploadModal({ items, onClose, onCreated }) {
       for (const suf of ['c', 'a', 'b', 'p', 's', 't']) if (itemByCode[key + suf]) return itemByCode[key + suf];
       return null;
     };
-    // Try the raw code, then the cleaned code, then the cleaned code with a
-    // trailing letter/marker stripped (in case junk was mid-value).
-    let hit = tryCode(raw) || tryCode(v) || tryCode(v.replace(/[a-z]+$/, ''));
+    // Try the raw code, the cleaned code, cleaned with trailing letters removed,
+    // and cleaned with a leading letter prefix removed (US4936A -> 4936a).
+    const noPrefix = v.replace(/^[a-z]+/, '');
+    let hit = tryCode(raw) || tryCode(v) || tryCode(v.replace(/[a-z]+$/, '')) || tryCode(noPrefix) || tryCode(noPrefix.replace(/[a-z]+$/, ''));
     if (hit) return { item: hit, score: 1 };
-    // Try UPC (this PO format includes it).
+    // Some POs put the real item code in the description as "#1234" (with an
+    // optional trailing backtick/marker). Try that, with leading-zero tolerance.
+    if (desc) {
+      const hashM = String(desc).match(/#\s*([0-9A-Za-z]+)/);
+      if (hashM) {
+        const hc = hashM[1].toLowerCase();
+        const h2 = hc.replace(/^0+/, '');
+        const byHash = tryCode(hc) || tryCode(h2) || tryCode('0' + h2);
+        if (byHash) return { item: byHash, score: 1 };
+      }
+    }
+    // Try UPC (some PO formats include it).
     if (upc) {
       const d = String(upc).replace(/\D/g, '');
       const u = itemByUpc[d] || itemByUpc[d.replace(/^0+/, '')];
