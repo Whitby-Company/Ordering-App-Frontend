@@ -754,7 +754,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '.addrs td { vertical-align: top; width: 50%; padding: 0; }' +
     '.addrs td.shipcol { padding-left: 48px; }' +
     '.addr-wrap { display: flex; align-items: stretch; gap: 10px; }' +
-    '.addr-vlbl { writing-mode: vertical-lr; transform: rotate(180deg); text-align: center; font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; letter-spacing: 1px; border: 1px solid #000; padding: 4px 2px; white-space: nowrap; }' +
+    '.addr-vlbl { writing-mode: vertical-rl; text-align: center; font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; letter-spacing: 1px; border: 1px solid #000; padding: 4px 2px; white-space: nowrap; }' +
     '.addr-body { font-size: 15px; line-height: 1.4; padding-top: 1px; }' +
     '.pobox { margin: 20px 0 6px; }' +
     '.pobox table { border-collapse: collapse; }' +
@@ -3688,7 +3688,7 @@ function parseWhitbyPO(text) {
   const dateM = flat.match(/ORDER DATE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   const supM = flat.match(/Representing:?\s*([A-Za-z0-9 .&]+?)\s+(?:Hawken|Bill|Ship|P\.?O\.?)/i);
   const rows = [];
-  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z*-]{3,12})\s+(\d+\/[\d.]+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
+  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z][0-9A-Za-z*.\-\/]{1,14})\s+(\d+\/[\d.]+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
   let m;
   while ((m = lineRe.exec(flat)) !== null) {
     const [, qty, code, pack, desc, price] = m;
@@ -4346,6 +4346,19 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
     }
   }
 
+  // Refresh from the server, then generate the invoice from the freshest version
+  // of the order — so edits made just before clicking are always reflected.
+  const custFor = (order) => customers.find(cc => cc.name === order.customer) || customers.find(cc => cc.id === order.customerId) || null;
+  async function handleInvoice(order, opts) {
+    let fresh = order;
+    try {
+      const latest = await apiGet('/orders');
+      const found = (latest || []).find(x => x.id === order.id);
+      if (found) fresh = found;
+    } catch { /* fall back to the list version */ }
+    printInvoice(fresh, custFor(fresh), printSequence, items, opts);
+  }
+
   // Finalize a pending order (reserve stock + move it to submitted).
   async function submitPending(orderId) {
     setProcessingId(orderId);
@@ -4557,8 +4570,8 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                         <>
                           <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId), printSequence, items, { savePdf: true })} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { savePdf: true })} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
                           </button>{' '}
@@ -6291,10 +6304,19 @@ function POUploadModal({ items, onClose, onCreated }) {
   const itemByCode = useMemo(() => { const m = {}; for (const it of items) m[displayCode(it.id).toLowerCase()] = it; return m; }, [items]);
   const itemWordSets = useMemo(() => items.map(it => ({ it, ws: wordSet(it.name) })), [items]);
   function matchItem(code, desc) {
-    const v = String(code || '').trim().toLowerCase();
-    // exact, then code+trailing letter (399554 -> 399554c), then fuzzy name
-    let hit = itemByCode[v];
-    if (!hit) for (const suf of ['c', 'a', 'b']) { if (itemByCode[v + suf]) { hit = itemByCode[v + suf]; break; } }
+    const raw = String(code || '').trim().toLowerCase();
+    // Strip any non-alphanumeric decoration (asterisks, spaces, dots, dashes).
+    const v = raw.replace(/[^a-z0-9]/g, '');
+    const tryCode = (key) => {
+      if (!key) return null;
+      if (itemByCode[key]) return itemByCode[key];
+      // code + a trailing variant letter (399554 -> 399554c, 4936 -> 4936a)
+      for (const suf of ['c', 'a', 'b', 'p', 's', 't']) if (itemByCode[key + suf]) return itemByCode[key + suf];
+      return null;
+    };
+    // Try the raw code, then the cleaned code, then the cleaned code with a
+    // trailing letter/marker stripped (in case junk was mid-value).
+    let hit = tryCode(raw) || tryCode(v) || tryCode(v.replace(/[a-z]+$/, ''));
     if (hit) return { item: hit, score: 1 };
     if (desc) {
       const dw = wordSet(desc);
