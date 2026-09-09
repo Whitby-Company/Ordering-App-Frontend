@@ -6747,7 +6747,6 @@ function OfficePurchasing({ items, onRefresh }) {
             <thead><tr>
               <th style={officeStyles.th}>PO #</th>
               <th style={officeStyles.th}>Supplier</th>
-              <th style={officeStyles.th}>Reference</th>
               <th style={officeStyles.th}>Expected</th>
               <th style={{ ...officeStyles.th, textAlign: 'center' }}>Items</th>
               <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered</th>
@@ -6758,9 +6757,8 @@ function OfficePurchasing({ items, onRefresh }) {
               {shown.map(p => (
                 <React.Fragment key={p.id}>
                   <tr style={{ cursor: 'pointer' }} onClick={() => { setSelId(p.id); setView('detail'); }}>
-                    <td style={{ ...officeStyles.td, fontWeight: 700 }}>#{p.id}</td>
+                    <td style={{ ...officeStyles.td, fontWeight: 700 }}>{p.reference || `#${p.id}`}</td>
                     <td style={officeStyles.td}>{p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
-                    <td style={officeStyles.td}>{p.reference || ''}</td>
                     <td style={officeStyles.td}>{p.expectedDate ? formatDate(p.expectedDate) : ''}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}>{p.itemCount}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrdered}</td>
@@ -6769,7 +6767,7 @@ function OfficePurchasing({ items, onRefresh }) {
                   </tr>
                   {p.notes && (
                     <tr onClick={() => { setSelId(p.id); setView('detail'); }} style={{ cursor: 'pointer' }}>
-                      <td colSpan={8} style={{ padding: '0 12px 8px' }}>
+                      <td colSpan={7} style={{ padding: '0 12px 8px' }}>
                         <div style={{ fontSize: 12, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '5px 10px', display: 'inline-block' }}>
                           <span style={{ fontWeight: 700 }}>📝 Notes:</span> {p.notes}
                         </div>
@@ -6778,7 +6776,7 @@ function OfficePurchasing({ items, onRefresh }) {
                   )}
                 </React.Fragment>
               ))}
-              {shown.length === 0 && <tr><td colSpan={8} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>No purchase orders.</td></tr>}
+              {shown.length === 0 && <tr><td colSpan={7} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>No purchase orders.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -6921,7 +6919,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
     <div>
       <div style={officeStyles.sectionHeader}>
         <button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button>
-        <div style={officeStyles.sectionTitle}>PO #{po.id} · {po.supplier || 'No supplier'}</div>
+        <div style={officeStyles.sectionTitle}>PO {po.reference || `#${po.id}`} · {po.supplier || 'No supplier'}</div>
         {po.status !== 'cancelled' && po.status !== 'received' && <button style={officeStyles.smallBtn} onClick={cancelPO} disabled={busy}>Cancel PO</button>}
       </div>
       <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>
