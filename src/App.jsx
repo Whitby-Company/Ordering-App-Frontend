@@ -6567,29 +6567,28 @@ function POUploadModal({ items, onClose, onCreated }) {
                   {rows.map((r, i) => (
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
-                      <td style={{ ...uplStyles.td, textAlign: 'right' }}>
-                        <div>{r.qty} cs</div>
+                      <td style={{ ...uplStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {r.item && Number(r.item.caseSize) > 0 ? (
-                          <div style={{ fontSize: 11, color: '#2B5D50', fontWeight: 600 }}>→ {r.qty * Number(r.item.caseSize)} bx</div>
+                          <div style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}>{r.qty} cs × {Number(r.item.caseSize)} bx/cs = <strong>{r.qty * Number(r.item.caseSize)} bx</strong></div>
                         ) : r.item ? (
                           Number(r.packOverride) > 0 ? (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
-                              <span style={{ fontSize: 11, color: '#2B5D50', fontWeight: 600 }}>→ {r.qty * Number(r.packOverride)} bx</span>
-                              <span style={{ fontSize: 10, color: '#8A8F87' }}>(×</span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}>
+                              <span>{r.qty} cs ×</span>
                               <input type="text" inputMode="numeric" value={r.packOverride}
                                 onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
                                 style={{ width: 34, fontSize: 11, textAlign: 'center', border: '1px solid #C4DDD2', borderRadius: 4, padding: '1px 2px' }} title="Boxes per case" />
-                              <span style={{ fontSize: 10, color: '#8A8F87' }}>)</span>
+                              <span>bx/cs = <strong>{r.qty * Number(r.packOverride)} bx</strong></span>
                             </div>
                           ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
-                              <span style={{ fontSize: 10, color: '#B5793B' }}>boxes/case:</span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5 }}>
+                              <span style={{ color: '#8A8F87' }}>{r.qty} cs ×</span>
                               <input type="text" inputMode="numeric" placeholder="?" value={r.packOverride || ''}
                                 onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
                                 style={{ width: 34, fontSize: 11, textAlign: 'center', border: '1px solid #E6C6B4', borderRadius: 4, padding: '1px 2px', background: '#FBEEE7' }} title="This item has no case size — enter boxes per case to convert" />
+                              <span style={{ color: '#B5793B' }}>bx/cs</span>
                             </div>
                           )
-                        ) : null}
+                        ) : <span style={{ color: '#8A8F87' }}>{r.qty} cs</span>}
                       </td>
                       <td style={uplStyles.td}>
                         <PdfRowItemPicker items={items} value={r.item} onChange={it => {
