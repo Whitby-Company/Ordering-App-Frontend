@@ -4364,10 +4364,12 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
     try {
       await downloadOrderTP(orderId);
       const order = orders.find(o => o.id === orderId);
+      // Record the export (stamps exported_at) and mark processed so it's tracked.
+      await apiPost('/orders/mark-exported', { ids: [orderId] });
       if (order && !order.processed) {
         await apiPatch(`/orders/${orderId}/processed`, { processed: true });
-        await onRefresh();
       }
+      await onRefresh();
     } catch (err) {
       setIifError(err.message || 'Could not download the Transaction Pro file.');
     } finally {
@@ -4628,12 +4630,9 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { savePdf: true })} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>{' '}
-                          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', verticalAlign: 'middle' }}>
-                            <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
-                              {iifBusyId === o.id ? '…' : 'TP'}
-                            </button>
-                            {o.exported && o.exportedAt && <span style={{ fontSize: 9.5, color: '#2B5D50', fontWeight: 600, marginTop: 1, lineHeight: 1.1 }} title={`Exported to QuickBooks ${formatDateTime(o.exportedAt)}`}>{formatDate(o.exportedAt)}</span>}
-                          </span>{' '}
+                          <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
+                            {iifBusyId === o.id ? '…' : 'TP'}
+                          </button>{' '}
                           <button
                             style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
                             onClick={() => setProcessed(o.id, !o.processed)}
@@ -4643,6 +4642,11 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                             {processingId === o.id ? '…' : (o.processed ? 'Undo' : 'Mark done')}
                           </button>
                         </>
+                      )}
+                      {o.exported && o.exportedAt && (
+                        <div style={{ fontSize: 9.5, color: '#2B5D50', fontWeight: 600, marginTop: 3 }} title={`Exported to QuickBooks ${formatDateTime(o.exportedAt)}`}>
+                          Exported {formatDate(o.exportedAt)}
+                        </div>
                       )}
                     </td>
                   </tr>
