@@ -611,8 +611,9 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
 
   const ordered = sortLinesForPrint(order.lines, printSequence, opts.forcePrintOrder || getPrintInvOrder() || !!(c && c.usePrintOrder));
   const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
-  const zeros = ordered.filter(l => (Number(l.qty) || 0) === 0);
-  const lines = [...positive, ...zeros];
+  // Keep every line in its original (input/print) order — including 0-qty
+  // out-of-stock items — so they stay where they were entered, not at the bottom.
+  const lines = ordered;
 
   const totalCases = positive.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   // Total Each counts only box-unit lines; case lines don't break into eaches.
