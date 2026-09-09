@@ -4179,7 +4179,28 @@ function PdfRowItemPicker({ items, value, onChange }) {
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return [];
-    return items.filter(i => i.name.toLowerCase().includes(s) || String(i.id).toLowerCase().includes(s) || (s.replace(/\D/g, '').length >= 4 && i.upc && String(i.upc).replace(/\D/g, '').includes(s.replace(/\D/g, '')))).slice(0, 25);
+    const words = s.split(/\s+/).filter(Boolean);
+    const digits = s.replace(/\D/g, '');
+    const scored = [];
+    for (const i of items) {
+      const name = i.name.toLowerCase();
+      const id = String(i.id).toLowerCase();
+      const hay = name + ' ' + id;
+      // All typed words must appear somewhere (as substrings) — so "ritter hazel"
+      // matches "Ritter - Dk Hazelnut". Also allow UPC digit match.
+      const allWords = words.every(w => hay.includes(w));
+      const upcMatch = digits.length >= 4 && i.upc && String(i.upc).replace(/\D/g, '').includes(digits);
+      if (allWords || upcMatch) {
+        // Rank: earlier/complete matches first.
+        let score = 0;
+        if (name.includes(s)) score += 100;
+        if (name.startsWith(words[0])) score += 20;
+        score += words.reduce((n, w) => n + (name.includes(w) ? 5 : 0), 0);
+        scored.push({ i, score });
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 30).map(x => x.i);
   }, [items, q]);
   return (
     <div style={{ position: 'relative', display: 'inline-block', minWidth: 220 }}>
