@@ -7036,6 +7036,13 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
     try { await apiPatch(`/purchase-orders/${poId}`, { status: 'cancelled' }); await onChanged(); onBack(); }
     catch { /* ignore */ } finally { setBusy(false); }
   }
+  async function closeShort() {
+    const out = po ? po.lines.reduce((s, l) => s + (l.qtyOrdered - l.qtyReceived), 0) : 0;
+    if (!window.confirm(`Close this PO short? The ${out} outstanding box(es) will be recorded as short/damaged and the PO marked done. Stock stays as received.`)) return;
+    setBusy(true);
+    try { await apiPost(`/purchase-orders/${poId}/close-short`, {}); await load(); await onChanged(); }
+    catch { /* ignore */ } finally { setBusy(false); }
+  }
 
   if (loading) return <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div>;
   if (!po) return <div><button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button><div style={{ padding: 20 }}>Not found.</div></div>;
@@ -7059,6 +7066,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (bx · cs)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (bx · cs)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Outstanding</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Short/dmg</th>
             {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 120 }}>Receive now</th>}
           </tr></thead>
           <tbody>
@@ -7077,6 +7085,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyOrdered)}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyReceived)}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: out > 0 ? '#B5793B' : '#8A8F87' }}>{boxCs(out)}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', color: l.qtyShort > 0 ? '#B5493B' : '#B9BDB2', fontWeight: l.qtyShort > 0 ? 700 : 400 }}>{l.qtyShort > 0 ? boxCs(l.qtyShort) : '—'}</td>
                   {po.status !== 'received' && po.status !== 'cancelled' && (
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                       {out > 0 ? (
@@ -7092,10 +7101,11 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
         </table>
       </div>
       {po.status !== 'received' && po.status !== 'cancelled' && outstanding > 0 && (
-        <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#F7F8F4' }} onClick={() => receive(false)} disabled={busy || Object.values(recv).every(v => !Number(v))}>Receive entered</button>
           <button style={officeStyles.smallBtn} onClick={() => receive(true)} disabled={busy}>Receive all ({outstanding})</button>
-          <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Receiving adds the quantity into on-hand stock.</span>
+          <button style={{ ...officeStyles.smallBtn, color: '#B5493B', borderColor: '#E6C6B4' }} onClick={closeShort} disabled={busy} title="Mark the PO done and record the outstanding quantity as short/damaged">Close short ({outstanding})</button>
+          <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Receiving adds to stock. Close short records the rest as short/damaged.</span>
         </div>
       )}
     </div>
