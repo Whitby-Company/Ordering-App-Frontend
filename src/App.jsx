@@ -7094,21 +7094,23 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
         <table style={officeStyles.table}>
           <thead><tr>
             <th style={officeStyles.th}>Item</th>
-            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (bx · cs)</th>
-            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (bx · cs)</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (cs · bx)</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (cs · bx)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Outstanding</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Short/dmg</th>
-            {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 120 }}>Receive now</th>}
+            {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 140 }}>Receive now</th>}
           </tr></thead>
           <tbody>
             {po.lines.map(l => {
               const out = l.qtyOrdered - l.qtyReceived;
               const it = items.find(x => x.id === l.itemId);
               const cs = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 0;
-              const inCs = (boxes) => cs > 0 ? `${(boxes / cs) % 1 === 0 ? boxes / cs : (boxes / cs).toFixed(1)} cs` : null;
+              const inCs = (boxes) => cs > 0 ? ((boxes / cs) % 1 === 0 ? boxes / cs : (boxes / cs).toFixed(1)) : null;
               const boxCs = (boxes) => {
                 const c = inCs(boxes);
-                return <>{boxes} bx{c ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {c}</span> : null}</>;
+                // Cases bold (primary), boxes grey (secondary).
+                if (c != null) return <><strong>{c} cs</strong><span style={{ color: '#8A8F87', fontSize: 11 }}> · {boxes} bx</span></>;
+                return <>{boxes} bx</>;
               };
               return (
                 <tr key={l.id}>
@@ -7120,8 +7122,21 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
                   {po.status !== 'received' && po.status !== 'cancelled' && (
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                       {out > 0 ? (
-                        <input style={{ ...poStyles.input, width: 80, textAlign: 'right' }} value={recv[l.itemId] || ''} inputMode="numeric" placeholder="0"
-                          onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRecv(prev => ({ ...prev, [l.itemId]: Math.min(Number(v) || 0, out) })); }} />
+                        cs > 0 ? (
+                          // Enter in CASES (converts to boxes, capped at outstanding).
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
+                            <input style={{ ...poStyles.input, width: 56, textAlign: 'right' }} inputMode="numeric" placeholder="0"
+                              value={recv[l.itemId] != null && recv[l.itemId] !== '' ? String((Number(recv[l.itemId]) / cs) % 1 === 0 ? Number(recv[l.itemId]) / cs : (Number(recv[l.itemId]) / cs).toFixed(2)) : ''}
+                              onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); const boxes = Math.min(Math.round((Number(v) || 0) * cs), out); setRecv(prev => ({ ...prev, [l.itemId]: boxes })); }} />
+                            <span style={{ fontSize: 11, color: '#8A8F87' }}>cs{recv[l.itemId] > 0 ? ` = ${recv[l.itemId]} bx` : ''}</span>
+                          </span>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
+                            <input style={{ ...poStyles.input, width: 60, textAlign: 'right' }} value={recv[l.itemId] || ''} inputMode="numeric" placeholder="0"
+                              onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRecv(prev => ({ ...prev, [l.itemId]: Math.min(Number(v) || 0, out) })); }} />
+                            <span style={{ fontSize: 11, color: '#8A8F87' }}>bx</span>
+                          </span>
+                        )
                       ) : <span style={{ color: '#B9BDB2' }}>—</span>}
                     </td>
                   )}
