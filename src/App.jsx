@@ -4686,7 +4686,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <tr>
                       <td style={{ padding: '0 12px 8px', background: o.processed ? undefined : '#FFFDF7' }} colSpan={11}>
                         <div style={{ fontSize: 12, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '5px 10px', display: 'inline-block' }}>
-                          <span style={{ fontWeight: 700 }}>📝 Notes:</span> {o.notes}
+                          <span style={{ fontWeight: 700 }}>📝 Note</span> <span style={{ color: '#8A8F87' }}>for {o.customer}{o.status !== 'pending' ? ` · Inv ${invoiceNumberFor(o)}` : ''}:</span> {o.notes}
                         </div>
                       </td>
                     </tr>
@@ -6769,7 +6769,7 @@ function OfficePurchasing({ items, onRefresh }) {
                     <tr onClick={() => { setSelId(p.id); setView('detail'); }} style={{ cursor: 'pointer' }}>
                       <td colSpan={7} style={{ padding: '0 12px 8px' }}>
                         <div style={{ fontSize: 12, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '5px 10px', display: 'inline-block' }}>
-                          <span style={{ fontWeight: 700 }}>📝 Notes:</span> {p.notes}
+                          <span style={{ fontWeight: 700 }}>📝 Note</span> <span style={{ color: '#8A8F87' }}>for PO {p.reference || `#${p.id}`}{p.supplier ? ` · ${p.supplier}` : ''}:</span> {p.notes}
                         </div>
                       </td>
                     </tr>
