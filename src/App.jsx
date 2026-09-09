@@ -1432,12 +1432,12 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
             const warn = !inCatalog(l.id);
             const oos = (Number(l.stock) || 0) <= 0;
             const pack = Number(l.pack) || 1;
-            // Eaches this line consumes vs. what's in stock. Out-of-stock items
-            // are handled separately; this flags in-stock items ordered beyond stock.
-            const orderedEaches = (Number(l.qty) || 0) * pack;
+            // Stock is tracked in BOXES. A box line consumes qty boxes; a case
+            // line consumes qty × caseSize boxes. Compare in boxes (not eaches).
+            const boxesOrdered = (Number(l.qty) || 0) * (l.unit === 'case' && l.caseSize ? Number(l.caseSize) : 1);
             const stockBoxes = Number(l.stock) || 0;
-            const overStock = !oos && orderedEaches > stockBoxes;
-            const stockLeft = stockBoxes - orderedEaches; // negative = short
+            const overStock = !oos && boxesOrdered > stockBoxes;
+            const stockLeft = stockBoxes - boxesOrdered; // negative = short
             return (
               <tr key={l.id} style={oos ? qeStyles.oosRow : (overStock ? qeStyles.warnRow : (warn ? qeStyles.warnRow : undefined))}>
                 <td style={qeStyles.td}>{displayCode(l.id)}</td>
@@ -1449,8 +1449,8 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
                   {overStock && (
                     <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#B5493B', background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 8px' }}
-                      title={`Only ${stockBoxes} in stock — this order is ${Math.abs(stockLeft)} over. Stock will go to ${stockLeft}.`}>
-                      ⚠ {stockBoxes} in stock · {Math.abs(stockLeft)} over
+                      title={`Only ${stockBoxes} box(es) in stock — this order needs ${boxesOrdered} box(es), ${Math.abs(stockLeft)} over. Stock will go to ${stockLeft}.`}>
+                      ⚠ {stockBoxes} bx in stock · {Math.abs(stockLeft)} over
                     </span>
                   )}
                 </td>
