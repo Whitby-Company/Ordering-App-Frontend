@@ -4205,7 +4205,7 @@ function PdfRowItemPicker({ items, value, onChange }) {
   return (
     <div style={{ position: 'relative', display: 'inline-block', minWidth: 220 }}>
       <button style={{ ...uplStyles.input, textAlign: 'left', cursor: 'pointer', width: '100%', fontSize: 12.5, padding: '5px 8px', borderColor: value ? '#C4DDD2' : '#E6C6B4', background: value ? '#fff' : '#FBEEE7' }} onClick={() => { setOpen(o => !o); setQ(''); }}>
-        {value ? <span><strong>{displayCode(value.id)}</strong> {value.name}</span> : <span style={{ color: '#B5493B' }}>Pick an item…</span>}
+        {value ? <span><strong>{displayCode(value.id)}</strong> {value.name}{value.packLabel ? <span style={{ color: '#8A8F87' }}> · {value.packLabel}</span> : ''}</span> : <span style={{ color: '#B5493B' }}>Pick an item…</span>}
       </button>
       {open && (
         <div style={{ position: 'absolute', left: 0, top: '100%', zIndex: 20, minWidth: 320, marginTop: 2, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 30px rgba(20,24,31,0.2)', padding: 6 }}>
@@ -4214,7 +4214,7 @@ function PdfRowItemPicker({ items, value, onChange }) {
             {value && <button style={pickRow} onMouseDown={e => { e.preventDefault(); onChange(null); setOpen(false); }}><span style={{ color: '#B5493B' }}>✕ Skip this line</span></button>}
             {matches.map(it => (
               <button key={it.id} style={pickRow} onMouseDown={e => { e.preventDefault(); onChange(it); setOpen(false); }}>
-                <strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(it.id)}</strong>{it.name}
+                <strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(it.id)}</strong>{it.name}{it.packLabel ? <span style={{ color: '#8A8F87' }}> · {it.packLabel}</span> : ''}
               </button>
             ))}
             {q && matches.length === 0 && <div style={{ padding: 8, color: '#8A8F87', fontSize: 12.5 }}>No items match.</div>}
@@ -6472,7 +6472,7 @@ function POUploadModal({ items, onClose, onCreated }) {
       setRawText(text);
       const parsed = parseWhitbyPO(text);
       if (!parsed.rows.length) { setErr(`Could not find PO lines in "${file.name}". Use "Show extracted text" to check.`); setShowRaw(true); setRows([]); setStep('review'); setBusy(false); return; }
-      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc, parsed.supplier); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, item: m.item, score: m.score }; });
+      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc, parsed.supplier); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, pack: r.pack, item: m.item, score: m.score }; });
       setRows(matched);
       setReference(parsed.reference || '');
       setSupplier(parsed.supplier || 'Storck');
@@ -6566,7 +6566,7 @@ function POUploadModal({ items, onClose, onCreated }) {
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
-                      <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
+                      <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.pack ? ` · ${r.pack}` : ''}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {r.item && Number(r.item.caseSize) > 0 ? (
                           <div style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}>{r.qty} cs × {Number(r.item.caseSize)} bx/cs = <strong>{r.qty * Number(r.item.caseSize)} bx</strong></div>
