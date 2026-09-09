@@ -3688,14 +3688,14 @@ function parseWhitbyPO(text) {
   const dateM = flat.match(/ORDER DATE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   const supM = flat.match(/Representing:?\s*([A-Za-z0-9 .&]+?)\s+(?:Hawken|Bill|Ship|P\.?O\.?)/i);
   const rows = [];
-  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z-]{3,12})\s+(\d+\/[\d.]+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
+  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z*-]{3,12})\s+(\d+\/[\d.]+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
   let m;
   while ((m = lineRe.exec(flat)) !== null) {
     const [, qty, code, pack, desc, price] = m;
     if (/total|weight|cube/i.test(desc)) continue;
     rows.push({
       qty: parseInt(qty, 10),
-      code: code.trim(),
+      code: code.trim().replace(/\*+$/, ''), // trailing '*' is a note marker, not part of the code
       pack: pack.trim(),
       desc: desc.trim().replace(/\s*\([0-9]+\)\*?\s*$/, ''),
       price: parseFloat(price.replace(/,/g, '')),
