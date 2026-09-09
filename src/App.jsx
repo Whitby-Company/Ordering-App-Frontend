@@ -1944,7 +1944,9 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // restrict to their catalog and apply their per-each prices.
   const catalogItems = useMemo(() => {
     if (!catalog) return items;
-    const seasonalFilter = arr => hideSeasonal ? arr.filter(i => !isSeasonal(i)) : arr;
+    // On mobile, always hide seasonal (no toggle there). Desktop uses the toggle.
+    const doHideSeasonal = desktop ? hideSeasonal : true;
+    const seasonalFilter = arr => doHideSeasonal ? arr.filter(i => !isSeasonal(i)) : arr;
     // Items already on the order being edited stay available even if off-catalog,
     // so editing never hides a line that's part of the order.
     const onOrderIds = isEdit && editOrder ? new Set(editOrder.lines.map(l => l.id)) : null;
@@ -1957,7 +1959,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     return seasonalFilter(items
       .filter(i => catalog.ids.has(i.id) || (onOrderIds && onOrderIds.has(i.id)))
       .map(withPrice));
-  }, [items, catalog, isEdit, editOrder, showAllItems, hideSeasonal]);
+  }, [items, catalog, isEdit, editOrder, showAllItems, hideSeasonal, desktop]);
 
   const brandList = useMemo(() => Array.from(new Set(catalogItems.map(i => i.brand))), [catalogItems]);
   const brandCounts = useMemo(() => {
@@ -2441,7 +2443,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             {quickEntry ? 'Quick entry ✓' : 'Quick entry'}
           </button>
         )}
-        {!isEdit && customerId != null && (
+        {desktop && !isEdit && customerId != null && (
           <button
             style={{ ...styles.allItemsChip, ...(hideSeasonal ? styles.allItemsChipOn : {}) }}
             onClick={() => setHideSeasonal(!hideSeasonal)}
@@ -2459,7 +2461,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             {printInvOrder ? 'Inventory order ✓' : 'Inventory order'}
           </button>
         )}
-        {customerId != null && (
+        {desktop && customerId != null && (
           <button
             style={{ ...styles.allItemsChip, ...(allCases ? styles.allItemsChipOn : {}) }}
             onClick={toggleAllCases}
