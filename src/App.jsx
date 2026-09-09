@@ -4279,39 +4279,6 @@ function InvoiceNumberCell({ order, onSaved }) {
   );
 }
 
-// Editable custom status for an order (e.g. Invoiced, Shipped, On hold).
-// Uses a native <select> so the options never get clipped by table overflow.
-const STATUS_PRESETS = ['Invoiced', 'Shipped', 'Delivered', 'On hold', 'Backordered'];
-function CustomStatusEditor({ order, onSaved }) {
-  const [saving, setSaving] = useState(false);
-  const current = order.customStatus || '';
-  async function onChange(e) {
-    const value = e.target.value || null;
-    setSaving(true);
-    try {
-      await apiPatch(`/orders/${order.id}/custom-status`, { status: value });
-      await onSaved();
-    } catch { /* ignore */ }
-    finally { setSaving(false); }
-  }
-  return (
-    <select
-      value={current}
-      onChange={onChange}
-      disabled={saving}
-      title="Set a status for this order"
-      style={{
-        fontSize: 11, fontWeight: 700, fontFamily: 'inherit', borderRadius: 20, padding: '2px 6px', cursor: 'pointer',
-        background: current ? '#EEF2FA' : '#FFFFFF', color: current ? '#2E4C8A' : '#8A8F87',
-        border: current ? '1px solid #C3D3EE' : '1px dashed #D6D3C6', opacity: saving ? 0.5 : 1, maxWidth: 120,
-      }}
-    >
-      <option value="">+ status</option>
-      {STATUS_PRESETS.map(s => <option key={s} value={s}>{s}</option>)}
-    </select>
-  );
-}
-
 function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
@@ -4630,7 +4597,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
-                    <td style={officeStyles.td}>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       {o.status === 'pending'
                         ? <span style={officeStyles.badgePending}>Pending</span>
                         : o.processed
@@ -4638,7 +4605,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           : <span style={officeStyles.badgeUnprocessed}>New</span>}
                       {o.exported ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 7px' }} title={o.exportedAt ? `Exported ${formatDateTime(o.exportedAt)}` : 'Exported'}>exported</span> : null}
                       {o.editedAt ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FDF3E3', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' }} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {formatDate(o.editedAt)}</span> : null}
-                      <div style={{ marginTop: 4 }}><CustomStatusEditor order={o} onSaved={onRefresh} /></div>
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
