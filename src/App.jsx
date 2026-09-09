@@ -6351,7 +6351,7 @@ function POUploadModal({ items, onClose, onCreated }) {
     }
     return m;
   }, [items]);
-  function matchItem(code, desc, upc) {
+  function matchItem(code, desc, upc, brandHint) {
     // Remembered manual match first (keyed by code, else description).
     const remKey = (code && String(code).trim()) ? String(code).trim().toLowerCase() : String(desc || '').trim().toLowerCase();
     if (remKey && savedMap[remKey] && itemById[savedMap[remKey]]) return { item: itemById[savedMap[remKey]], score: 1 };
@@ -6389,9 +6389,23 @@ function POUploadModal({ items, onClose, onCreated }) {
     }
     if (desc) {
       const dw = wordSet(desc);
+      // When we know the PO's supplier/brand, only match against that brand's
+      // items — prevents wrong-brand matches and makes weak scores trustworthy.
+      const supBrand = String(brandHint || supplier || '').toLowerCase();
+      const brandWords = new Set(supBrand.split(/[^a-z0-9]+/).filter(w => w.length > 2 && !['usa', 'inc', 'llc', 'the', 'co'].includes(w)));
+      const inBrand = (it) => {
+        if (!brandWords.size) return true;
+        const b = String(it.brand || '').toLowerCase();
+        for (const w of brandWords) if (b.includes(w)) return true;
+        return false;
+      };
+      const pool = itemWordSets.filter(x => inBrand(x.it));
       let best = null, score = 0;
-      for (const { it, ws } of itemWordSets) { const sc = nameMatchScore(dw, ws); if (sc > score) { score = sc; best = it; } }
-      if (score >= 0.5) return { item: best, score };
+      for (const { it, ws } of (pool.length ? pool : itemWordSets)) { const sc = nameMatchScore(dw, ws); if (sc > score) { score = sc; best = it; } }
+      // Brand-filtered matches can be trusted at a lower score (fewer candidates);
+      // full-catalog matches still need a strong score.
+      const threshold = pool.length ? 0.25 : 0.5;
+      if (best && score >= threshold) return { item: best, score };
     }
     return { item: null, score: 0 };
   }
@@ -6418,7 +6432,7 @@ function POUploadModal({ items, onClose, onCreated }) {
       setRawText(text);
       const parsed = parseWhitbyPO(text);
       if (!parsed.rows.length) { setErr('Could not find PO lines in this PDF. Use "Show extracted text" to check.'); setShowRaw(true); setBusy(false); return; }
-      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, item: m.item, score: m.score }; });
+      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc, parsed.supplier); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, item: m.item, score: m.score }; });
       setRows(matched);
       setReference(parsed.reference || '');
       setSupplier(parsed.supplier || 'Storck');
