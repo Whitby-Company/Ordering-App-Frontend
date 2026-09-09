@@ -6742,8 +6742,16 @@ function POUploadModal({ items, onClose, onCreated }) {
                                 placeholder="?"
                                 value={shownValue}
                                 onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
+                                onBlur={() => {
+                                  // If the item had no case size and a pack was entered, save it to
+                                  // the item so it auto-fills on future POs (fire-and-forget).
+                                  const entered = Number(r.packOverride);
+                                  if (r.item && !(Number(r.item.caseSize) > 0) && entered > 0) {
+                                    apiPatch(`/items/${encodeURIComponent(r.item.id)}`, { caseSize: entered }).catch(() => {});
+                                  }
+                                }}
                                 style={{ width: 36, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasRealPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasRealPack ? '#fff' : '#FBEEE7' }}
-                                title={hasRealPack ? "Boxes per case — edit if the PO's case pack differs" : "No case size on file — enter the boxes per case to convert."}
+                                title={hasRealPack ? "Boxes per case — edit if the PO's case pack differs" : "No case size on file — enter the boxes per case to convert (saved for next time)."}
                               />
                               <span>bx/cs {hasRealPack ? <>= <strong>{r.qty * Number(effPack)} bx</strong></> : null}</span>
                             </div>
