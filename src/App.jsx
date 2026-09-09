@@ -4627,7 +4627,14 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                       {formatDateTime(o.submittedAt)}
                       {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {o.submittedBy}</div>}
                     </td>
-                    <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
+                    <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>
+                      {o.customer}
+                      {o.notes && (
+                        <div style={{ fontWeight: 400, fontSize: 11.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '4px 8px', marginTop: 4, whiteSpace: 'normal', maxWidth: 320 }}>
+                          <span style={{ fontWeight: 700 }}>📝</span> {o.notes}
+                        </div>
+                      )}
+                    </td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
@@ -4682,15 +4689,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                       )}
                     </td>
                   </tr>
-                  {o.notes && !isOpen && (
-                    <tr>
-                      <td style={{ padding: '0 12px 8px', background: o.processed ? undefined : '#FFFDF7' }} colSpan={11}>
-                        <div style={{ fontSize: 12, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '5px 10px', display: 'inline-block' }}>
-                          <span style={{ fontWeight: 700 }}>📝 Note</span> <span style={{ color: '#8A8F87' }}>for {o.customer}{o.status !== 'pending' ? ` · Inv ${invoiceNumberFor(o)}` : ''}:</span> {o.notes}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                   {isOpen && (
                     <tr>
                       <td style={officeStyles.detailCell} colSpan={11}>
@@ -6758,22 +6756,20 @@ function OfficePurchasing({ items, onRefresh }) {
                 <React.Fragment key={p.id}>
                   <tr style={{ cursor: 'pointer' }} onClick={() => { setSelId(p.id); setView('detail'); }}>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }}>{p.reference || `#${p.id}`}</td>
-                    <td style={officeStyles.td}>{p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                    <td style={officeStyles.td}>
+                      {p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}
+                      {p.notes && (
+                        <div style={{ fontSize: 11.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '4px 8px', marginTop: 4, whiteSpace: 'normal', maxWidth: 320 }}>
+                          <span style={{ fontWeight: 700 }}>📝</span> {p.notes}
+                        </div>
+                      )}
+                    </td>
                     <td style={officeStyles.td}>{p.expectedDate ? formatDate(p.expectedDate) : ''}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}>{p.itemCount}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrdered}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalReceived}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}><span style={statusChip(p.status)}>{p.status}</span></td>
                   </tr>
-                  {p.notes && (
-                    <tr onClick={() => { setSelId(p.id); setView('detail'); }} style={{ cursor: 'pointer' }}>
-                      <td colSpan={7} style={{ padding: '0 12px 8px' }}>
-                        <div style={{ fontSize: 12, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '5px 10px', display: 'inline-block' }}>
-                          <span style={{ fontWeight: 700 }}>📝 Note</span> <span style={{ color: '#8A8F87' }}>for PO {p.reference || `#${p.id}`}{p.supplier ? ` · ${p.supplier}` : ''}:</span> {p.notes}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                 </React.Fragment>
               ))}
               {shown.length === 0 && <tr><td colSpan={7} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>No purchase orders.</td></tr>}
