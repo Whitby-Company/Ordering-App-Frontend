@@ -7035,20 +7035,27 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
         <table style={officeStyles.table}>
           <thead><tr>
             <th style={officeStyles.th}>Item</th>
-            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered</th>
-            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (bx · cs)</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (bx · cs)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Outstanding</th>
             {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 120 }}>Receive now</th>}
           </tr></thead>
           <tbody>
             {po.lines.map(l => {
               const out = l.qtyOrdered - l.qtyReceived;
+              const it = items.find(x => x.id === l.itemId);
+              const cs = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 0;
+              const inCs = (boxes) => cs > 0 ? `${(boxes / cs) % 1 === 0 ? boxes / cs : (boxes / cs).toFixed(1)} cs` : null;
+              const boxCs = (boxes) => {
+                const c = inCs(boxes);
+                return <>{boxes} bx{c ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {c}</span> : null}</>;
+              };
               return (
                 <tr key={l.id}>
-                  <td style={officeStyles.td}><strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(l.itemId)}</strong>{l.item}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{l.qtyOrdered}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{l.qtyReceived}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: out > 0 ? '#B5793B' : '#8A8F87' }}>{out}</td>
+                  <td style={officeStyles.td}><strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(l.itemId)}</strong>{l.item}{cs > 0 ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {cs}/cs</span> : null}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyOrdered)}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyReceived)}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: out > 0 ? '#B5793B' : '#8A8F87' }}>{boxCs(out)}</td>
                   {po.status !== 'received' && po.status !== 'cancelled' && (
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                       {out > 0 ? (
