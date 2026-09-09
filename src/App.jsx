@@ -1400,10 +1400,10 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
   }
 
   const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
-  const totalEach = orderLines.reduce((s, l) => s + (l.unit === 'case' ? 0 : (Number(l.qty) || 0) * (Number(l.pack) || 1)), 0);
+  const totalEach = orderLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
   const totalAmt = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
-  // Hide the EACH column while every ordered line is a case.
-  const showEach = orderLines.length === 0 ? true : !orderLines.every(l => l.unit === 'case');
+  // Always show the EACH column, even for case lines (a case still has eaches).
+  const showEach = true;
 
   return (
     <div style={qeStyles.wrap}>
