@@ -6177,7 +6177,7 @@ function SalesByPersonReport({ onBack }) {
             <thead><tr>
               <th style={repStyles.th}>Person</th>
               <th style={{ ...repStyles.th, textAlign: 'right' }}>Orders</th>
-              <th style={{ ...repStyles.th, textAlign: 'right' }}>Total sales</th>
+              <th style={{ ...repStyles.th, textAlign: 'right' }}>Total sales (w/tax)</th>
               <th style={repStyles.th}></th>
             </tr></thead>
             <tbody>
