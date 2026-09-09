@@ -6538,11 +6538,12 @@ function POUploadModal({ items, onClose, onCreated }) {
   // The PO quantity is in CASES. Stock is tracked in boxes, so convert using each
   // item's caseSize (boxes per case). Items without a caseSize receive as-is.
   const boxesFor = (r) => {
-    const cs = r.item && Number(r.item.caseSize);
-    if (cs && cs > 0) return r.qty * cs;
-    const ov = Number(r.packOverride);
-    if (ov > 0) return r.qty * ov; // manually-entered boxes per case
-    return r.qty; // no case size and no override — receive as raw cases
+    if (!r.item) return r.qty;
+    // The user's edited pack wins; otherwise the item's case size.
+    const eff = (r.packOverride !== undefined && r.packOverride !== '')
+      ? Number(r.packOverride)
+      : Number(r.item.caseSize);
+    return eff > 0 ? r.qty * eff : r.qty;
   };
   async function createPO() {
     const lines = rows.filter(r => r.item && r.qty > 0).map(r => ({ itemId: r.item.id, qty: boxesFor(r) }));
@@ -6600,27 +6601,29 @@ function POUploadModal({ items, onClose, onCreated }) {
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.pack ? ` · ${r.pack}` : ''}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        {r.item && Number(r.item.caseSize) > 0 ? (
-                          <div style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}>{r.qty} cs × {Number(r.item.caseSize)} bx/cs = <strong>{r.qty * Number(r.item.caseSize)} bx</strong></div>
-                        ) : r.item ? (
-                          Number(r.packOverride) > 0 ? (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}>
+                        {r.item ? (() => {
+                          // The effective boxes-per-case: the user's override if set,
+                          // else the item's case size. Always editable.
+                          const effPack = (r.packOverride !== undefined && r.packOverride !== '')
+                            ? Number(r.packOverride)
+                            : (Number(r.item.caseSize) > 0 ? Number(r.item.caseSize) : '');
+                          const boxes = Number(effPack) > 0 ? r.qty * Number(effPack) : r.qty;
+                          const hasPack = Number(effPack) > 0;
+                          return (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5, color: hasPack ? '#2B5D50' : '#5B6058', fontWeight: 600 }}>
                               <span>{r.qty} cs ×</span>
-                              <input type="text" inputMode="numeric" value={r.packOverride}
+                              <input
+                                type="text" inputMode="numeric"
+                                placeholder="?"
+                                value={r.packOverride !== undefined && r.packOverride !== '' ? r.packOverride : (Number(r.item.caseSize) > 0 ? String(r.item.caseSize) : '')}
                                 onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
-                                style={{ width: 34, fontSize: 11, textAlign: 'center', border: '1px solid #C4DDD2', borderRadius: 4, padding: '1px 2px' }} title="Boxes per case" />
-                              <span>bx/cs = <strong>{r.qty * Number(r.packOverride)} bx</strong></span>
+                                style={{ width: 36, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasPack ? '#fff' : '#FBEEE7' }}
+                                title="Boxes per case — edit if the PO's case pack differs"
+                              />
+                              <span>bx/cs {hasPack ? <>= <strong>{boxes} bx</strong></> : null}</span>
                             </div>
-                          ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5 }}>
-                              <span style={{ color: '#8A8F87' }}>{r.qty} cs ×</span>
-                              <input type="text" inputMode="numeric" placeholder="?" value={r.packOverride || ''}
-                                onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
-                                style={{ width: 34, fontSize: 11, textAlign: 'center', border: '1px solid #E6C6B4', borderRadius: 4, padding: '1px 2px', background: '#FBEEE7' }} title="This item has no case size — enter boxes per case to convert" />
-                              <span style={{ color: '#B5793B' }}>bx/cs</span>
-                            </div>
-                          )
-                        ) : <span style={{ color: '#8A8F87' }}>{r.qty} cs</span>}
+                          );
+                        })() : <span style={{ color: '#8A8F87' }}>{r.qty} cs</span>}
                       </td>
                       <td style={uplStyles.td}>
                         <PdfRowItemPicker items={items} value={r.item} onChange={it => {
