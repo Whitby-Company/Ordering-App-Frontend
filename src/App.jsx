@@ -1412,6 +1412,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
         <thead><tr>
           <th style={{ ...qeStyles.th, width: 130 }}>Item #</th>
           <th style={qeStyles.th}>Description</th>
+          <th style={{ ...qeStyles.th, textAlign: 'center', width: 70 }}>Pack</th>
           <th style={{ ...qeStyles.th, textAlign: 'center', width: 90 }}>Unit</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 80 }}>Qty</th>
           {showEach && <th style={{ ...qeStyles.th, textAlign: 'right', width: 70 }}>Each</th>}
@@ -1433,6 +1434,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   {oos && l.incoming > 0 && <span style={qeStyles.incomingTag} title="Incoming from a purchase order">+{l.incoming} incoming</span>}
                   {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
                 </td>
+                <td style={{ ...qeStyles.td, textAlign: 'center', color: '#5B6058', fontSize: 12 }}>{l.packLabel || (l.pack ? `${l.pack}` : '')}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
                   {l.caseSize ? (
                     <div style={qeStyles.unitToggle}>
