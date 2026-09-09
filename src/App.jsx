@@ -4065,8 +4065,11 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
   async function createOrder() {
     if (!customerId) { setErr('Pick a customer first.'); return; }
     const source = step === 'pdfreview' ? pdfRows : parsed;
-    const lines = source.filter(p => p.item && p.qty > 0).map(p => ({ itemId: p.item.id, qty: p.qty, unit: p.unit || unit }));
-    if (!lines.length) { setErr('No matched items with a quantity to order.'); return; }
+    // Uploaded orders: out-of-stock items go on at 0 qty (all zeros on the invoice).
+    const lines = source
+      .filter(p => p.item && p.qty > 0)
+      .map(p => ({ itemId: p.item.id, qty: (Number(p.item.stock) || 0) <= 0 ? 0 : p.qty, unit: p.unit || unit }));
+    if (!lines.some(l => l.qty > 0)) { setErr('No in-stock matched items with a quantity to order.'); return; }
     setBusy(true); setErr('');
     try {
       await apiPost('/orders', {
