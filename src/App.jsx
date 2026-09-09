@@ -1758,6 +1758,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   }, []);
   // Effective per-each price for an item at a given unit for the selected customer.
   const priceOf = React.useCallback((item, unit) => {
+    // Out-of-stock items are ordered as $0 (no stock to fulfill/charge for).
+    if ((Number(item.stock) || 0) <= 0) return 0;
     const u = unit || unitOf(item);
     // The store's catalog price is per-each, so it applies to either unit.
     if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
@@ -2020,8 +2022,10 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     // In edit mode the item's current qty was already reserved, so it can go up
     // to current stock + whatever this order originally held. On desktop we allow
     // ordering beyond stock (stock can go negative — orders placed before restock).
+    // Out-of-stock items can also be ordered freely (they go on at $0).
+    const oos = (Number(item.stock) || 0) <= 0;
     const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
-    const clamped = desktop ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
+    const clamped = (desktop || oos) ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
       // Going to 0 removes a normal line, but a "check-in" line (added on
@@ -2040,8 +2044,9 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   function setQtyKeepZero(id, qty) {
     const item = itemById[id];
     if (!item) return;
+    const oos = (Number(item.stock) || 0) <= 0;
     const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
-    const clamped = desktop ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
+    const clamped = (desktop || oos) ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
       if (!exists) return [...prev, { id, qty: clamped, checkin: clamped === 0 }];
