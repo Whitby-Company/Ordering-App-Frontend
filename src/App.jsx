@@ -3695,14 +3695,44 @@ function parseWhitbyPO(text) {
     if (/total|weight|cube/i.test(desc)) continue;
     rows.push({
       qty: parseInt(qty, 10),
-      code: code.trim().replace(/\*+$/, ''), // trailing '*' is a note marker, not part of the code
+      code: code.trim().replace(/\*+$/, ''),
       pack: pack.trim(),
       desc: desc.trim().replace(/\s*\([0-9]+\)\*?\s*$/, ''),
       price: parseFloat(price.replace(/,/g, '')),
     });
   }
+  // Fallback: the Hawken/Whitby invoice-style PO (ITEM# CS EACH DESC UPC PRICE TOTAL).
+  if (rows.length === 0) return parseHawkenPO(text);
   return { reference: refM ? refM[1] : '', orderDate: dateM ? dateM[1] : '', supplier: supM ? supM[1].trim() : '', rows };
 }
+
+// Parse a Hawken/Whitby invoice-style PO (the format the app itself generates):
+// columns ITEM# | CS | EACH | DESCRIPTION | UPC | PRICE | TOTAL.
+function parseHawkenPO(text) {
+  const refM = text.match(/PO #:?\s*([A-Z0-9-]+)/i);
+  const supM = text.match(/(?:BILL TO|SHIP TO):?\s*([A-Za-z0-9 .,'&()-]+?)\s{2,}/i);
+  const rows = [];
+  for (const line of text.replace(/\r/g, '').split('\n')) {
+    const s = line.replace(/\s+/g, ' ').trim();
+    // code, CS(int), EACH(int), desc..., UPC(9-17 digits/dashes), price, total
+    const mm = s.match(/^([0-9A-Za-z][0-9A-Za-z*.\-\/]*)\s+(\d+)\s+(\d+)\s+(.+?)\s+([\d-]{9,17})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})$/);
+    if (!mm) continue;
+    const [, code, cs, , desc, upc, price] = mm;
+    if (/description|item #/i.test(desc)) continue;
+    const qty = parseInt(cs, 10);
+    if (qty <= 0) continue; // skip zero-quantity lines
+    rows.push({
+      qty,
+      code: code.trim().replace(/\*+$/, ''),
+      pack: '',
+      upc,
+      desc: desc.trim().replace(/\s+\d+\/[\d.]+\s?[a-z]*\.?$/i, ''), // trim trailing pack/size from desc
+      price: parseFloat(price.replace(/,/g, '')),
+    });
+  }
+  return { reference: refM ? refM[1] : '', orderDate: '', supplier: supM ? supM[1].trim() : '', rows };
+}
+
 
 // Order-file PDF parsers (customer orders).
 // Fuzzy name match: fraction of the shorter word-set found in the other.
@@ -6303,7 +6333,16 @@ function POUploadModal({ items, onClose, onCreated }) {
 
   const itemByCode = useMemo(() => { const m = {}; for (const it of items) m[displayCode(it.id).toLowerCase()] = it; return m; }, [items]);
   const itemWordSets = useMemo(() => items.map(it => ({ it, ws: wordSet(it.name) })), [items]);
-  function matchItem(code, desc) {
+  const itemByUpc = useMemo(() => {
+    const m = {};
+    for (const it of items) {
+      if (!it.upc) continue;
+      const d = String(it.upc).replace(/\D/g, '');
+      if (d) { m[d] = it; m[d.replace(/^0+/, '')] = it; }
+    }
+    return m;
+  }, [items]);
+  function matchItem(code, desc, upc) {
     const raw = String(code || '').trim().toLowerCase();
     // Strip any non-alphanumeric decoration (asterisks, spaces, dots, dashes).
     const v = raw.replace(/[^a-z0-9]/g, '');
@@ -6318,6 +6357,12 @@ function POUploadModal({ items, onClose, onCreated }) {
     // trailing letter/marker stripped (in case junk was mid-value).
     let hit = tryCode(raw) || tryCode(v) || tryCode(v.replace(/[a-z]+$/, ''));
     if (hit) return { item: hit, score: 1 };
+    // Try UPC (this PO format includes it).
+    if (upc) {
+      const d = String(upc).replace(/\D/g, '');
+      const u = itemByUpc[d] || itemByUpc[d.replace(/^0+/, '')];
+      if (u) return { item: u, score: 1 };
+    }
     if (desc) {
       const dw = wordSet(desc);
       let best = null, score = 0;
@@ -6349,7 +6394,7 @@ function POUploadModal({ items, onClose, onCreated }) {
       setRawText(text);
       const parsed = parseWhitbyPO(text);
       if (!parsed.rows.length) { setErr('Could not find PO lines in this PDF. Use "Show extracted text" to check.'); setShowRaw(true); setBusy(false); return; }
-      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, item: m.item, score: m.score }; });
+      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, item: m.item, score: m.score }; });
       setRows(matched);
       setReference(parsed.reference || '');
       setSupplier(parsed.supplier || 'Storck');
