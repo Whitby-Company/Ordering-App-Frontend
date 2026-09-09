@@ -1432,14 +1432,26 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
             const warn = !inCatalog(l.id);
             const oos = (Number(l.stock) || 0) <= 0;
             const pack = Number(l.pack) || 1;
+            // Eaches this line consumes vs. what's in stock. Out-of-stock items
+            // are handled separately; this flags in-stock items ordered beyond stock.
+            const orderedEaches = (Number(l.qty) || 0) * pack;
+            const stockBoxes = Number(l.stock) || 0;
+            const overStock = !oos && orderedEaches > stockBoxes;
+            const stockLeft = stockBoxes - orderedEaches; // negative = short
             return (
-              <tr key={l.id} style={oos ? qeStyles.oosRow : (warn ? qeStyles.warnRow : undefined)}>
+              <tr key={l.id} style={oos ? qeStyles.oosRow : (overStock ? qeStyles.warnRow : (warn ? qeStyles.warnRow : undefined))}>
                 <td style={qeStyles.td}>{displayCode(l.id)}</td>
                 <td style={qeStyles.td}>
                   {l.name}
                   {oos && <span style={qeStyles.oosTag} title="Out of stock — added at 0 as a backorder placeholder">out of stock</span>}
                   {oos && l.incoming > 0 && <span style={qeStyles.incomingTag} title="Incoming from a purchase order">+{l.incoming} incoming</span>}
                   {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
+                  {overStock && (
+                    <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#B5493B', background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 8px' }}
+                      title={`Only ${stockBoxes} in stock — this order is ${Math.abs(stockLeft)} over. Stock will go to ${stockLeft}.`}>
+                      ⚠ {stockBoxes} in stock · {Math.abs(stockLeft)} over
+                    </span>
+                  )}
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'center', color: '#5B6058', fontSize: 12 }}>{l.packLabel || (l.pack ? `${l.pack}` : '')}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
