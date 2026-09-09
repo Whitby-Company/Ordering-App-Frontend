@@ -4280,39 +4280,35 @@ function InvoiceNumberCell({ order, onSaved }) {
 }
 
 // Editable custom status for an order (e.g. Invoiced, Shipped, On hold).
+// Uses a native <select> so the options never get clipped by table overflow.
 const STATUS_PRESETS = ['Invoiced', 'Shipped', 'Delivered', 'On hold', 'Backordered'];
 function CustomStatusEditor({ order, onSaved }) {
-  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const current = order.customStatus || '';
-  async function setStatus(value) {
-    setSaving(true); setOpen(false);
+  async function onChange(e) {
+    const value = e.target.value || null;
+    setSaving(true);
     try {
-      await apiPatch(`/orders/${order.id}/custom-status`, { status: value || null });
+      await apiPatch(`/orders/${order.id}/custom-status`, { status: value });
       await onSaved();
     } catch { /* ignore */ }
     finally { setSaving(false); }
   }
   return (
-    <span style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: '1px 8px', cursor: 'pointer', fontFamily: 'inherit',
-          background: current ? '#EEF2FA' : 'transparent', color: current ? '#2E4C8A' : '#B9BDB2',
-          border: current ? '1px solid #C3D3EE' : '1px dashed #D6D3C6', opacity: saving ? 0.5 : 1 }}
-        onClick={() => setOpen(o => !o)}
-        title="Set a status for this order"
-      >
-        {current || '+ status'}
-      </button>
-      {open && (
-        <div style={{ position: 'absolute', left: 0, top: '100%', zIndex: 30, marginTop: 2, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 10px 26px rgba(20,24,31,0.18)', padding: 4, minWidth: 130 }}>
-          {STATUS_PRESETS.map(s => (
-            <button key={s} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '6px 8px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', color: '#14181F' }} onMouseDown={e => { e.preventDefault(); setStatus(s); }}>{s}</button>
-          ))}
-          {current && <button style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderTop: '1px solid #F0EEE6', padding: '6px 8px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', color: '#B5493B' }} onMouseDown={e => { e.preventDefault(); setStatus(null); }}>✕ Clear status</button>}
-        </div>
-      )}
-    </span>
+    <select
+      value={current}
+      onChange={onChange}
+      disabled={saving}
+      title="Set a status for this order"
+      style={{
+        fontSize: 11, fontWeight: 700, fontFamily: 'inherit', borderRadius: 20, padding: '2px 6px', cursor: 'pointer',
+        background: current ? '#EEF2FA' : '#FFFFFF', color: current ? '#2E4C8A' : '#8A8F87',
+        border: current ? '1px solid #C3D3EE' : '1px dashed #D6D3C6', opacity: saving ? 0.5 : 1, maxWidth: 120,
+      }}
+    >
+      <option value="">+ status</option>
+      {STATUS_PRESETS.map(s => <option key={s} value={s}>{s}</option>)}
+    </select>
   );
 }
 
