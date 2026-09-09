@@ -3738,8 +3738,18 @@ function parseHawkenPO(text) {
 // Fuzzy name match: fraction of the shorter word-set found in the other.
 function nameMatchScore(descWords, itemWords) {
   if (!descWords.size || !itemWords.size) return 0;
+  const iw = [...itemWords];
   let overlap = 0;
-  for (const w of descWords) if (itemWords.has(w)) overlap++;
+  for (const w of descWords) {
+    if (itemWords.has(w)) { overlap += 1; continue; }
+    // Partial credit if a desc word is contained in (or contains) an item word —
+    // catches "corn"/"flake" ↔ "cornflakes", "choc" ↔ "chocolate", etc.
+    let partial = 0;
+    for (const x of iw) {
+      if (w.length >= 3 && x.length >= 3 && (x.includes(w) || w.includes(x))) { partial = 0.6; break; }
+    }
+    overlap += partial;
+  }
   return overlap / Math.max(descWords.size, 1);
 }
 function wordSet(s) {
@@ -6400,12 +6410,17 @@ function POUploadModal({ items, onClose, onCreated }) {
         return false;
       };
       const pool = itemWordSets.filter(x => inBrand(x.it));
+      const brandFiltered = pool.length > 0;
       let best = null, score = 0;
-      for (const { it, ws } of (pool.length ? pool : itemWordSets)) { const sc = nameMatchScore(dw, ws); if (sc > score) { score = sc; best = it; } }
-      // Brand-filtered matches can be trusted at a lower score (fewer candidates);
-      // full-catalog matches still need a strong score.
-      const threshold = pool.length ? 0.25 : 0.5;
-      if (best && score >= threshold) return { item: best, score };
+      for (const { it, ws } of (brandFiltered ? pool : itemWordSets)) { const sc = nameMatchScore(dw, ws); if (sc > score) { score = sc; best = it; } }
+      // Within a known brand, always offer the closest item (any overlap) — the
+      // pool is small so even a weak match is likely right, and you confirm it.
+      // Without a brand filter, require a strong score to avoid bad guesses.
+      if (brandFiltered) {
+        if (best && score > 0) return { item: best, score };
+      } else if (best && score >= 0.5) {
+        return { item: best, score };
+      }
     }
     return { item: null, score: 0 };
   }
