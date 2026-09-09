@@ -6876,8 +6876,8 @@ function OfficePurchasing({ items, onRefresh }) {
               <th style={officeStyles.th}>Supplier</th>
               <th style={officeStyles.th}>Expected</th>
               <th style={{ ...officeStyles.th, textAlign: 'center' }}>Items</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received</th>
+              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (bx · cs)</th>
+              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (bx · cs)</th>
               <th style={{ ...officeStyles.th, textAlign: 'center' }}>Status</th>
             </tr></thead>
             <tbody>
@@ -6888,8 +6888,8 @@ function OfficePurchasing({ items, onRefresh }) {
                     <td style={officeStyles.td}>{p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                     <td style={officeStyles.td}>{p.expectedDate ? formatDate(p.expectedDate) : ''}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}>{p.itemCount}</td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrdered}</td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalReceived}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrdered} bx{p.totalOrderedCases > 0 ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {p.totalOrderedCases} cs</span> : null}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalReceived} bx{p.totalReceivedCases > 0 ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {p.totalReceivedCases} cs</span> : null}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}><span style={statusChip(p.status)}>{p.status}</span></td>
                   </tr>
                   {p.notes && (
