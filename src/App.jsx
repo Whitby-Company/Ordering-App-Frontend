@@ -4684,11 +4684,13 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                   </tr>
                   {o.notes && !isOpen && (
                     <tr onClick={() => setOpenId(o.id)} style={{ cursor: 'pointer' }}>
-                      <td colSpan={11} style={{ padding: '0 16px 8px', borderBottom: '1px solid #EFEDE3' }}>
+                      <td colSpan={2} style={{ borderBottom: '1px solid #EFEDE3' }}></td>
+                      <td colSpan={8} style={{ padding: '0 8px 8px', borderBottom: '1px solid #EFEDE3' }}>
                         <div style={{ fontSize: 12.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '6px 12px' }}>
                           <span style={{ fontWeight: 700 }}>📝</span> {o.notes}
                         </div>
                       </td>
+                      <td style={{ borderBottom: '1px solid #EFEDE3' }}></td>
                     </tr>
                   )}
                   {isOpen && (
