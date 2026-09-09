@@ -649,8 +649,11 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     const cases = Number(l.qty) || 0;
     const pack = Number(l.pack) || 1;
     const isCase = l.unit === 'case';
+    // Out-of-stock lines (price 0) show 0 eaches — the cases are ordered but no
+    // stock is being fulfilled/charged.
+    const isOos = (Number(l.price) || 0) === 0;
     // For case lines: show the case price (per-each × pack) and leave EACH blank.
-    const each = isCase ? '' : cases * pack;
+    const each = isCase ? '' : (isOos ? 0 : cases * pack);
     const priceShown = isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0);
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
     // Normal: scannable barcode. "No barcode" mode: the UPC digits as text.
@@ -2587,22 +2590,13 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                     </button>
                   )}
                 </div>
-                {!desktop && item.stock <= 0 && !isOnOrder(item.id) && (
-                  <button
-                    style={styles.backorderBtn}
-                    onClick={() => addCheckin(item.id)}
-                    title="Out of stock — add to the order at 0 qty (backorder)"
-                  >
-                    + Add (out of stock)
-                  </button>
-                )}
                 <div style={styles.stepper}>
                   <button style={styles.stepBtn} onClick={() => setQty(item.id, qty - 1)} disabled={qty === 0}>
                     <Minus size={14} color={qty === 0 ? '#C7CBC1' : '#14181F'} />
                   </button>
                   <span style={styles.stepQty}>{qty}</span>
-                  <button style={styles.stepBtn} onClick={() => setQty(item.id, qty + 1)} disabled={qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0)}>
-                    <Plus size={14} color={qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0) ? '#C7CBC1' : '#14181F'} />
+                  <button style={styles.stepBtn} onClick={() => setQty(item.id, qty + 1)} disabled={item.stock > 0 && qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0)}>
+                    <Plus size={14} color={item.stock > 0 && qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0) ? '#C7CBC1' : '#14181F'} />
                   </button>
                 </div>
               </div>
