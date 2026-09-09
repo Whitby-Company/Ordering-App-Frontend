@@ -6363,6 +6363,9 @@ function POUploadModal({ items, onClose, onCreated }) {
   const [showRaw, setShowRaw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [queue, setQueue] = useState([]);
+  const [queueIdx, setQueueIdx] = useState(0);
+  const [createdCount, setCreatedCount] = useState(0);
   const [savedMap, setSavedMap] = useState({}); // "po|key" -> itemId
   const itemById = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
   useEffect(() => {
@@ -6448,10 +6451,9 @@ function POUploadModal({ items, onClose, onCreated }) {
     return { item: null, score: 0 };
   }
 
-  async function onFile(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setBusy(true); setErr('');
+  // Parse a single PDF file and show its review screen.
+  async function parseFile(file) {
+    setBusy(true); setErr(''); setShowRaw(false);
     try {
       const pdfjs = await import('pdfjs-dist/build/pdf');
       pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min?url')).default;
@@ -6469,14 +6471,34 @@ function POUploadModal({ items, onClose, onCreated }) {
       }
       setRawText(text);
       const parsed = parseWhitbyPO(text);
-      if (!parsed.rows.length) { setErr('Could not find PO lines in this PDF. Use "Show extracted text" to check.'); setShowRaw(true); setBusy(false); return; }
+      if (!parsed.rows.length) { setErr(`Could not find PO lines in "${file.name}". Use "Show extracted text" to check.`); setShowRaw(true); setRows([]); setStep('review'); setBusy(false); return; }
       const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc, parsed.supplier); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, item: m.item, score: m.score }; });
       setRows(matched);
       setReference(parsed.reference || '');
       setSupplier(parsed.supplier || 'Storck');
       setStep('review');
-    } catch (e2) { setErr('Could not read that PDF: ' + (e2.message || e2)); }
+    } catch (e2) { setErr(`Could not read "${file.name}": ` + (e2.message || e2)); }
     finally { setBusy(false); }
+  }
+
+  async function onFile(e) {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (!files.length) return;
+    setQueue(files);
+    setQueueIdx(0);
+    setCreatedCount(0);
+    await parseFile(files[0]);
+  }
+
+  // After creating (or skipping) the current PO, move to the next queued file.
+  async function advanceQueue() {
+    const next = queueIdx + 1;
+    if (next < queue.length) {
+      setQueueIdx(next);
+      await parseFile(queue[next]);
+    } else {
+      setStep('done');
+    }
   }
 
   const matchedCount = rows.filter(r => r.item && r.qty > 0).length;
@@ -6487,24 +6509,37 @@ function POUploadModal({ items, onClose, onCreated }) {
     setBusy(true); setErr('');
     try {
       await apiPost('/purchase-orders', { supplier: supplier || 'Storck', reference: reference || null, lines });
-      await onCreated();
-    } catch (e3) { setErr(e3.message || 'Could not create the PO.'); setBusy(false); }
+      setCreatedCount(c => c + 1);
+      // In a multi-file batch, move to the next PO; onCreated refreshes the list.
+      if (queue.length > 1) {
+        await advanceQueue();
+      } else {
+        await onCreated();
+      }
+    } catch (e3) { setErr(e3.message || 'Could not create the PO.'); }
+    finally { setBusy(false); }
   }
 
   return (
     <div style={styles.editOverlay} onClick={() => !busy && onClose()}>
       <div style={{ ...officeStyles.confirmCard, width: 720, maxWidth: '95vw', maxHeight: '88vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-        <div style={officeStyles.confirmTitle}>Upload a purchase order</div>
+        <div style={officeStyles.confirmTitle}>Upload purchase order{queue.length > 1 ? 's' : ''}</div>
         {step === 'file' && (
           <div style={{ padding: '16px 0' }}>
-            <p style={{ fontSize: 13.5, color: '#5B6058', marginTop: 0 }}>Choose a supplier order PDF. It'll be matched to your items and turned into a PO you can review before creating.</p>
-            <input type="file" accept=".pdf" onChange={onFile} />
+            <p style={{ fontSize: 13.5, color: '#5B6058', marginTop: 0 }}>Choose one or more supplier order PDFs. Each is matched to your items and reviewed one at a time before creating.</p>
+            <input type="file" accept=".pdf" multiple onChange={onFile} />
             {busy && <div style={{ marginTop: 10, color: '#8A8F87' }}>Reading…</div>}
             {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{err}</div>}
           </div>
         )}
         {step === 'review' && (
           <div>
+            {queue.length > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#EEF2FA', border: '1px solid #C3D3EE', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>
+                <span style={{ fontWeight: 700, color: '#2E4C8A' }}>PO {queueIdx + 1} of {queue.length}{queue[queueIdx] ? ` · ${queue[queueIdx].name}` : ''}</span>
+                <span style={{ color: '#5B6058' }}>{createdCount} created so far</span>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '10px 0 12px' }}>
               <label style={uplStyles.field}><span style={uplStyles.lbl}>Supplier</span>
                 <input style={{ ...uplStyles.input, width: 200 }} value={supplier} onChange={e => setSupplier(e.target.value)} />
@@ -6555,9 +6590,21 @@ function POUploadModal({ items, onClose, onCreated }) {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
-              <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
-              <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={createPO} disabled={busy || matchedCount === 0}>{busy ? 'Creating…' : `Create PO (${matchedCount} items)`}</button>
+              <button style={officeStyles.smallBtn} onClick={() => queue.length > 1 ? onCreated() : onClose()} disabled={busy}>{queue.length > 1 ? 'Cancel batch' : 'Cancel'}</button>
+              {queue.length > 1 && (
+                <button style={officeStyles.smallBtn} onClick={advanceQueue} disabled={busy} title="Skip this PO without creating it and go to the next file">Skip this one</button>
+              )}
+              <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={createPO} disabled={busy || matchedCount === 0}>
+                {busy ? 'Working…' : (queue.length > 1 ? `Create & next (${matchedCount})` : `Create PO (${matchedCount} items)`)}
+              </button>
             </div>
+          </div>
+        )}
+        {step === 'done' && (
+          <div style={{ padding: '20px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#2B5D50', marginBottom: 6 }}>✓ Batch complete</div>
+            <div style={{ fontSize: 13.5, color: '#5B6058', marginBottom: 16 }}>Created {createdCount} purchase order{createdCount === 1 ? '' : 's'} from {queue.length} file{queue.length === 1 ? '' : 's'}.</div>
+            <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={() => onCreated()}>Done</button>
           </div>
         )}
       </div>
