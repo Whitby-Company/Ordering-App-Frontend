@@ -6708,25 +6708,24 @@ function POUploadModal({ items, onClose, onCreated }) {
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.pack ? ` · ${r.pack}` : ''}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {r.item ? (() => {
-                          // The effective boxes-per-case: the user's override if set,
-                          // else the item's case size. Always editable.
-                          const effPack = (r.packOverride !== undefined && r.packOverride !== '')
-                            ? Number(r.packOverride)
-                            : (Number(r.item.caseSize) > 0 ? Number(r.item.caseSize) : '');
-                          const boxes = Number(effPack) > 0 ? r.qty * Number(effPack) : r.qty;
-                          const hasPack = Number(effPack) > 0;
+                          // Whether we have a real pack (from the item's case size or a
+                          // manual override). If not, default to 1 for the math but flag it red.
+                          const hasOverride = r.packOverride !== undefined && r.packOverride !== '';
+                          const hasRealPack = hasOverride ? Number(r.packOverride) > 0 : Number(r.item.caseSize) > 0;
+                          const effPack = hasOverride ? Number(r.packOverride) : (Number(r.item.caseSize) > 0 ? Number(r.item.caseSize) : 1);
+                          const boxes = r.qty * (Number(effPack) > 0 ? Number(effPack) : 1);
+                          const shownValue = hasOverride ? r.packOverride : String(effPack); // defaults show "1"
                           return (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5, color: hasPack ? '#2B5D50' : '#5B6058', fontWeight: 600 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5, color: hasRealPack ? '#2B5D50' : '#B5793B', fontWeight: 600 }}>
                               <span>{r.qty} cs ×</span>
                               <input
                                 type="text" inputMode="numeric"
-                                placeholder="?"
-                                value={r.packOverride !== undefined && r.packOverride !== '' ? r.packOverride : (Number(r.item.caseSize) > 0 ? String(r.item.caseSize) : '')}
+                                value={shownValue}
                                 onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
-                                style={{ width: 36, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasPack ? '#fff' : '#FBEEE7' }}
-                                title="Boxes per case — edit if the PO's case pack differs"
+                                style={{ width: 36, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasRealPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasRealPack ? '#fff' : '#FBEEE7' }}
+                                title={hasRealPack ? "Boxes per case — edit if the PO's case pack differs" : "No case size on file — defaulted to 1. Enter the real boxes-per-case if it's a case pack."}
                               />
-                              <span>bx/cs {hasPack ? <>= <strong>{boxes} bx</strong></> : null}</span>
+                              <span>bx/cs = <strong>{boxes} bx</strong></span>
                             </div>
                           );
                         })() : <span style={{ color: '#8A8F87' }}>{r.qty} cs</span>}
