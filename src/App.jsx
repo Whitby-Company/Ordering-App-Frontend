@@ -3836,7 +3836,10 @@ function parseKandK(text) {
 function detectAndParsePdf(text) {
   const t = text.toLowerCase();
   if (t.includes('seven-eleven') || t.includes('combined shipping instruction')) {
-    return { format: '7-Eleven', customerHint: 'Seven-Eleven', rows: parseSevenEleven(text) };
+    // The "Combined Shipping Instruction" is the consolidated distribution-center
+    // order — it goes to Seven Eleven - CDC, not an individual store. Default to
+    // CDC unless a specific store address/number appears in the file.
+    return { format: '7-Eleven', customerHint: 'Seven Eleven - CDC', rows: parseSevenEleven(text) };
   }
   if (t.includes('k & k distributors') || t.includes('kkdistributors')) {
     return { format: 'K&K', customerHint: 'K & K Distributors', rows: parseKandK(text) };
@@ -4036,6 +4039,10 @@ function OrderUploadModal({ items, customers, onClose, onCreated }) {
   function matchCustomer(text) {
     const s = (text || '').trim().toLowerCase();
     if (!s) { setCustomerId(null); return; }
+    // Exact (case-insensitive) name match wins — so a specific hint like
+    // "Seven Eleven - CDC" lands on that exact customer, not a fuzzy neighbor.
+    const exact = customers.find(c => c.name.toLowerCase() === s);
+    if (exact) { setCustomerId(exact.id); return; }
     let best = null, bestScore = 0;
     for (const c of customers) {
       const sc = fuzzyScore(s, c.name.toLowerCase());
