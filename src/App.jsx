@@ -4643,7 +4643,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           </button>
                         </>
                       )}
-                      {o.exported && o.exportedAt && (
+                      {!!(o.exported && o.exportedAt) && (
                         <div style={{ fontSize: 9.5, color: '#2B5D50', fontWeight: 600, marginTop: 3 }} title={`Exported to QuickBooks ${formatDateTime(o.exportedAt)}`}>
                           Exported {formatDateTime(o.exportedAt)}
                         </div>
