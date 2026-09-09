@@ -6544,6 +6544,14 @@ function POUploadModal({ items, onClose, onCreated }) {
               <button style={{ background: 'none', border: 'none', color: '#8A8F87', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }} onClick={() => setShowRaw(v => !v)}>{showRaw ? 'Hide extracted text' : 'Show extracted text (for troubleshooting)'}</button>
               {showRaw && <textarea readOnly value={rawText} style={{ width: '100%', height: 130, marginTop: 6, fontSize: 11, fontFamily: 'monospace', border: '1px solid #D6D3C6', borderRadius: 6, padding: 8, boxSizing: 'border-box' }} />}
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 12, padding: '10px 14px', background: '#F3F4F0', border: '1px solid #E3E1D6', borderRadius: 8, fontSize: 13.5 }}>
+              <span style={{ color: '#5B6058' }}>Totals check:</span>
+              <span style={{ display: 'flex', gap: 18 }}>
+                <span><strong>{rows.length}</strong> line{rows.length === 1 ? '' : 's'}</span>
+                <span><strong>{matchedCount}</strong> matched</span>
+                <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> total cases</span>
+              </span>
+            </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
               <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
               <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={createPO} disabled={busy || matchedCount === 0}>{busy ? 'Creating…' : `Create PO (${matchedCount} items)`}</button>
