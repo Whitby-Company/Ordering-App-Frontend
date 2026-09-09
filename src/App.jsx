@@ -4630,7 +4630,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       {o.customer}
                       {o.notes && (
-                        <div style={{ fontWeight: 400, fontSize: 11.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '4px 8px', marginTop: 4, whiteSpace: 'normal', maxWidth: 320 }}>
+                        <div style={{ fontWeight: 400, fontSize: 11.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '4px 8px', marginTop: 4, whiteSpace: 'normal', maxWidth: 620 }}>
                           <span style={{ fontWeight: 700 }}>📝</span> {o.notes}
                         </div>
                       )}
@@ -6759,7 +6759,7 @@ function OfficePurchasing({ items, onRefresh }) {
                     <td style={officeStyles.td}>
                       {p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}
                       {p.notes && (
-                        <div style={{ fontSize: 11.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '4px 8px', marginTop: 4, whiteSpace: 'normal', maxWidth: 320 }}>
+                        <div style={{ fontSize: 11.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '4px 8px', marginTop: 4, whiteSpace: 'normal', maxWidth: 620 }}>
                           <span style={{ fontWeight: 700 }}>📝</span> {p.notes}
                         </div>
                       )}
