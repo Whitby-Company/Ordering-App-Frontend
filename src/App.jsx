@@ -4605,7 +4605,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           ? <span style={officeStyles.badgeProcessed}>Processed</span>
                           : <span style={officeStyles.badgeUnprocessed}>New</span>}
                       {o.exported ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '1px 7px' }} title={o.exportedAt ? `Exported ${formatDateTime(o.exportedAt)}` : 'Exported'}>exported</span> : null}
-                      {o.editedAt ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FDF3E3', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px' }} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {formatDateTime(o.editedAt)}</span> : null}
+                      {o.editedAt ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#B5793B', background: '#FDF3E3', border: '1px solid #EAD3A8', borderRadius: 20, padding: '1px 7px', whiteSpace: 'nowrap' }} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {new Date(o.editedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> : null}
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
