@@ -8013,14 +8013,6 @@ function OfficeCustomers({ customers, onRefresh }) {
                     </button>
                   </td>
                 )}
-                <td style={{ ...officeStyles.td, textAlign: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={!!c.showOnMobile && c.showOnMobile !== 0}
-                    onChange={async e => { await apiPatch(`/customers/${c.id}`, { showOnMobile: e.target.checked }); await onRefresh(); }}
-                    title="Show this customer in the mobile field-rep picker"
-                  />
-                </td>
                 {editMode && (
                   <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                     <input
@@ -8031,6 +8023,14 @@ function OfficeCustomers({ customers, onRefresh }) {
                     />
                   </td>
                 )}
+                <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!c.showOnMobile && c.showOnMobile !== 0}
+                    onChange={async e => { await apiPatch(`/customers/${c.id}`, { showOnMobile: e.target.checked }); await onRefresh(); }}
+                    title="Show this customer in the mobile field-rep picker"
+                  />
+                </td>
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   <ActiveToggle
                     active={!!c.active}
