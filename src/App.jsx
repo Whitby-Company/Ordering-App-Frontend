@@ -4610,7 +4610,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
               const totalUnits = o.lines.reduce((s, l) => s + l.qty, 0);
               return (
                 <React.Fragment key={o.id}>
-                  <tr style={{ ...officeStyles.rowClickable, ...(o.processed ? {} : officeStyles.rowUnprocessed) }}>
+                  <tr className={o.notes && !isOpen ? 'has-note' : undefined} style={{ ...officeStyles.rowClickable, ...(o.processed ? {} : officeStyles.rowUnprocessed) }}>
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                       <input
                         type="checkbox"
@@ -6841,7 +6841,7 @@ function OfficePurchasing({ items, onRefresh }) {
             <tbody>
               {shown.map(p => (
                 <React.Fragment key={p.id}>
-                  <tr style={{ cursor: 'pointer' }} onClick={() => { setSelId(p.id); setView('detail'); }}>
+                  <tr className={p.notes ? 'has-note' : undefined} style={{ cursor: 'pointer' }} onClick={() => { setSelId(p.id); setView('detail'); }}>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }}>{p.reference || `#${p.id}`}</td>
                     <td style={officeStyles.td}>{p.supplier || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                     <td style={officeStyles.td}>{p.expectedDate ? formatDate(p.expectedDate) : ''}</td>
@@ -8014,6 +8014,7 @@ function OfficeCustomers({ customers, onRefresh }) {
 const fontImport = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
   @keyframes spin { to { transform: rotate(360deg); } }
+  tr.has-note > td { border-bottom: none !important; }
   .has-back > div > div:first-child > div:first-child { padding-left: 42px; }
   select.daySelect {
     appearance: none; -webkit-appearance: none; -moz-appearance: none;
