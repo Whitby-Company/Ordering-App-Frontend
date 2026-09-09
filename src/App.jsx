@@ -1443,6 +1443,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                 <td style={qeStyles.td}>{displayCode(l.id)}</td>
                 <td style={qeStyles.td}>
                   {l.name}
+                  {(Number(l.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{l.stock} in stock</span>}
                   {oos && <span style={qeStyles.oosTag} title="Out of stock — added at 0 as a backorder placeholder">out of stock</span>}
                   {oos && l.incoming > 0 && <span style={qeStyles.incomingTag} title="Incoming from a purchase order">+{l.incoming} incoming</span>}
                   {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
@@ -1526,6 +1527,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                           >
                             <span style={qeStyles.matchCode}>{displayCode(it.id)}</span>
                             <span style={qeStyles.matchName}>{it.name}</span>
+                            {(Number(it.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{it.stock} in stock</span>}
                             {(Number(it.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
                             {it.incoming > 0 && <span style={qeStyles.incomingTag}>+{it.incoming} incoming</span>}
                             {!inCatalog(it.id) && (Number(it.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
@@ -1542,6 +1544,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     <span>
                       <span style={{ color: '#8A8F87', fontWeight: 700, marginRight: 8 }}>{displayCode(preview.id)}</span>
                       {preview.name}
+                      {(Number(preview.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{preview.stock} in stock</span>}
                       {(Number(preview.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
                       {preview.incoming > 0 && <span style={qeStyles.incomingTag}>+{preview.incoming} incoming</span>}
                       {!inCatalog(preview.id) && (Number(preview.stock) || 0) > 0 && <span style={qeStyles.warnTag}>not in catalog</span>}
