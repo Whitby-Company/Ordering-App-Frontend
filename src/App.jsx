@@ -6761,11 +6761,19 @@ function POUploadModal({ items, onClose, onCreated }) {
                       <td style={uplStyles.td}>
                         <PdfRowItemPicker items={items} value={r.item} onChange={it => {
                           setRows(prev => prev.map((x, j) => j === i ? { ...x, item: it, score: it ? 1 : 0 } : x));
-                          // Remember this manual match for next time (keyed by code, else description).
-                          const key = (r.code && String(r.code).trim()) ? String(r.code).trim() : String(r.desc || '').trim();
-                          if (it && key) {
-                            setSavedMap(m => ({ ...m, [key.toLowerCase()]: it.id }));
-                            apiPost('/items/import-map', { source: 'po', fileKey: key, itemId: it.id }).catch(() => {});
+                          if (it) {
+                            // Remember this manual match for next time (keyed by code, else description).
+                            const key = (r.code && String(r.code).trim()) ? String(r.code).trim() : String(r.desc || '').trim();
+                            if (key) {
+                              setSavedMap(m => ({ ...m, [key.toLowerCase()]: it.id }));
+                              apiPost('/items/import-map', { source: 'po', fileKey: key, itemId: it.id }).catch(() => {});
+                            }
+                            // If a pack was entered on this row and the chosen item has no
+                            // case size yet, save the pack to it too (so both stick together).
+                            const entered = Number(r.packOverride);
+                            if (entered > 0 && !(Number(it.caseSize) > 0)) {
+                              apiPatch(`/items/${encodeURIComponent(it.id)}`, { caseSize: entered }).catch(() => {});
+                            }
                           }
                         }} />
                         {r.item && r.score < 0.9 && r.score > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#B5793B' }}>uncertain — confirm</span>}
