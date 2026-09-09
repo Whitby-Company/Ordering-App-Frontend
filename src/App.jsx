@@ -6343,6 +6343,10 @@ function InvoiceAuditReport({ onBack }) {
           <div style={{ borderTop: '1px solid #E3E1D6', paddingTop: 16, marginTop: 4 }}>
             <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Reconcile against QuickBooks</div>
             <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 10 }}>Upload a QuickBooks invoice export (the sales-by-customer detail with a "Num" column). We'll match invoice numbers and show what's in one system but not the other.</div>
+            <div style={{ marginBottom: 10 }}>
+              <a href={`${API_BASE}/orders/reconcile-export`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }}>↓ Download app orders (CSV)</a>
+              <span style={{ fontSize: 12, color: '#8A8F87', marginLeft: 8 }}>All app orders with line items — for a full line-by-line comparison.</span>
+            </div>
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onQbFile} disabled={reconBusy} />
             {reconBusy && <span style={{ marginLeft: 10, color: '#8A8F87' }}>Reconciling…</span>}
             {reconErr && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 8 }}>{reconErr}</div>}
