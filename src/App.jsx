@@ -7020,7 +7020,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   async function cancelPO() {
     if (!window.confirm('Cancel this purchase order? Incoming stock from it will be removed.')) return;
     setBusy(true);
-    try { await apiPatch(`/purchase-orders/${poId}`, { status: 'cancelled' }); await load(); await onChanged(); }
+    try { await apiPatch(`/purchase-orders/${poId}`, { status: 'cancelled' }); await onChanged(); onBack(); }
     catch { /* ignore */ } finally { setBusy(false); }
   }
 
