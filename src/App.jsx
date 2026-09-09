@@ -4564,13 +4564,12 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
               <SortableTh field="items" label="Items" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="units" label="Units" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="total" label="Order total" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
-              <SortableTh field="exportedAt" label="Exported" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <th style={officeStyles.th}></th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={12}>No orders match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={11}>No orders match "{query}"</td></tr>
             )}
             {filtered.map(o => {
               const isOpen = openId === o.id;
@@ -4609,11 +4608,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
-                      {o.exported
-                        ? (o.exportedAt ? <span style={{ fontSize: 12.5, color: '#2B5D50', fontWeight: 600 }}>{formatDateTime(o.exportedAt)}</span> : <span style={{ fontSize: 12.5, color: '#2B5D50', fontWeight: 600 }}>Exported</span>)
-                        : <span style={{ color: '#B9BDB2' }}>—</span>}
-                    </td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {o.status === 'pending' ? (
                         <>
@@ -4634,9 +4628,12 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { savePdf: true })} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
-                            {iifBusyId === o.id ? '…' : 'TP'}
-                          </button>{' '}
+                          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', verticalAlign: 'middle' }}>
+                            <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
+                              {iifBusyId === o.id ? '…' : 'TP'}
+                            </button>
+                            {o.exported && o.exportedAt && <span style={{ fontSize: 9.5, color: '#2B5D50', fontWeight: 600, marginTop: 1, lineHeight: 1.1 }} title={`Exported to QuickBooks ${formatDateTime(o.exportedAt)}`}>{formatDate(o.exportedAt)}</span>}
+                          </span>{' '}
                           <button
                             style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
                             onClick={() => setProcessed(o.id, !o.processed)}
@@ -4651,7 +4648,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={12}>
+                      <td style={officeStyles.detailCell} colSpan={11}>
                         {o.notes && (
                           <div style={officeStyles.orderNotes}>
                             <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
