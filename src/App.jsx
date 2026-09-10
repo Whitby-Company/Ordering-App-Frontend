@@ -6679,23 +6679,39 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
               const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
               const appItems = (o.items || []).map(it => ({ ...it, key: norm(it.name) }));
               const qbLines = (matchedQb && matchedQb.lines) ? matchedQb.lines.map(ln => ({ memo: ln.memo, eaches: Number(ln.qty) || 0, key: norm(ln.memo) })) : [];
-              const usedQb = new Set();
-              const out = [];
-              for (const a of appItems) {
-                // best QB match: strongest shared-prefix / containment on normalized name
-                let bi = -1, bscore = 0;
-                qbLines.forEach((q, i) => {
-                  if (usedQb.has(i)) return;
-                  const short = a.key.slice(0, 12), qshort = q.key.slice(0, 12);
-                  let score = 0;
-                  if (a.key && q.key && (q.key.includes(short) || a.key.includes(qshort))) score = Math.min(short.length, qshort.length);
-                  if (score > bscore) { bscore = score; bi = i; }
-                });
-                if (bi >= 0 && bscore >= 6) { usedQb.add(bi); out.push({ name: a.name, appEa: a.eaches, qbEa: qbLines[bi].eaches, qbName: qbLines[bi].memo }); }
-                else out.push({ name: a.name, appEa: a.eaches, qbEa: null, qbName: null });
+              // Similarity: the QB memo usually = the app name + extra pack text
+              // (e.g. "Loacker Mini Quad - Chocolate  12/1.9oz"). Score by how much
+              // of the app name is a prefix of the QB name (and vice versa), so the
+              // FULL name distinguishes similar items (Chocolate vs Hazelnut).
+              const sim = (a, b) => {
+                if (!a || !b) return 0;
+                // longest common prefix length
+                let p = 0; const n = Math.min(a.length, b.length);
+                while (p < n && a[p] === b[p]) p++;
+                // require the prefix to cover most of the shorter name
+                const shorter = Math.min(a.length, b.length);
+                return p / shorter >= 0.85 ? p : (a.includes(b) || b.includes(a) ? Math.min(a.length, b.length) : 0);
+              };
+              // Build all candidate pairs, sort by score, assign uniquely (best first).
+              const pairs = [];
+              appItems.forEach((a, ai) => qbLines.forEach((q, qi) => {
+                const s = sim(a.key, q.key);
+                if (s > 0) pairs.push({ s, ai, qi });
+              }));
+              pairs.sort((x, y) => y.s - x.s);
+              const usedApp = new Set(), usedQb = new Set();
+              const pairMap = {}; // ai -> qi
+              for (const p of pairs) {
+                if (usedApp.has(p.ai) || usedQb.has(p.qi)) continue;
+                usedApp.add(p.ai); usedQb.add(p.qi); pairMap[p.ai] = p.qi;
               }
-              // QB items with no app match
-              qbLines.forEach((q, i) => { if (!usedQb.has(i)) out.push({ name: null, appEa: null, qbEa: q.eaches, qbName: q.memo }); });
+              const out = [];
+              appItems.forEach((a, ai) => {
+                const qi = pairMap[ai];
+                if (qi != null) out.push({ name: a.name, appEa: a.eaches, qbEa: qbLines[qi].eaches, qbName: qbLines[qi].memo });
+                else out.push({ name: a.name, appEa: a.eaches, qbEa: null, qbName: null });
+              });
+              qbLines.forEach((q, qi) => { if (!usedQb.has(qi)) out.push({ name: null, appEa: null, qbEa: q.eaches, qbName: q.memo }); });
               return out;
             })();
             const appEaTotal = (o.items || []).reduce((s, it) => s + (it.eaches || 0), 0);
