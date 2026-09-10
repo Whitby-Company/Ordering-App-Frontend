@@ -5489,7 +5489,6 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                 <th style={officeStyles.itemHistoryTh}>Customer</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Cases</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Eaches</th>
-                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Stock after</th>
                                 <th style={officeStyles.itemHistoryTh}>Status</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}></th>
                               </tr>
@@ -5502,7 +5501,6 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                   <td style={officeStyles.itemHistoryTd}>{r.customer}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.cases}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.eaches}</td>
-                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter != null ? r.stockAfter : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}>
                                     {r.status === 'pending'
                                       ? <span style={officeStyles.badgePending}>Pending</span>
