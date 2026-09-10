@@ -6458,17 +6458,30 @@ function InvoiceMatchReport({ onBack }) {
       }
       if (numCol < 0) { setErr('No "Num" column found — use the QuickBooks invoice detail export.'); setBusy(false); return; }
       const seen = new Map(); let cust = '';
+      const hasType = typeCol >= 0;
       for (let i = hdrIdx + 1; i < rows.length; i++) {
         const r = rows[i];
-        const type = typeCol >= 0 ? String(r[typeCol] || '').trim() : '';
-        if (!type && r[1] && String(r[1]).trim()) { cust = String(r[1]).trim(); continue; }
-        if (type.toLowerCase() !== 'invoice') continue;
         const num = String(r[numCol] || '').trim();
-        if (!num) continue;
+        if (hasType) {
+          // Format WITH a Type column: customer header has a name + no Type;
+          // invoice rows have Type === "Invoice".
+          const type = String(r[typeCol] || '').trim();
+          if (!type && r[1] && String(r[1]).trim()) { cust = String(r[1]).trim(); continue; }
+          if (type.toLowerCase() !== 'invoice') continue;
+          if (!num) continue;
+        } else {
+          // Format WITHOUT a Type column (leaner export): a customer header is a
+          // row with a name in col 1 and NO Num; an invoice row has a Num.
+          if (!num) {
+            if (r[1] && String(r[1]).trim()) cust = String(r[1]).trim();
+            continue;
+          }
+        }
         if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), memos: [], total: 0 });
         if (memoCol >= 0) { const m = String(r[memoCol] || '').trim(); if (m) seen.get(num).memos.push(m); }
         if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(num).total += a; }
       }
+      if (!seen.size) { setErr('No invoices found in that file. Make sure it has Num and Date columns.'); setBusy(false); return; }
       setQbInv([...seen.values()]);
     } catch (e2) { setErr('Could not read that file: ' + (e2.message || e2)); }
     finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
