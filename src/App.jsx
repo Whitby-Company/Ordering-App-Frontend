@@ -6627,14 +6627,17 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
   const rows = useMemo(() => {
     if (!orders) return [];
     return orders.map(o => {
-      const qbNums = new Set((qbInv || []).map(q => String(q.number)));
-      const sameNumber = qbNums.has(String(o.invoice));
-      const suggestion = sameNumber ? null : suggestFor(o);
-      return { o, sameNumber, suggestion };
+      // Do NOT trust matching invoice numbers — the app and QuickBooks number
+      // independently, so a shared number is usually coincidental. Always find
+      // the real match by date + items/total. We still note if the suggested QB
+      // invoice happens to share the number (a real confirmation).
+      const suggestion = suggestFor(o);
+      const numberAlsoMatches = suggestion && String(suggestion.number) === String(o.invoice);
+      return { o, sameNumber: false, suggestion, numberAlsoMatches };
     });
   }, [orders, qbInv, picks]);
 
-  const shown = rows.filter(r => filter === 'all' ? true : filter === 'same' ? r.sameNumber : filter === 'diff' ? (!r.sameNumber && r.suggestion) : (!r.sameNumber && !r.suggestion));
+  const shown = rows.filter(r => filter === 'all' ? true : filter === 'same' ? r.numberAlsoMatches : filter === 'diff' ? (r.suggestion && !r.numberAlsoMatches) : !r.suggestion);
 
   return (
     <div>
@@ -6655,8 +6658,8 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       {orders && qbInv && (
         <>
           <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-            {[['all', 'All'], ['same', 'Number matches'], ['diff', 'Different number'], ['none', 'No match']].map(([k, label]) => {
-              const count = rows.filter(r => k === 'all' ? true : k === 'same' ? r.sameNumber : k === 'diff' ? (!r.sameNumber && r.suggestion) : (!r.sameNumber && !r.suggestion)).length;
+            {[['all', 'All'], ['same', 'Number also matches'], ['diff', 'Number differs'], ['none', 'No match found']].map(([k, label]) => {
+              const count = rows.filter(r => k === 'all' ? true : k === 'same' ? r.numberAlsoMatches : k === 'diff' ? (r.suggestion && !r.numberAlsoMatches) : !r.suggestion).length;
               return <button key={k} style={{ ...officeStyles.smallBtn, ...(filter === k ? { background: '#2B5D50', color: '#fff' } : {}) }} onClick={() => { setFilter(k); setCursor(0); }}>{label} ({count})</button>;
             })}
           </div>
@@ -6664,8 +6667,8 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
             <div style={{ color: '#8A8F87', padding: 20 }}>No orders in this filter.</div>
           ) : (() => {
             const idx = Math.min(cursor, shown.length - 1);
-            const { o, sameNumber, suggestion } = shown[idx];
-            const picked = picks[o.invoice] || (suggestion ? suggestion.number : '') || (sameNumber ? o.invoice : '');
+            const { o, suggestion, numberAlsoMatches } = shown[idx];
+            const picked = picks[o.invoice] || (suggestion ? suggestion.number : '');
             const matchedQb = (qbInv || []).find(q => String(q.number) === String(picked));
             const diff = matchedQb ? Math.round((o.total - matchedQb.total) * 100) / 100 : null;
             const totalsMatch = matchedQb && Math.abs(diff) < 0.01;
@@ -6722,20 +6725,19 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
                       title="Edit this order's items/quantities; you'll return here after saving"
                     >Edit order</button>
                   </div>
-                  {sameNumber ? (
-                    <div style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ Invoice number matches QuickBooks (both {o.invoice})</div>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 13, color: '#5B6058' }}>Match to QuickBooks invoice:</span>
-                      <select value={picked} onChange={e => setPicks(p => ({ ...p, [o.invoice]: e.target.value }))} style={{ ...officeStyles.searchSlim, minWidth: 260 }}>
-                        <option value="">— pick QB invoice —</option>
-                        {custCands.map(q => <option key={q.number} value={q.number}>#{q.number} · {q.date} · {formatMoney(q.total)}{suggestion && String(q.number) === String(suggestion.number) ? '  ★ suggested' : ''}</option>)}
-                      </select>
-                      {picked && (saved[o.orderId]
-                        ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ app # set to {picked}</span>
-                        : <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} disabled={busy} onClick={() => applyNumber(o, picked)}>Set app invoice # → {picked}</button>)}
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, color: '#5B6058' }}>Match to QuickBooks invoice:</span>
+                    <select value={picked} onChange={e => setPicks(p => ({ ...p, [o.invoice]: e.target.value }))} style={{ ...officeStyles.searchSlim, minWidth: 260 }}>
+                      <option value="">— pick QB invoice —</option>
+                      {custCands.map(q => <option key={q.number} value={q.number}>#{q.number} · {q.date} · {formatMoney(q.total)}{suggestion && String(q.number) === String(suggestion.number) ? '  ★ suggested' : ''}</option>)}
+                    </select>
+                    {picked && (saved[o.orderId]
+                      ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ app # set to {picked}</span>
+                      : (String(picked) === String(o.invoice)
+                        ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ already #{o.invoice}</span>
+                        : <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} disabled={busy} onClick={() => applyNumber(o, picked)}>Set app invoice # → {picked}</button>))}
+                    {numberAlsoMatches && <span style={{ fontSize: 11, color: '#8A8F87' }}>(number also matches — confirmed)</span>}
+                  </div>
                 </div>
 
                 {/* Totals comparison banner */}
