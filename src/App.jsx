@@ -4829,6 +4829,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
   // so the shown stock is what's physically in the warehouse today.
   const [todaysView, setTodaysView] = useState(false);
+  const itemByIdForToday = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
   const futureCommittedByItem = useMemo(() => {
     const today = todayISODate();
     const m = {};
@@ -4836,12 +4837,16 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       if (o.status === 'pending') continue; // pending hasn't reserved stock
       if (!o.deliveryDate || o.deliveryDate <= today) continue; // only future deliveries
       for (const l of (o.lines || [])) {
-        const eaches = (Number(l.qty) || 0) * (Number(l.pack) || 1);
-        m[l.id] = (m[l.id] || 0) + eaches;
+        // Stock is in BOXES. A case line reserved qty × case_size boxes; a box
+        // line reserved qty boxes. (NOT eaches — stock isn't tracked in eaches.)
+        const it = itemByIdForToday[l.id];
+        const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
+        const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? caseSize : 1);
+        m[l.id] = (m[l.id] || 0) + boxes;
       }
     }
     return m;
-  }, [orders]);
+  }, [orders, itemByIdForToday]);
   const displayStock = useCallback((item) => {
     const base = Number(item.stock) || 0;
     return todaysView ? base + (futureCommittedByItem[item.id] || 0) : base;
