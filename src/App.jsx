@@ -6483,20 +6483,22 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       const lines = txt.split('\n').filter(Boolean);
       const hdr = lines[0].split(',');
       const idx = name => hdr.indexOf(name);
-      const byInv = {};
+      const byOrder = {};
       for (let i = 1; i < lines.length; i++) {
         const parts = splitCsvLine(lines[i]);
         const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
-        if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], po: (idx('PO #') >= 0 ? parts[idx('PO #')] : ''), submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
-        byInv[inv].items.push({ name: parts[idx('Item')], code: parts[idx('Item #')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
-        byInv[inv].subtotal += Number(parts[idx('Line total')]) || 0;
+        // Group by ORDER ID (unique) — NOT invoice number, which can be shared by
+        // multiple orders (would merge their lines and double the total).
+        if (!byOrder[oid]) byOrder[oid] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], po: (idx('PO #') >= 0 ? parts[idx('PO #')] : ''), submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
+        byOrder[oid].items.push({ name: parts[idx('Item')], code: parts[idx('Item #')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
+        byOrder[oid].subtotal += Number(parts[idx('Line total')]) || 0;
       }
-      for (const o of Object.values(byInv)) {
+      for (const o of Object.values(byOrder)) {
         o.subtotal = Math.round(o.subtotal * 100) / 100;
         o.tax = Math.round(o.subtotal * 0.005 * 100) / 100;
         o.total = Math.round((o.subtotal + o.tax) * 100) / 100;
       }
-      setOrders(Object.values(byInv).sort((a, b) => Number(b.invoice) - Number(a.invoice)));
+      setOrders(Object.values(byOrder).sort((a, b) => Number(b.orderId) - Number(a.orderId)));
     } catch (e) { setErr('Could not load app orders: ' + (e.message || e)); }
   }, []);
   useEffect(() => { loadAppOrders(); }, [loadAppOrders]);
@@ -6681,7 +6683,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
 
   const shown = rows.filter(r => {
     if (filter === 'all') return true;
-    const picked = picks[r.o.invoice] || (r.suggestion ? r.suggestion.number : '');
+    const picked = picks[r.o.orderId] || (r.suggestion ? r.suggestion.number : '');
     const mq = (qbInv || []).find(q => String(q.number) === String(picked));
     if (filter === 'none') return !mq;
     if (!mq) return false;
@@ -6713,7 +6715,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
             // total agrees (within a cent) vs. differs vs. no match found.
             let matchTotal = 0, diffTotal = 0, noMatch = 0;
             for (const r of rows) {
-              const picked = picks[r.o.invoice] || (r.suggestion ? r.suggestion.number : '');
+              const picked = picks[r.o.orderId] || (r.suggestion ? r.suggestion.number : '');
               const mq = (qbInv || []).find(q => String(q.number) === String(picked));
               if (!mq) { noMatch++; continue; }
               if (Math.abs((r.o.total || 0) - (mq.total || 0)) < 0.01) matchTotal++; else diffTotal++;
@@ -6744,7 +6746,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
           ) : (() => {
             const idx = Math.min(cursor, shown.length - 1);
             const { o, suggestion, numberAlsoMatches } = shown[idx];
-            const picked = picks[o.invoice] || (suggestion ? suggestion.number : '');
+            const picked = picks[o.orderId] || (suggestion ? suggestion.number : '');
             const matchedQb = (qbInv || []).find(q => String(q.number) === String(picked));
             const diff = matchedQb ? Math.round((o.total - matchedQb.total) * 100) / 100 : null;
             const totalsMatch = matchedQb && Math.abs(diff) < 0.01;
@@ -6821,7 +6823,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, color: '#5B6058' }}>Match to QuickBooks invoice:</span>
-                    <select value={picked} onChange={e => setPicks(p => ({ ...p, [o.invoice]: e.target.value }))} style={{ ...officeStyles.searchSlim, minWidth: 260 }}>
+                    <select value={picked} onChange={e => setPicks(p => ({ ...p, [o.orderId]: e.target.value }))} style={{ ...officeStyles.searchSlim, minWidth: 260 }}>
                       <option value="">— pick QB invoice —</option>
                       {custCands.map(q => <option key={q.number} value={q.number}>#{q.number} · {q.date} · {formatMoney(q.total)}{suggestion && String(q.number) === String(suggestion.number) ? '  ★ suggested' : ''}</option>)}
                     </select>
