@@ -1361,7 +1361,7 @@ function TicketQtyInput({ qty, onSet, disabled }) {
 // Desktop bulk entry: a QuickBooks-style grid. Type an item # (or search),
 // enter cases, and it builds the order. Uses the store's catalog prices and
 // warns (amber) on items not in the store's catalog.
-function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, desktop, showAllItems = false }) {
+function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, desktop, showAllItems = false, priceOverrides = {}, setPriceOverrides = () => {} }) {
   const BLANK_ROWS = 8;
   // Each entry row has its own draft text + dropdown highlight index.
   const [drafts, setDrafts] = useState(() => Array.from({ length: BLANK_ROWS }, () => ''));
@@ -1876,14 +1876,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
   const [quickEntry, setQuickEntry] = useState(desktop || isEdit); // grid entry: desktop default, and always when editing an existing order
-  const [priceOverrides, setPriceOverrides] = useState(() => {
-    // When editing, seed overrides with each line's SAVED price so they show and
-    // stay unless the user changes them (preserves prices set on the original order).
-    if (!editOrder || !editOrder.lines) return {};
-    const m = {};
-    for (const l of editOrder.lines) if (l.price != null) m[l.id] = String(l.price);
-    return m;
-  }); // itemId -> manual price/each override
+  const [priceOverrides, setPriceOverrides] = useState({}); // itemId -> manual price/each override (only when user changes it)
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
     if (distributorTouched) return;
@@ -2587,6 +2580,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           removeLine={removeLine}
           desktop={desktop}
           showAllItems={showAllItems}
+          priceOverrides={priceOverrides}
+          setPriceOverrides={setPriceOverrides}
         />
       )}
       {quickEntry && customerId == null && (
