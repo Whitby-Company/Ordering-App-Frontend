@@ -4829,6 +4829,21 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
   // so the shown stock is what's physically in the warehouse today.
   const [todaysView, setTodaysView] = useState(false);
+  const [countMode, setCountMode] = useState(false);
+  const [counts, setCounts] = useState({}); // itemId -> typed count
+  const [countBusy, setCountBusy] = useState(false);
+  const [countSaved, setCountSaved] = useState({}); // itemId -> true after saved
+  async function applyCount(item) {
+    const v = counts[item.id];
+    if (v === undefined || v === '' || Number(v) === item.stock) return;
+    setCountBusy(true);
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { stock: Number(v), reason: 'Physical count', changedBy: getSubmitterName() || undefined });
+      setCountSaved(s => ({ ...s, [item.id]: true }));
+      await onRefresh();
+    } catch { /* ignore */ }
+    finally { setCountBusy(false); }
+  }
   const itemByIdForToday = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
   const futureCommittedByItem = useMemo(() => {
     const today = todayISODate();
@@ -5271,6 +5286,13 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         >
           {todaysView ? "Today's inventory ✓" : "Today's inventory"}
         </button>
+        <button
+          style={{ ...officeStyles.smallBtn, ...(countMode ? { background: '#8A5A2B', color: '#fff' } : {}) }}
+          onClick={() => { setCountMode(v => !v); if (todaysView) setTodaysView(false); }}
+          title="Physical count mode: enter the real shelf count for each item; it corrects the app stock and logs it"
+        >
+          {countMode ? '📋 Counting ✓' : '📋 Physical count'}
+        </button>
         <a href={`${API_BASE}/items/export-inventory`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the current inventory as a CSV">↓ Inventory CSV</a>
         <a href={`${API_BASE}/items/export-stock-log`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the full stock change history as a CSV">↓ Stock history CSV</a>
         <button
@@ -5437,7 +5459,23 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   <button style={{ ...officeStyles.smallBtn, padding: '4px 8px' }} title="View stock change history" onClick={() => setHistoryItem(item)}>History</button>
                 </td>
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
-                {todaysView ? (
+                {countMode ? (
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                      <span style={{ color: '#8A8F87', fontSize: 12 }} title="Current app stock">app: {item.stock}</span>
+                      <input
+                        type="text" inputMode="numeric" placeholder="count"
+                        value={counts[item.id] ?? ''}
+                        onChange={e => { const v = e.target.value.replace(/[^0-9-]/g, ''); setCounts(c => ({ ...c, [item.id]: v })); setCountSaved(s => ({ ...s, [item.id]: false })); }}
+                        onBlur={() => applyCount(item)}
+                        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                        disabled={countBusy}
+                        style={{ width: 64, textAlign: 'right', border: '1px solid #E0C4A0', borderRadius: 6, padding: '4px 6px', fontSize: 13, background: '#FBF6EF' }}
+                      />
+                      {countSaved[item.id] && <span style={{ color: '#2B7A4B', fontSize: 13 }} title="Saved">✓</span>}
+                    </span>
+                  </td>
+                ) : todaysView ? (
                   <>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>
                       <span style={displayStock(item) <= 5 ? { color: '#B5493B' } : undefined} title="Physical on hand today">{displayStock(item)}</span>
