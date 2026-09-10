@@ -6682,7 +6682,15 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
     });
   }, [orders, qbInv, picks]);
 
-  const shown = rows.filter(r => filter === 'all' ? true : filter === 'same' ? r.numberAlsoMatches : filter === 'diff' ? (r.suggestion && !r.numberAlsoMatches) : !r.suggestion);
+  const shown = rows.filter(r => {
+    if (filter === 'all') return true;
+    const picked = picks[r.o.invoice] || (r.suggestion ? r.suggestion.number : '');
+    const mq = (qbInv || []).find(q => String(q.number) === String(picked));
+    if (filter === 'none') return !mq;
+    if (!mq) return false;
+    const match = Math.abs((r.o.total || 0) - (mq.total || 0)) < 0.01;
+    return filter === 'tmatch' ? match : filter === 'tdiff' ? !match : true;
+  });
 
   return (
     <div>
@@ -6702,9 +6710,48 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       {!orders && <div style={{ color: '#8A8F87', padding: 12 }}>Loading app orders…</div>}
       {orders && qbInv && (
         <>
+          {(() => {
+            // Summary: across all orders, how many have a matched QB invoice whose
+            // total agrees (within a cent) vs. differs vs. no match found.
+            let matchTotal = 0, diffTotal = 0, noMatch = 0;
+            for (const r of rows) {
+              const picked = picks[r.o.invoice] || (r.suggestion ? r.suggestion.number : '');
+              const mq = (qbInv || []).find(q => String(q.number) === String(picked));
+              if (!mq) { noMatch++; continue; }
+              if (Math.abs((r.o.total || 0) - (mq.total || 0)) < 0.01) matchTotal++; else diffTotal++;
+            }
+            return (
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#EAF3EE', border: '1px solid #C4DDD2', textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#2B7A4B' }}>{matchTotal}</div>
+                  <div style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 700 }}>TOTALS MATCH</div>
+                </div>
+                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#FBEEE7', border: '1px solid #E6C6B4', textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#B5493B' }}>{diffTotal}</div>
+                  <div style={{ fontSize: 11.5, color: '#B5493B', fontWeight: 700 }}>TOTALS DIFFER</div>
+                </div>
+                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#F3F4F0', border: '1px solid #D6D3C6', textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#8A8F87' }}>{noMatch}</div>
+                  <div style={{ fontSize: 11.5, color: '#5B6058', fontWeight: 700 }}>NO QB MATCH</div>
+                </div>
+                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#F3F4F0', border: '1px solid #D6D3C6', textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#14181F' }}>{rows.length}</div>
+                  <div style={{ fontSize: 11.5, color: '#5B6058', fontWeight: 700 }}>TOTAL ORDERS</div>
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-            {[['all', 'All'], ['same', 'Number also matches'], ['diff', 'Number differs'], ['none', 'No match found']].map(([k, label]) => {
-              const count = rows.filter(r => k === 'all' ? true : k === 'same' ? r.numberAlsoMatches : k === 'diff' ? (r.suggestion && !r.numberAlsoMatches) : !r.suggestion).length;
+            {[['all', 'All'], ['tmatch', 'Totals match'], ['tdiff', 'Totals differ'], ['none', 'No match found']].map(([k, label]) => {
+              const count = rows.filter(r => {
+                if (k === 'all') return true;
+                const picked = picks[r.o.invoice] || (r.suggestion ? r.suggestion.number : '');
+                const mq = (qbInv || []).find(q => String(q.number) === String(picked));
+                if (k === 'none') return !mq;
+                if (!mq) return false;
+                const match = Math.abs((r.o.total || 0) - (mq.total || 0)) < 0.01;
+                return k === 'tmatch' ? match : !match;
+              }).length;
               return <button key={k} style={{ ...officeStyles.smallBtn, ...(filter === k ? { background: '#2B5D50', color: '#fff' } : {}) }} onClick={() => { setFilter(k); setCursor(0); }}>{label} ({count})</button>;
             })}
           </div>
