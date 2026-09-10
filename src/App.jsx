@@ -5,7 +5,7 @@ import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
   AlertTriangle, ChevronRight, Loader2, WifiOff, RefreshCw, Monitor,
-  Grid2x2, Rows, Image as ImageIcon, Trash2,
+  Grid2x2, Rows, Image as ImageIcon, Trash2, Pencil,
 } from 'lucide-react';
 
 const GRID_SIZES = [
@@ -4330,13 +4330,14 @@ function InvoiceNumberCell({ order, onSaved }) {
   if (!editing) {
     return (
       <button
-        style={{ background: 'none', border: '1px solid transparent', borderRadius: 6, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#14181F', fontWeight: order.invoiceNumber != null && order.invoiceNumber !== '' ? 700 : 400 }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #D6D3C6', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#14181F', fontWeight: order.invoiceNumber != null && order.invoiceNumber !== '' ? 700 : 400 }}
         title="Click to change this invoice number (e.g. to match QuickBooks)"
         onClick={() => { setValue(String(current || '')); setEditing(true); }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = '#D6D3C6'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#F3F4F0'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
       >
         {current}
+        <Pencil size={11} color="#8A8F87" />
       </button>
     );
   }
