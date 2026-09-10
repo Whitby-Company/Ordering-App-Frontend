@@ -5987,9 +5987,8 @@ function StockHistoryModal({ item, onClose, onChanged }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead><tr>
                   <th style={shStyles.th}>When</th><th style={shStyles.th}>Who</th>
-                  <th style={{ ...shStyles.th, textAlign: 'right' }}>From</th>
-                  <th style={{ ...shStyles.th, textAlign: 'right' }}>To</th>
                   <th style={{ ...shStyles.th, textAlign: 'right' }}>Change</th>
+                  <th style={{ ...shStyles.th, textAlign: 'right' }}>Stock after</th>
                   <th style={shStyles.th}>Reason</th>
                   <th style={shStyles.th} />
                 </tr></thead>
@@ -5998,9 +5997,8 @@ function StockHistoryModal({ item, onClose, onChanged }) {
                     <tr key={r.id}>
                       <td style={shStyles.td}>{formatDateTime(r.changedAt)}</td>
                       <td style={shStyles.td}>{r.changedBy || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
-                      <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.oldStock}</td>
-                      <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.newStock}</td>
                       <td style={{ ...shStyles.td, textAlign: 'right', color: r.delta < 0 ? '#B5493B' : '#2B5D50', fontWeight: 700 }}>{r.delta > 0 ? '+' : ''}{r.delta}</td>
+                      <td style={{ ...shStyles.td, textAlign: 'right', fontWeight: 700 }}>{r.newStock}</td>
                       <td style={{ ...shStyles.td, whiteSpace: 'normal', color: '#5B6058' }}>{r.reason || ''}</td>
                       <td style={{ ...shStyles.td, textAlign: 'center' }}>
                         <button
