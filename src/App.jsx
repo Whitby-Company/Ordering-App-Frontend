@@ -1789,7 +1789,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     if (isEdit) return {};
     try { return JSON.parse(localStorage.getItem('orderDraft') || '{}'); } catch { return {}; }
   })();
-  const editInitLines = isEdit ? editOrder.lines.map(l => ({ id: l.id, qty: l.qty, checkin: l.qty === 0 })) : [];
+  const editInitLines = isEdit ? editOrder.lines.map(l => ({ id: l.id, qty: l.qty, unit: l.unit || undefined, checkin: l.qty === 0 })) : [];
   const origQtyById = useMemo(() => {
     const map = {};
     if (isEdit) for (const l of editOrder.lines) map[l.id] = l.qty;
