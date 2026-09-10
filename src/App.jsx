@@ -6589,9 +6589,19 @@ function InvoiceMatchReport({ onBack }) {
                   {isOpen && (
                     <tr style={{ borderBottom: '1px solid #EFEDE3', background: '#FBFAF6' }}>
                       <td colSpan={6} style={{ padding: '10px 16px' }}>
+                        {matchedQb && (() => {
+                          const diff = Math.round((o.total - matchedQb.total) * 100) / 100;
+                          const match = Math.abs(diff) < 0.01;
+                          return (
+                            <div style={{ marginBottom: 8, fontSize: 12.5, fontWeight: 700, color: match ? '#2B7A4B' : '#B5493B' }}>
+                              App {formatMoney(o.total)} vs QuickBooks {formatMoney(matchedQb.total)} —
+                              {match ? ' totals match ✓' : ` differ by ${formatMoney(Math.abs(diff))} ${diff > 0 ? '(app higher)' : '(QB higher)'}`}
+                            </div>
+                          );
+                        })()}
                         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 300px', minWidth: 260 }}>
-                            <div style={{ fontWeight: 700, fontSize: 12, color: '#2B5D50', marginBottom: 4 }}>App order {o.invoice} — {o.items.length} items</div>
+                            <div style={{ fontWeight: 700, fontSize: 12, color: '#2B5D50', marginBottom: 4 }}>App order {o.invoice} — {o.items.length} items · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(o.total)}</span></div>
                             <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                               <tbody>
                                 {o.items.map((it, i) => (
@@ -6602,7 +6612,7 @@ function InvoiceMatchReport({ onBack }) {
                           </div>
                           <div style={{ flex: '1 1 300px', minWidth: 260 }}>
                             <div style={{ fontWeight: 700, fontSize: 12, color: '#8A6D1B', marginBottom: 4 }}>
-                              QuickBooks {matchedQb ? `#${matchedQb.number} (${matchedQb.date})` : '— no QB invoice selected —'} {matchedQb ? `· ${matchedQb.memos.length} lines` : ''}
+                              QuickBooks {matchedQb ? `#${matchedQb.number} (${matchedQb.date})` : '— no QB invoice selected —'} {matchedQb ? <>· {matchedQb.memos.length} lines · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(matchedQb.total)}</span></> : ''}
                             </div>
                             {matchedQb ? (
                               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
