@@ -6579,25 +6579,25 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       const custOk = nc(o.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6)));
       if (!custOk) continue;
       let score = 0;
-      // DATE FIRST: closeness of QB invoice date to the app delivery date.
-      // QB is typically 0–10 days after delivery; heavily prefer the nearest.
-      if (anchor && q.date) {
-        const gap = (new Date(q.date) - new Date(anchor)) / 86400000; // + = QB after delivery
-        // Window: -3 to +14 days is plausible; nearest wins big.
-        if (gap >= -3 && gap <= 14) {
-          score += 3 * (1 - Math.abs(gap) / 14);   // up to +3 for an exact date, primary weight
-        } else {
-          score -= 1; // outside window, unlikely
-        }
-      }
-      // Items confirm (secondary).
+      // ITEM OVERLAP is the strongest signal: the right QB invoice has the same
+      // items. Use Jaccard (shared / union) so an invoice full of DIFFERENT items
+      // scores low even if its date is close — prevents wrong-invoice matches.
       const qbWords = new Set(q.memos.flatMap(m => m.toLowerCase().split(/\s+/)).filter(w => w.length > 2));
       let inter = 0; appWords.forEach(w => { if (qbWords.has(w)) inter++; });
-      const overlap = inter / Math.max(appWords.size, 1);
-      score += overlap; // up to +1
-      if (o.items.length === q.memos.length) score += 0.3;
+      const union = new Set([...appWords, ...qbWords]).size || 1;
+      const jaccard = inter / union;
+      score += jaccard * 6;           // primary weight (up to +6)
+      // line-count closeness helps distinguish
+      if (o.items.length === q.memos.length) score += 0.5;
+      // DATE as a tiebreaker among similar-item invoices (much smaller weight).
+      if (anchor && q.date) {
+        const gap = (new Date(q.date) - new Date(anchor)) / 86400000;
+        if (gap >= -3 && gap <= 21) score += 1 * (1 - Math.abs(gap) / 21); // up to +1
+        else score -= 0.5;
+      }
       if (score > bestScore) { bestScore = score; best = q; }
     }
+    // Flag low-confidence matches (few shared items) so the UI can warn.
     return best ? { ...best, score: bestScore } : null;
   }
 
