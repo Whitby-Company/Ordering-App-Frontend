@@ -656,6 +656,9 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     // Out-of-stock lines (price 0) show 0 eaches — the cases are ordered but no
     // stock is being fulfilled/charged.
     const isOos = (Number(l.price) || 0) === 0;
+    // Out-of-stock lines (price 0) show 0 cases and 0 eaches — nothing is being
+    // fulfilled/charged (the item is on the invoice but at zero).
+    const casesShown = isOos ? 0 : cases;
     // For case lines: show the case price (per-each × pack) and leave EACH blank.
     const each = isCase ? '' : (isOos ? 0 : cases * pack);
     const priceShown = isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0);
@@ -665,7 +668,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     const upcCell = hideUpc ? upcText : (barcodesForCell(l.upc) || upcText);
     let row = '<tr class="itemrow">' +
       '<td class="c-item">' + esc(displayCode(l.id)) + '</td>' +
-      '<td class="c-cs">' + cases + '</td>' +
+      '<td class="c-cs">' + casesShown + '</td>' +
       (allCases ? '' : '<td class="c-each">' + each + '</td>') +
       '<td class="c-desc">' + desc + '</td>' +
       '<td class="c-upc">' + upcCell + '</td>' +
