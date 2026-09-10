@@ -4917,7 +4917,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // Build the list of orders that include a given item, newest first, with the
   // quantity (cases + eaches) and status for each — used by the expandable
   // per-item order history on the Inventory page to help confirm stock.
-  function orderHistoryFor(itemId) {
+  function orderHistoryFor(itemId, currentStock = 0) {
     const rows = [];
     for (const o of orders) {
       const line = (o.lines || []).find(l => l.id === itemId);
@@ -4936,6 +4936,15 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       });
     }
     rows.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    // Running stock AFTER each order. Current stock reflects all submitted-order
+    // consumption. Walk newest→oldest: the newest submitted order left us at
+    // current stock; each older one had that much + what the newer orders took.
+    let after = Number(currentStock) || 0;
+    for (const r of rows) {
+      if (r.status === 'pending') { r.stockAfter = null; continue; } // pending hasn't consumed
+      r.stockAfter = after;        // stock right after this order was placed
+      after = after + r.eaches;    // before it = after it + what it consumed
+    }
     const submitted = rows.filter(r => r.status !== 'pending');
     const consumedEaches = submitted.reduce((s, r) => s + r.eaches, 0);
     const consumedCases = submitted.reduce((s, r) => s + r.cases, 0);
@@ -5407,7 +5416,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 )}
               </tr>
               {isOpen && (() => {
-                const hist = orderHistoryFor(item.id);
+                const hist = orderHistoryFor(item.id, item.stock);
                 const colSpan = isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7;
                 return (
                   <tr>
@@ -5429,6 +5438,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                 <th style={officeStyles.itemHistoryTh}>Customer</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Cases</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Eaches</th>
+                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Stock after</th>
                                 <th style={officeStyles.itemHistoryTh}>Status</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}></th>
                               </tr>
@@ -5441,6 +5451,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                   <td style={officeStyles.itemHistoryTd}>{r.customer}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.cases}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.eaches}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter != null ? r.stockAfter : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}>
                                     {r.status === 'pending'
                                       ? <span style={officeStyles.badgePending}>Pending</span>
