@@ -6528,7 +6528,15 @@ function InvoiceMatchReport({ onBack }) {
         if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(num).total += a; }
       }
       if (!seen.size) { setErr('No invoices found in that file. Make sure it has Num and Date columns.'); setBusy(false); return; }
-      setQbInv([...seen.values()]);
+      // QB "Sales by Customer Detail" exports list only the Gross Sales item
+      // lines (no tax line), so the summed amount is the pre-tax subtotal. Add
+      // 0.5% tax so the QB total matches the app's tax-inclusive total.
+      const qbList = [...seen.values()].map(q => {
+        const subtotal = Math.round(q.total * 100) / 100;
+        const tax = Math.round(subtotal * 0.005 * 100) / 100;
+        return { ...q, subtotal, tax, total: Math.round((subtotal + tax) * 100) / 100 };
+      });
+      setQbInv(qbList);
     } catch (e2) { setErr('Could not read that file: ' + (e2.message || e2)); }
     finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
   }
@@ -6666,7 +6674,9 @@ function InvoiceMatchReport({ onBack }) {
                     <div style={{ fontSize: 13, fontWeight: 700 }}>
                       {totalsMatch ? '✓ totals match' : `differ by ${formatMoney(Math.abs(diff))} (${diff > 0 ? 'app higher' : 'QB higher'})`}
                     </div>
-                    <div style={{ fontSize: 10.5, opacity: 0.7, marginTop: 2 }}>app total = {formatMoney(o.subtotal)} subtotal + {formatMoney(o.tax)} tax (0.5%)</div>
+                    <div style={{ fontSize: 10.5, opacity: 0.7, marginTop: 2 }}>
+                      app = {formatMoney(o.subtotal)} + {formatMoney(o.tax)} tax  ·  QB = {formatMoney(matchedQb.subtotal != null ? matchedQb.subtotal : matchedQb.total)}{matchedQb.tax != null ? ` + ${formatMoney(matchedQb.tax)} tax` : ''}  (0.5%)
+                    </div>
                   </div>
                 )}
 
