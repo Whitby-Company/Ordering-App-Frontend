@@ -2148,7 +2148,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
         customerId,
         deliveryDate,
         notes: notes.trim() || undefined,
-        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
+        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit, price: l.price })),
         poNumber: poEdited ? (poNumber || null) : null,
         invoiceNumber: invEdited ? (invNumber || null) : null,
       });
@@ -2193,7 +2193,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
         notes: notes.trim() || undefined,
         submittedBy: submitterName || undefined,
         status: pending ? 'pending' : 'submitted',
-        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
+        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit, price: l.price })),
         poNumber: poEdited ? (poNumber || null) : null,
         invoiceNumber: invEdited ? (invNumber || null) : null,
       });
