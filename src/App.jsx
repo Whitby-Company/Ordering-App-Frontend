@@ -5456,7 +5456,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                         <span style={{ fontSize: 10, color: '#8A8F87' }}>box/case</span>
-                        <NumberFieldEditor item={item} field="caseSize" onSaved={onRefresh} min={1} width={48} />
+                        <NumberFieldEditor item={item} field="caseSize" onSaved={onRefresh} min={0} width={48} />
                       </span>
                       <TextFieldEditor item={item} field="packLabel" onSaved={onRefresh} placeholder="label e.g. 12/12/2oz" small />
                       {Number(item.caseSize) > 0 && <span style={{ fontSize: 10, color: '#2B5D50' }}>case = {(Number(item.pack) || 1) * Number(item.caseSize)} ea</span>}
