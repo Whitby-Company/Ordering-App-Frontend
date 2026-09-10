@@ -6585,6 +6585,20 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
     return best ? { ...best, score: bestScore } : null;
   }
 
+  async function viewAppInvoice(o) {
+    // Fetch the full order (with lines) and print its invoice, same as the
+    // Invoice button in the Orders tab.
+    let full = allOrders.find(x => String(x.id) === String(o.orderId));
+    try {
+      const latest = await apiGet('/orders');
+      const found = (latest || []).find(x => String(x.id) === String(o.orderId));
+      if (found) full = found;
+    } catch { /* use list version */ }
+    if (!full) { setErr('Could not load that order.'); return; }
+    const cust = customers.find(cc => cc.name === full.customer) || customers.find(cc => cc.id === full.customerId) || null;
+    printInvoice(full, cust, printSequence, items, {});
+  }
+
   async function applyNumber(o, qbNumber) {
     setBusy(true);
     try {
@@ -6683,6 +6697,11 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
                     <span style={{ color: '#8A8F87', fontSize: 13 }}>App invoice {o.invoice} · order #{o.orderId} · submitted {o.submitted}{o.delivery ? ` · delivery ${o.delivery}` : ''}</span>
                     <button
                       style={{ ...officeStyles.smallBtn, marginLeft: 'auto' }}
+                      onClick={() => viewAppInvoice(o)}
+                      title="Open the app's printed invoice for this order"
+                    >View app invoice</button>
+                    <button
+                      style={officeStyles.smallBtn}
                       onClick={() => { const full = allOrders.find(x => String(x.id) === String(o.orderId)); if (full) setEditingOrder(full); }}
                       title="Edit this order's items/quantities; you'll return here after saving"
                     >Edit order</button>
@@ -8130,7 +8149,7 @@ function OrderMarginReport({ onBack }) {
           <div style={omStyles.orderList}>
             {filtered.map(o => (
               <button key={o.id} style={{ ...omStyles.orderRow, ...(o.id === selId ? omStyles.orderRowActive : {}) }} onClick={() => pick(o.id)}>
-                <span style={{ fontWeight: 700 }}>#{o.id + (INVOICE_OFFSET || 0)}</span>
+                <span style={{ fontWeight: 700 }}>#{invoiceNumberFor(o)}</span>
                 <span style={{ flex: 1, margin: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.customer}</span>
                 <span style={{ color: '#8A8F87', fontSize: 11.5 }}>{o.deliveryDate ? formatDate(o.deliveryDate) : ''}</span>
               </button>
@@ -8145,7 +8164,7 @@ function OrderMarginReport({ onBack }) {
             <>
               <div style={omStyles.orderHead}>
                 <div>
-                  <div style={omStyles.orderTitle}>#{data.order.id + (INVOICE_OFFSET || 0)} · {data.order.customer}</div>
+                  <div style={omStyles.orderTitle}>#{invoiceNumberFor(data.order)} · {data.order.customer}</div>
                   <div style={{ fontSize: 12.5, color: '#8A8F87' }}>Delivery {data.order.deliveryDate ? formatDate(data.order.deliveryDate) : '—'}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
