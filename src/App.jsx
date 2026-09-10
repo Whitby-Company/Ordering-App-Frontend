@@ -4719,7 +4719,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                             disabled={processingId === o.id}
                             title={o.processed ? 'Mark as not yet processed' : 'Mark as entered into QuickBooks'}
                           >
-                            {processingId === o.id ? '…' : (o.processed ? 'Undo' : 'Mark done')}
+                            {processingId === o.id ? '…' : (o.processed ? 'Unprocess' : 'Process')}
                           </button>
                         </>
                       )}
