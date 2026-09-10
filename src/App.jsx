@@ -1361,7 +1361,7 @@ function TicketQtyInput({ qty, onSet, disabled }) {
 // Desktop bulk entry: a QuickBooks-style grid. Type an item # (or search),
 // enter cases, and it builds the order. Uses the store's catalog prices and
 // warns (amber) on items not in the store's catalog.
-function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, desktop, showAllItems = false, priceOverrides = {}, setPriceOverrides = () => {} }) {
+function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, moveLine = () => {}, desktop, showAllItems = false, priceOverrides = {}, setPriceOverrides = () => {} }) {
   const BLANK_ROWS = 8;
   // Each entry row has its own draft text + dropdown highlight index.
   const [drafts, setDrafts] = useState(() => Array.from({ length: BLANK_ROWS }, () => ''));
@@ -1543,7 +1543,9 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   />
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineTotal(l, l.qty))}</td>
-                <td style={{ ...qeStyles.td, textAlign: 'center' }}>
+                <td style={{ ...qeStyles.td, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  <button style={{ ...qeStyles.rm, color: '#8A8F87', fontSize: 13 }} tabIndex={-1} onClick={() => moveLine(l.id, -1)} disabled={i === 0} title="Move up">↑</button>
+                  <button style={{ ...qeStyles.rm, color: '#8A8F87', fontSize: 13 }} tabIndex={-1} onClick={() => moveLine(l.id, 1)} disabled={i === orderLines.length - 1} title="Move down">↓</button>
                   <button style={qeStyles.rm} tabIndex={-1} onClick={() => removeLine(l.id)} title="Remove">×</button>
                 </td>
               </tr>
@@ -2150,6 +2152,19 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   function removeLine(id) {
     setOrder(prev => prev.filter(o => o.id !== id));
   }
+  // Move a line up or down in the order (dir = -1 up, +1 down) so the user can
+  // arrange the order however they want.
+  function moveLine(id, dir) {
+    setOrder(prev => {
+      const i = prev.findIndex(o => o.id === id);
+      if (i < 0) return prev;
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
   // Switch a line between 'box' and 'case'.
   function setUnit(id, unit) {
     setOrder(prev => prev.map(o => (o.id === id ? { ...o, unit } : o)));
@@ -2580,6 +2595,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           onSetQty={setQtyKeepZero}
           setUnit={setUnit}
           removeLine={removeLine}
+          moveLine={moveLine}
           desktop={desktop}
           showAllItems={showAllItems}
           priceOverrides={priceOverrides}
