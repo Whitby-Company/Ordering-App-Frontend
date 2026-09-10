@@ -1783,9 +1783,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     // Out-of-stock items are ordered as $0 (no stock to fulfill/charge for).
     if ((Number(item.stock) || 0) <= 0) return 0;
     const u = unit || unitOf(item);
-    // For case lines, the item's case price wins when set (a per-each bulk price).
-    if (u === 'case' && item.casePrice != null) return Number(item.casePrice) || 0;
-    // Otherwise the store's catalog price (per-each, applies to either unit).
+    // The store's catalog price is per-each, so it applies to either unit.
     if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
     if (u === 'case') return Number(item.casePrice != null ? item.casePrice : item.price) || 0;
     return Number(item.price) || 0;
