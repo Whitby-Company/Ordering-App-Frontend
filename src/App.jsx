@@ -3783,7 +3783,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
-        {section === 'reports' && <OfficeReports />}
+        {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
       </div>
     </div>
@@ -6447,7 +6447,8 @@ function SalesByPersonReport({ onBack }) {
 // Match app orders to QuickBooks invoices (numbers often differ). Upload a QB
 // export; we suggest the best QB match per app order by customer + items + date,
 // and you confirm or pick another, then set the app's invoice # to match QB.
-function InvoiceMatchReport({ onBack }) {
+function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrders = [], printSequence = [], onRefresh = async () => {} }) {
+  const [editingOrder, setEditingOrder] = useState(null);
   const [orders, setOrders] = useState(null);   // app orders (from reconcile-export)
   const [qbInv, setQbInv] = useState(null);      // parsed QB invoices
   const [picks, setPicks] = useState({});        // appInvoice -> chosen QB number
@@ -6680,6 +6681,11 @@ function InvoiceMatchReport({ onBack }) {
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
                     <span style={{ fontWeight: 800, fontSize: 16 }}>{o.customer}</span>
                     <span style={{ color: '#8A8F87', fontSize: 13 }}>App invoice {o.invoice} · order #{o.orderId} · submitted {o.submitted}{o.delivery ? ` · delivery ${o.delivery}` : ''}</span>
+                    <button
+                      style={{ ...officeStyles.smallBtn, marginLeft: 'auto' }}
+                      onClick={() => { const full = allOrders.find(x => String(x.id) === String(o.orderId)); if (full) setEditingOrder(full); }}
+                      title="Edit this order's items/quantities; you'll return here after saving"
+                    >Edit order</button>
                   </div>
                   {sameNumber ? (
                     <div style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ Invoice number matches QuickBooks (both {o.invoice})</div>
@@ -6753,11 +6759,23 @@ function InvoiceMatchReport({ onBack }) {
                   </table>
                 </div>
                 {!matchedQb && <div style={{ fontSize: 12, color: '#B9BDB2', marginTop: 6 }}>Pick a QB invoice above to compare items.</div>}
-                <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>Quantities shown in eaches. Rows highlighted red differ. To change quantities, edit order #{o.orderId} in the Orders/History tab.</div>
+                <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>Quantities shown in eaches. Rows highlighted red differ. Use “Edit order” above to change quantities — you’ll return here after saving.</div>
               </div>
             );
           })()}
         </>
+      )}
+      {editingOrder && (
+        <OrderEditModal
+          order={editingOrder}
+          items={items}
+          customers={customers}
+          orders={allOrders}
+          printSequence={printSequence}
+          desktop={false}
+          onClose={() => setEditingOrder(null)}
+          onSaved={async () => { setEditingOrder(null); await onRefresh(); }}
+        />
       )}
     </div>
   );
@@ -7766,14 +7784,14 @@ function StockChangesReport({ onBack }) {
   );
 }
 
-function OfficeReports() {
+function OfficeReports({ items = [], customers = [], orders = [], printSequence = [], onRefresh = async () => {} } = {}) {
   const [active, setActive] = useState(null);
   if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
   if (active === 'margin') return <MarginReport onBack={() => setActive(null)} />;
   if (active === 'order-margin') return <OrderMarginReport onBack={() => setActive(null)} />;
   if (active === 'stock-changes') return <StockChangesReport onBack={() => setActive(null)} />;
   if (active === 'invoice-numbers') return <InvoiceAuditReport onBack={() => setActive(null)} />;
-  if (active === 'invoice-matching') return <InvoiceMatchReport onBack={() => setActive(null)} />;
+  if (active === 'invoice-matching') return <InvoiceMatchReport onBack={() => setActive(null)} items={items} customers={customers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
