@@ -663,8 +663,17 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
 
   const rows = lines.map(l => {
     const cases = Number(l.qty) || 0;
-    const pack = Number(l.pack) || 1;
     const isCase = l.unit === 'case';
+    // Pack: use the line's snapshotted pack; if missing (older lines), fall back
+    // to the item's current pack (× case_size for a case line) so the line totals
+    // correctly instead of undercounting at pack=1.
+    let pack = Number(l.pack) || 0;
+    if (pack <= 0) {
+      const it = itemById[l.id] || {};
+      const ip = Number(it.pack) || 1;
+      const cs = Number(it.caseSize) || 1;
+      pack = isCase ? ip * cs : ip;
+    }
     // Out-of-stock lines (price 0) show 0 eaches — the cases are ordered but no
     // stock is being fulfilled/charged.
     const isOos = (Number(l.price) || 0) === 0;
