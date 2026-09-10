@@ -4829,7 +4829,6 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
   // so the shown stock is what's physically in the warehouse today.
   const [todaysView, setTodaysView] = useState(false);
-  const itemByIdMap = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
   const futureCommittedByItem = useMemo(() => {
     const today = todayISODate();
     const m = {};
@@ -4837,16 +4836,12 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       if (o.status === 'pending') continue; // pending hasn't reserved stock
       if (!o.deliveryDate || o.deliveryDate <= today) continue; // only future deliveries
       for (const l of (o.lines || [])) {
-        // Stock is in BOXES. A box line consumes qty boxes; a case line consumes
-        // qty × case_size boxes. (Do NOT use eaches — stock isn't tracked in eaches.)
-        const it = itemByIdMap[l.id];
-        const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
-        const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? caseSize : 1);
-        m[l.id] = (m[l.id] || 0) + boxes;
+        const eaches = (Number(l.qty) || 0) * (Number(l.pack) || 1);
+        m[l.id] = (m[l.id] || 0) + eaches;
       }
     }
     return m;
-  }, [orders, itemByIdMap]);
+  }, [orders]);
   const displayStock = useCallback((item) => {
     const base = Number(item.stock) || 0;
     return todaysView ? base + (futureCommittedByItem[item.id] || 0) : base;
@@ -4945,8 +4940,6 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // per-item order history on the Inventory page to help confirm stock.
   function orderHistoryFor(itemId, currentStock = 0) {
     const rows = [];
-    const itemForBoxes = items.find(i => i.id === itemId);
-    const csForBoxes = itemForBoxes && Number(itemForBoxes.caseSize) > 0 ? Number(itemForBoxes.caseSize) : 1;
     for (const o of orders) {
       const line = (o.lines || []).find(l => l.id === itemId);
       if (!line) continue;
@@ -4959,19 +4952,19 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         submittedAt: o.submittedAt,
         cases,
         eaches: cases * pack,
-        boxes: cases * (line.unit === 'case' ? csForBoxes : 1), // stock is in boxes
         status: o.status,
         processed: o.processed,
       });
     }
     rows.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-    // Running stock (BOXES) AFTER each order. Current stock reflects all
-    // submitted-order consumption. Walk newest→oldest.
+    // Running stock AFTER each order. Current stock reflects all submitted-order
+    // consumption. Walk newest→oldest: the newest submitted order left us at
+    // current stock; each older one had that much + what the newer orders took.
     let after = Number(currentStock) || 0;
     for (const r of rows) {
       if (r.status === 'pending') { r.stockAfter = null; continue; } // pending hasn't consumed
       r.stockAfter = after;        // stock right after this order was placed
-      after = after + r.boxes;     // before it = after it + boxes it consumed
+      after = after + r.eaches;    // before it = after it + what it consumed
     }
     const submitted = rows.filter(r => r.status !== 'pending');
     const consumedEaches = submitted.reduce((s, r) => s + r.eaches, 0);
