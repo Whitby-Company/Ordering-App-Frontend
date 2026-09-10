@@ -4939,38 +4939,47 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // quantity (cases + eaches) and status for each — used by the expandable
   // per-item order history on the Inventory page to help confirm stock.
   function orderHistoryFor(itemId, currentStock = 0) {
+    // The item's case size (boxes per case). Stock is in BOXES.
+    const it = items.find(i => i.id === itemId);
+    const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
     const rows = [];
     for (const o of orders) {
       const line = (o.lines || []).find(l => l.id === itemId);
       if (!line) continue;
-      const cases = Number(line.qty) || 0;
+      const qty = Number(line.qty) || 0;
+      const unit = line.unit || 'box';
       const pack = Number(line.pack) || 1;
+      // Boxes consumed = exactly what the app subtracts from stock:
+      //   case line → qty × case_size ; box line → qty.
+      const boxesConsumed = qty * (unit === 'case' ? caseSize : 1);
       rows.push({
         orderId: o.id,
         customer: o.customer,
         deliveryDate: o.deliveryDate,
         submittedAt: o.submittedAt,
-        cases,
-        eaches: cases * pack,
+        qty,
+        unit,
+        eaches: qty * pack,   // informational only
+        boxesConsumed,
         status: o.status,
         processed: o.processed,
       });
     }
     rows.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-    // Running stock AFTER each order. Current stock reflects all submitted-order
-    // consumption. Walk newest→oldest: the newest submitted order left us at
-    // current stock; each older one had that much + what the newer orders took.
+    // Running stock (BOXES) after each order. Current stock = after all submitted
+    // orders consumed. Walk newest→oldest: newest left us at current stock; each
+    // older order had that much + the boxes it consumed.
     let after = Number(currentStock) || 0;
     for (const r of rows) {
       if (r.status === 'pending') { r.stockAfter = null; continue; } // pending hasn't consumed
-      r.stockAfter = after;        // stock right after this order was placed
-      after = after + r.eaches;    // before it = after it + what it consumed
+      r.stockAfter = after;              // stock right after this order
+      after = after + r.boxesConsumed;   // before it = after it + boxes consumed
     }
     const submitted = rows.filter(r => r.status !== 'pending');
+    const consumedBoxes = submitted.reduce((s, r) => s + r.boxesConsumed, 0);
     const consumedEaches = submitted.reduce((s, r) => s + r.eaches, 0);
-    const consumedCases = submitted.reduce((s, r) => s + r.cases, 0);
-    const pendingEaches = rows.filter(r => r.status === 'pending').reduce((s, r) => s + r.eaches, 0);
-    return { rows, consumedEaches, consumedCases, pendingEaches };
+    const pendingBoxes = rows.filter(r => r.status === 'pending').reduce((s, r) => s + r.boxesConsumed, 0);
+    return { rows, consumedBoxes, consumedEaches, pendingBoxes, caseSize };
   }
   // Active items only, for the edit modal's brand grid / item cards.
   const activeItemsForEdit = useMemo(() => items.filter(i => i.active), [items]);
@@ -5477,9 +5486,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                       ) : (
                         <div style={officeStyles.itemHistoryWrap}>
                           <div style={officeStyles.itemHistorySummary}>
-                            <span><strong>{hist.consumedEaches}</strong> eaches ({hist.consumedCases} cs) out on submitted orders</span>
-                            {hist.pendingEaches > 0 && <span style={{ color: '#8A6D1B' }}>· {hist.pendingEaches} eaches pending</span>}
-                            <span style={{ color: '#8A8F87' }}>· in stock now: {item.stock}</span>
+                            <span><strong>{hist.consumedBoxes}</strong> boxes out on submitted orders</span>
+                            {hist.pendingBoxes > 0 && <span style={{ color: '#8A6D1B' }}>· {hist.pendingBoxes} boxes pending</span>}
+                            <span style={{ color: '#8A8F87' }}>· in stock now: {item.stock}{hist.caseSize > 1 ? ` · case = ${hist.caseSize} boxes` : ''}</span>
                           </div>
                           <table style={officeStyles.itemHistoryTable}>
                             <thead>
@@ -5487,8 +5496,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                 <th style={officeStyles.itemHistoryTh}>Order</th>
                                 <th style={officeStyles.itemHistoryTh}>Delivery</th>
                                 <th style={officeStyles.itemHistoryTh}>Customer</th>
-                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Cases</th>
-                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Eaches</th>
+                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Qty</th>
+                                <th style={officeStyles.itemHistoryTh}>Unit</th>
+                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }} title="Boxes subtracted from stock (case × case size, else qty)">Boxes out</th>
+                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }} title="Running stock (boxes) right after this order">Stock after</th>
                                 <th style={officeStyles.itemHistoryTh}>Status</th>
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}></th>
                               </tr>
@@ -5499,8 +5510,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                   <td style={officeStyles.itemHistoryTd}>#{r.orderId}</td>
                                   <td style={officeStyles.itemHistoryTd}>{formatDate(r.deliveryDate)}</td>
                                   <td style={officeStyles.itemHistoryTd}>{r.customer}</td>
-                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.cases}</td>
-                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.eaches}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.qty}</td>
+                                  <td style={officeStyles.itemHistoryTd}>{r.unit === 'case' ? 'case' : 'box'}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 600, color: '#B5493B' }}>−{r.boxesConsumed}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter != null ? r.stockAfter : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}>
                                     {r.status === 'pending'
                                       ? <span style={officeStyles.badgePending}>Pending</span>
