@@ -1361,7 +1361,9 @@ function TicketQtyInput({ qty, onSet, disabled }) {
 // Desktop bulk entry: a QuickBooks-style grid. Type an item # (or search),
 // enter cases, and it builds the order. Uses the store's catalog prices and
 // warns (amber) on items not in the store's catalog.
-function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, moveLine = () => {}, desktop, showAllItems = false, priceOverrides = {}, setPriceOverrides = () => {} }) {
+function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQty, setUnit, removeLine, moveLine = () => {}, moveLineTo = () => {}, desktop, showAllItems = false, priceOverrides = {}, setPriceOverrides = () => {} }) {
+  const [dragId, setDragId] = React.useState(null);
+  const [dragOverIdx, setDragOverIdx] = React.useState(null);
   const BLANK_ROWS = 8;
   // Each entry row has its own draft text + dropdown highlight index.
   const [drafts, setDrafts] = useState(() => Array.from({ length: BLANK_ROWS }, () => ''));
@@ -1477,8 +1479,21 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
             const overStock = !oos && boxesOrdered > stockBoxes;
             const stockLeft = stockBoxes - boxesOrdered; // negative = short
             return (
-              <tr key={l.id} style={oos ? qeStyles.oosRow : (overStock ? qeStyles.warnRow : (warn ? qeStyles.warnRow : undefined))}>
-                <td style={qeStyles.td}>{displayCode(l.id)}</td>
+              <tr key={l.id}
+                onDragOver={e => { e.preventDefault(); if (dragOverIdx !== i) setDragOverIdx(i); }}
+                onDrop={e => { e.preventDefault(); if (dragId != null) moveLineTo(dragId, i); setDragId(null); setDragOverIdx(null); }}
+                style={{
+                  ...(oos ? qeStyles.oosRow : (overStock ? qeStyles.warnRow : (warn ? qeStyles.warnRow : undefined))),
+                  ...(dragId === l.id ? { opacity: 0.4 } : {}),
+                  ...(dragOverIdx === i && dragId !== l.id ? { borderTop: '2px solid #2B5D50' } : {}),
+                }}>
+                <td
+                  style={{ ...qeStyles.td, cursor: 'grab', whiteSpace: 'nowrap', userSelect: 'none' }}
+                  title="Drag to reorder"
+                  draggable
+                  onDragStart={e => { setDragId(l.id); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragEnd={() => { setDragId(null); setDragOverIdx(null); }}
+                ><span style={{ color: '#B9BDB2', marginRight: 4 }}>⋮⋮</span>{displayCode(l.id)}</td>
                 <td style={qeStyles.td}>
                   {l.name}
                   {(Number(l.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{l.stock} in stock</span>}
@@ -1543,9 +1558,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   />
                 </td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineTotal(l, l.qty))}</td>
-                <td style={{ ...qeStyles.td, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  <button style={{ ...qeStyles.rm, color: '#8A8F87', fontSize: 13 }} tabIndex={-1} onClick={() => moveLine(l.id, -1)} disabled={i === 0} title="Move up">↑</button>
-                  <button style={{ ...qeStyles.rm, color: '#8A8F87', fontSize: 13 }} tabIndex={-1} onClick={() => moveLine(l.id, 1)} disabled={i === orderLines.length - 1} title="Move down">↓</button>
+                <td style={{ ...qeStyles.td, textAlign: 'center' }}>
                   <button style={qeStyles.rm} tabIndex={-1} onClick={() => removeLine(l.id)} title="Remove">×</button>
                 </td>
               </tr>
@@ -2165,6 +2178,18 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       return next;
     });
   }
+  // Move a line to a specific index (for drag-and-drop reordering).
+  function moveLineTo(id, targetIndex) {
+    setOrder(prev => {
+      const from = prev.findIndex(o => o.id === id);
+      if (from < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      const clamped = Math.max(0, Math.min(targetIndex, next.length));
+      next.splice(clamped, 0, moved);
+      return next;
+    });
+  }
   // Switch a line between 'box' and 'case'.
   function setUnit(id, unit) {
     setOrder(prev => prev.map(o => (o.id === id ? { ...o, unit } : o)));
@@ -2596,6 +2621,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           setUnit={setUnit}
           removeLine={removeLine}
           moveLine={moveLine}
+          moveLineTo={moveLineTo}
           desktop={desktop}
           showAllItems={showAllItems}
           priceOverrides={priceOverrides}
