@@ -1454,7 +1454,13 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     </span>
                   )}
                 </td>
-                <td style={{ ...qeStyles.td, textAlign: 'center', color: '#5B6058', fontSize: 12 }}>{fullPackLabel(l) || (l.pack ? `${l.pack}` : '')}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'center', color: '#5B6058', fontSize: 12 }}>{
+                  // Show the pack for the SELECTED unit: box pack when Box is
+                  // chosen, full case pack (with master-case count) when Case is.
+                  (l.unit === 'case' && Number(l.caseSize) > 0)
+                    ? (fullPackLabel(l) || `${(Number(l.pack) || 1) * Number(l.caseSize)}`)
+                    : (l.packLabel || (l.pack ? `${l.pack}` : ''))
+                }</td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
                   {l.caseSize ? (
                     <div style={qeStyles.unitToggle}>
