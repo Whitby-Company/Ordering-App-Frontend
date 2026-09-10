@@ -6414,6 +6414,7 @@ function InvoiceMatchReport({ onBack }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState('all');
+  const [expanded, setExpanded] = useState(null); // app invoice # whose comparison is open
   const fileRef = useRef(null);
 
   // Load app orders (grouped) on mount
@@ -6549,10 +6550,19 @@ function InvoiceMatchReport({ onBack }) {
             </tr></thead>
             <tbody>
               {shown.map(({ o, sameNumber, suggestion }) => {
-                const picked = picks[o.invoice] || (suggestion ? suggestion.number : '');
+                const picked = picks[o.invoice] || (suggestion ? suggestion.number : '') || (sameNumber ? o.invoice : '');
+                const isOpen = expanded === o.invoice;
+                const matchedQb = (qbInv || []).find(q => String(q.number) === String(picked));
                 return (
-                  <tr key={o.invoice} style={{ borderBottom: '1px solid #EFEDE3' }}>
-                    <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{o.invoice}<div style={{ fontSize: 10, color: '#B9BDB2' }}>#{o.orderId}</div></td>
+                  <React.Fragment key={o.invoice}>
+                  <tr style={{ borderBottom: isOpen ? 'none' : '1px solid #EFEDE3' }}>
+                    <td style={{ ...repStyles.tdItem, fontWeight: 700, cursor: 'pointer' }} onClick={() => setExpanded(isOpen ? null : o.invoice)}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <ChevronRight size={12} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                        {o.invoice}
+                      </span>
+                      <div style={{ fontSize: 10, color: '#B9BDB2', paddingLeft: 16 }}>#{o.orderId}</div>
+                    </td>
                     <td style={repStyles.tdItem}>{o.customer}</td>
                     <td style={repStyles.tdItem}>{o.submitted}</td>
                     <td style={{ ...repStyles.tdItem, maxWidth: 240, fontSize: 11.5, color: '#5B6058' }}>{o.items.slice(0, 4).map(it => it.name).join(', ')}{o.items.length > 4 ? ` +${o.items.length - 4}` : ''}</td>
@@ -6576,6 +6586,40 @@ function InvoiceMatchReport({ onBack }) {
                       )}
                     </td>
                   </tr>
+                  {isOpen && (
+                    <tr style={{ borderBottom: '1px solid #EFEDE3', background: '#FBFAF6' }}>
+                      <td colSpan={6} style={{ padding: '10px 16px' }}>
+                        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 300px', minWidth: 260 }}>
+                            <div style={{ fontWeight: 700, fontSize: 12, color: '#2B5D50', marginBottom: 4 }}>App order {o.invoice} — {o.items.length} items</div>
+                            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                              <tbody>
+                                {o.items.map((it, i) => (
+                                  <tr key={i}><td style={{ padding: '2px 6px', borderBottom: '1px solid #EFEDE3' }}>{it.name}</td><td style={{ padding: '2px 6px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', whiteSpace: 'nowrap' }}>{it.qty} {it.unit}</td></tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div style={{ flex: '1 1 300px', minWidth: 260 }}>
+                            <div style={{ fontWeight: 700, fontSize: 12, color: '#8A6D1B', marginBottom: 4 }}>
+                              QuickBooks {matchedQb ? `#${matchedQb.number} (${matchedQb.date})` : '— no QB invoice selected —'} {matchedQb ? `· ${matchedQb.memos.length} lines` : ''}
+                            </div>
+                            {matchedQb ? (
+                              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                                <tbody>
+                                  {matchedQb.memos.map((m, i) => (
+                                    <tr key={i}><td style={{ padding: '2px 6px', borderBottom: '1px solid #EFEDE3' }}>{m}</td></tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : <div style={{ fontSize: 12, color: '#B9BDB2' }}>Pick a QB invoice above to compare its items.</div>}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#8A8F87', marginTop: 8 }}>To change quantities/items, edit order #{o.orderId} in the Orders/History tab.</div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
