@@ -6723,39 +6723,25 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
             }
             return (
               <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#EAF3EE', border: '1px solid #C4DDD2', textAlign: 'center' }}>
+                <div onClick={() => { setFilter('tmatch'); setCursor(0); }} style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#EAF3EE', border: `${filter === 'tmatch' ? 2 : 1}px solid ${filter === 'tmatch' ? '#2B7A4B' : '#C4DDD2'}`, textAlign: 'center', cursor: 'pointer' }}>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#2B7A4B' }}>{matchTotal}</div>
                   <div style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 700 }}>TOTALS MATCH</div>
                 </div>
-                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#FBEEE7', border: '1px solid #E6C6B4', textAlign: 'center' }}>
+                <div onClick={() => { setFilter('tdiff'); setCursor(0); }} style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#FBEEE7', border: `${filter === 'tdiff' ? 2 : 1}px solid ${filter === 'tdiff' ? '#B5493B' : '#E6C6B4'}`, textAlign: 'center', cursor: 'pointer' }}>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#B5493B' }}>{diffTotal}</div>
                   <div style={{ fontSize: 11.5, color: '#B5493B', fontWeight: 700 }}>TOTALS DIFFER</div>
                 </div>
-                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#F3F4F0', border: '1px solid #D6D3C6', textAlign: 'center' }}>
+                <div onClick={() => { setFilter('none'); setCursor(0); }} style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#F3F4F0', border: `${filter === 'none' ? 2 : 1}px solid ${filter === 'none' ? '#8A8F87' : '#D6D3C6'}`, textAlign: 'center', cursor: 'pointer' }}>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#8A8F87' }}>{noMatch}</div>
                   <div style={{ fontSize: 11.5, color: '#5B6058', fontWeight: 700 }}>NO QB MATCH</div>
                 </div>
-                <div style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#F3F4F0', border: '1px solid #D6D3C6', textAlign: 'center' }}>
+                <div onClick={() => { setFilter('all'); setCursor(0); }} style={{ flex: '1 1 140px', padding: '10px 14px', borderRadius: 8, background: '#F3F4F0', border: `${filter === 'all' ? 2 : 1}px solid ${filter === 'all' ? '#14181F' : '#D6D3C6'}`, textAlign: 'center', cursor: 'pointer' }}>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#14181F' }}>{rows.length}</div>
-                  <div style={{ fontSize: 11.5, color: '#5B6058', fontWeight: 700 }}>TOTAL ORDERS</div>
+                  <div style={{ fontSize: 11.5, color: '#5B6058', fontWeight: 700 }}>ALL ORDERS</div>
                 </div>
               </div>
             );
           })()}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-            {[['all', 'All'], ['tmatch', 'Totals match'], ['tdiff', 'Totals differ'], ['none', 'No match found']].map(([k, label]) => {
-              const count = rows.filter(r => {
-                if (k === 'all') return true;
-                const picked = picks[r.o.invoice] || (r.suggestion ? r.suggestion.number : '');
-                const mq = (qbInv || []).find(q => String(q.number) === String(picked));
-                if (k === 'none') return !mq;
-                if (!mq) return false;
-                const match = Math.abs((r.o.total || 0) - (mq.total || 0)) < 0.01;
-                return k === 'tmatch' ? match : !match;
-              }).length;
-              return <button key={k} style={{ ...officeStyles.smallBtn, ...(filter === k ? { background: '#2B5D50', color: '#fff' } : {}) }} onClick={() => { setFilter(k); setCursor(0); }}>{label} ({count})</button>;
-            })}
-          </div>
           {shown.length === 0 ? (
             <div style={{ color: '#8A8F87', padding: 20 }}>No orders in this filter.</div>
           ) : (() => {
