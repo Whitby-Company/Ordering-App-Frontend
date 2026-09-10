@@ -682,7 +682,17 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       '<td class="c-cs">' + casesShown + '</td>' +
       (allCases ? '' : '<td class="c-each">' + each + '</td>') +
       '<td class="c-desc">' + desc + '</td>' +
-      '<td class="c-pack">' + esc(l.packLabel || (l.pack ? String(l.pack) : '')) + '</td>' +
+      '<td class="c-pack">' + esc((() => {
+        const it = itemById[l.id] || {};
+        const cs = Number(l.caseSize) > 0 ? Number(l.caseSize) : (Number(it.caseSize) > 0 ? Number(it.caseSize) : 0);
+        const label = l.packLabel || it.packLabel || '';
+        if (l.unit === 'case' && cs > 0 && label) {
+          // case/box/oz — prepend the case count if the label is box-level.
+          const slashes = (label.match(/\//g) || []).length;
+          return slashes >= 2 ? label : cs + '/' + label;
+        }
+        return label || (l.pack ? String(l.pack) : ''); // box/oz
+      })()) + '</td>' +
       '<td class="c-upc">' + upcCell + '</td>' +
       '<td class="c-price">' + money(priceShown) + '</td>' +
       '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
