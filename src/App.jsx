@@ -6606,7 +6606,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
     // date (usually a few days before it). Date is the strongest signal, so it
     // dominates the score; items/customer confirm.
     const anchor = o.delivery || o.submitted;
-    const appCodes = new Set((o.items || []).map(it => (it.code || '').toLowerCase().trim()).filter(Boolean));
+    const appCodes = new Set((o.items || []).map(it => (it.code || '').toLowerCase().trim().replace(/c$/, '')).filter(Boolean));
     let best = null, bestScore = -Infinity;
     for (const q of qbInv) {
       // STORE NAME is a hard gate: the QB customer/ship-to must be the SAME store
@@ -6618,7 +6618,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       let score = 0;
       // ITEM MATCH is the strongest signal. Prefer exact item-code overlap (from
       // the QB export's Item column); fall back to name words if codes absent.
-      const qbCodes = new Set((q.lines || []).map(ln => { const s = String(ln.itemId || ''); return (s.includes(':') ? s.split(':').pop() : s).toLowerCase().trim(); }).filter(Boolean));
+      const qbCodes = new Set((q.lines || []).map(ln => { const s = String(ln.itemId || ''); return (s.includes(':') ? s.split(':').pop() : s).toLowerCase().trim().replace(/c$/, ''); }).filter(Boolean));
       let overlapScore = 0;
       if (appCodes.size && qbCodes.size) {
         let inter = 0; appCodes.forEach(c => { if (qbCodes.has(c)) inter++; });
@@ -6757,14 +6757,18 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
               // "Item #" ("6275c"). Match on that code EXACTLY when available — it's
               // reliable. Fall back to name similarity for lines without an id.
               const codeOf = full => { const s = String(full || ''); const c = s.includes(':') ? s.split(':').pop() : s; return c.toLowerCase().trim(); };
+              // Normalize a code for comparison: drop a trailing "c" so a box item
+              // ("2146") matches its case twin ("2146c") — same product.
+              const codeKey = c => (c || '').toLowerCase().trim().replace(/c$/, '');
               const appItems = (o.items || []).map(it => ({ ...it, key: norm(it.name), code: (it.code || '').toLowerCase().trim() }));
               const qbLines = (matchedQb && matchedQb.lines) ? matchedQb.lines.map(ln => ({ memo: ln.memo, eaches: Number(ln.qty) || 0, key: norm(ln.memo), code: codeOf(ln.itemId) })) : [];
               const usedApp = new Set(), usedQb = new Set();
               const pairMap = {};
-              // Pass 1: exact item-code match.
+              // Pass 1: item-code match (ignoring the box/case "c" suffix).
               appItems.forEach((a, ai) => {
                 if (!a.code) return;
-                const qi = qbLines.findIndex((q, i) => !usedQb.has(i) && q.code && q.code === a.code);
+                const ak = codeKey(a.code);
+                const qi = qbLines.findIndex((q, i) => !usedQb.has(i) && q.code && codeKey(q.code) === ak);
                 if (qi >= 0) { usedApp.add(ai); usedQb.add(qi); pairMap[ai] = qi; }
               });
               // Pass 2: name-similarity for the rest.
