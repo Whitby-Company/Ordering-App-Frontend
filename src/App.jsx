@@ -6490,7 +6490,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
           const parts = splitCsvLine(lines[i]);
           const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
           if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
-          byInv[inv].items.push({ name: parts[idx('Item')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
+          byInv[inv].items.push({ name: parts[idx('Item')], code: parts[idx('Item #')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
           byInv[inv].subtotal += Number(parts[idx('Line total')]) || 0;
         }
         // App invoice total = subtotal + 0.5% tax, matching the printed invoice
@@ -6514,10 +6514,10 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sn = wb.SheetNames.includes('Sheet1') ? 'Sheet1' : wb.SheetNames[wb.SheetNames.length - 1];
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, blankrows: false, defval: '' });
-      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, memoCol = -1, amtCol = -1, qtyCol = -1;
+      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, memoCol = -1, amtCol = -1, qtyCol = -1, itemCol = -1, shipCol = -1;
       for (let i = 0; i < Math.min(rows.length, 15); i++) {
         const r = rows[i].map(c => String(c).trim().toLowerCase());
-        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); memoCol = r.indexOf('memo'); amtCol = r.indexOf('amount'); qtyCol = r.indexOf('qty'); break; }
+        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); memoCol = r.indexOf('memo'); amtCol = r.indexOf('amount'); qtyCol = r.indexOf('qty'); itemCol = r.indexOf('item'); shipCol = r.findIndex(h => h.startsWith('ship to')); break; }
       }
       if (numCol < 0) { setErr('No "Num" column found — use the QuickBooks invoice detail export.'); setBusy(false); return; }
       const seen = new Map(); let cust = '';
@@ -6540,13 +6540,23 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
             continue;
           }
         }
-        if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), memos: [], lines: [], total: 0 });
+        if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), store: '', memos: [], lines: [], total: 0 });
+        // Store name from the ship-to column (if present) — confirms the customer.
+        if (shipCol >= 0 && r[shipCol] && !seen.get(num).store) seen.get(num).store = String(r[shipCol]).trim();
         if (memoCol >= 0) {
           const m = String(r[memoCol] || '').trim();
           if (m) {
             seen.get(num).memos.push(m);
             const qtyRaw = qtyCol >= 0 ? String(r[qtyCol] || '').trim() : '';
-            seen.get(num).lines.push({ memo: m, qty: qtyRaw });
+            // Item ID (e.g. "Herr's:6275c (name)") → strip to the bare id for exact matching.
+            let itemId = '';
+            if (itemCol >= 0 && r[itemCol]) {
+              const raw = String(r[itemCol]).trim();
+              const pm = raw.match(/^([^(]+?)\s*\(/);
+              itemId = (pm ? pm[1] : raw).trim();
+              if (/gross sales|accounts receivable|sales tax/i.test(itemId)) itemId = ''; // not a real item id
+            }
+            seen.get(num).lines.push({ memo: m, qty: qtyRaw, itemId });
           }
         }
         if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(num).total += a; }
@@ -6574,30 +6584,36 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
     // date (usually a few days before it). Date is the strongest signal, so it
     // dominates the score; items/customer confirm.
     const anchor = o.delivery || o.submitted;
+    const appCodes = new Set((o.items || []).map(it => (it.code || '').toLowerCase().trim()).filter(Boolean));
     let best = null, bestScore = -Infinity;
     for (const q of qbInv) {
       const custOk = nc(o.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6)));
       if (!custOk) continue;
       let score = 0;
-      // ITEM OVERLAP is the strongest signal: the right QB invoice has the same
-      // items. Use Jaccard (shared / union) so an invoice full of DIFFERENT items
-      // scores low even if its date is close — prevents wrong-invoice matches.
-      const qbWords = new Set(q.memos.flatMap(m => m.toLowerCase().split(/\s+/)).filter(w => w.length > 2));
-      let inter = 0; appWords.forEach(w => { if (qbWords.has(w)) inter++; });
-      const union = new Set([...appWords, ...qbWords]).size || 1;
-      const jaccard = inter / union;
-      score += jaccard * 6;           // primary weight (up to +6)
-      // line-count closeness helps distinguish
+      // ITEM MATCH is the strongest signal. Prefer exact item-code overlap (from
+      // the QB export's Item column); fall back to name words if codes absent.
+      const qbCodes = new Set((q.lines || []).map(ln => { const s = String(ln.itemId || ''); return (s.includes(':') ? s.split(':').pop() : s).toLowerCase().trim(); }).filter(Boolean));
+      let overlapScore = 0;
+      if (appCodes.size && qbCodes.size) {
+        let inter = 0; appCodes.forEach(c => { if (qbCodes.has(c)) inter++; });
+        const union = new Set([...appCodes, ...qbCodes]).size || 1;
+        overlapScore = inter / union; // exact-code Jaccard
+      } else {
+        const qbWords = new Set(q.memos.flatMap(m => m.toLowerCase().split(/\s+/)).filter(w => w.length > 2));
+        let inter = 0; appWords.forEach(w => { if (qbWords.has(w)) inter++; });
+        const union = new Set([...appWords, ...qbWords]).size || 1;
+        overlapScore = inter / union;
+      }
+      score += overlapScore * 6;       // primary weight
       if (o.items.length === q.memos.length) score += 0.5;
-      // DATE as a tiebreaker among similar-item invoices (much smaller weight).
+      // DATE tiebreaker among similar-item invoices.
       if (anchor && q.date) {
         const gap = (new Date(q.date) - new Date(anchor)) / 86400000;
-        if (gap >= -3 && gap <= 21) score += 1 * (1 - Math.abs(gap) / 21); // up to +1
+        if (gap >= -3 && gap <= 21) score += 1 * (1 - Math.abs(gap) / 21);
         else score -= 0.5;
       }
       if (score > bestScore) { bestScore = score; best = q; }
     }
-    // Flag low-confidence matches (few shared items) so the UI can warn.
     return best ? { ...best, score: bestScore } : null;
   }
 
@@ -6677,34 +6693,32 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
             // paired to its best QB match; unmatched items on either side show alone.
             const alignRows = (() => {
               const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-              const appItems = (o.items || []).map(it => ({ ...it, key: norm(it.name) }));
-              const qbLines = (matchedQb && matchedQb.lines) ? matchedQb.lines.map(ln => ({ memo: ln.memo, eaches: Number(ln.qty) || 0, key: norm(ln.memo) })) : [];
-              // Similarity: the QB memo usually = the app name + extra pack text
-              // (e.g. "Loacker Mini Quad - Chocolate  12/1.9oz"). Score by how much
-              // of the app name is a prefix of the QB name (and vice versa), so the
-              // FULL name distinguishes similar items (Chocolate vs Hazelnut).
+              // The QB item id ("Herr's:6275c") ends with the same code as the app
+              // "Item #" ("6275c"). Match on that code EXACTLY when available — it's
+              // reliable. Fall back to name similarity for lines without an id.
+              const codeOf = full => { const s = String(full || ''); const c = s.includes(':') ? s.split(':').pop() : s; return c.toLowerCase().trim(); };
+              const appItems = (o.items || []).map(it => ({ ...it, key: norm(it.name), code: (it.code || '').toLowerCase().trim() }));
+              const qbLines = (matchedQb && matchedQb.lines) ? matchedQb.lines.map(ln => ({ memo: ln.memo, eaches: Number(ln.qty) || 0, key: norm(ln.memo), code: codeOf(ln.itemId) })) : [];
+              const usedApp = new Set(), usedQb = new Set();
+              const pairMap = {};
+              // Pass 1: exact item-code match.
+              appItems.forEach((a, ai) => {
+                if (!a.code) return;
+                const qi = qbLines.findIndex((q, i) => !usedQb.has(i) && q.code && q.code === a.code);
+                if (qi >= 0) { usedApp.add(ai); usedQb.add(qi); pairMap[ai] = qi; }
+              });
+              // Pass 2: name-similarity for the rest.
               const sim = (a, b) => {
                 if (!a || !b) return 0;
-                // longest common prefix length
                 let p = 0; const n = Math.min(a.length, b.length);
                 while (p < n && a[p] === b[p]) p++;
-                // require the prefix to cover most of the shorter name
                 const shorter = Math.min(a.length, b.length);
                 return p / shorter >= 0.85 ? p : (a.includes(b) || b.includes(a) ? Math.min(a.length, b.length) : 0);
               };
-              // Build all candidate pairs, sort by score, assign uniquely (best first).
               const pairs = [];
-              appItems.forEach((a, ai) => qbLines.forEach((q, qi) => {
-                const s = sim(a.key, q.key);
-                if (s > 0) pairs.push({ s, ai, qi });
-              }));
+              appItems.forEach((a, ai) => { if (usedApp.has(ai)) return; qbLines.forEach((q, qi) => { if (usedQb.has(qi)) return; const s = sim(a.key, q.key); if (s > 0) pairs.push({ s, ai, qi }); }); });
               pairs.sort((x, y) => y.s - x.s);
-              const usedApp = new Set(), usedQb = new Set();
-              const pairMap = {}; // ai -> qi
-              for (const p of pairs) {
-                if (usedApp.has(p.ai) || usedQb.has(p.qi)) continue;
-                usedApp.add(p.ai); usedQb.add(p.qi); pairMap[p.ai] = p.qi;
-              }
+              for (const p of pairs) { if (usedApp.has(p.ai) || usedQb.has(p.qi)) continue; usedApp.add(p.ai); usedQb.add(p.qi); pairMap[p.ai] = p.qi; }
               const out = [];
               appItems.forEach((a, ai) => {
                 const qi = pairMap[ai];
