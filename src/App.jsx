@@ -5463,8 +5463,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <span>{item.pack || 1}{Number(item.caseSize) > 0 ? <span style={{ color: '#8A8F87' }}> ×{item.caseSize}</span> : null}</span>
-                      {fullPackLabel(item) && <span style={{ fontSize: 10.5, color: "#8A8F87" }}>{fullPackLabel(item)}</span>}
+                      <span>{fullPackLabel(item) || item.pack || 1}</span>
                     </div>
                   )}
                 </td>
