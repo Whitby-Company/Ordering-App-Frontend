@@ -4825,6 +4825,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [query, setQuery] = useState('');
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
+  const [missingCaseOnly, setMissingCaseOnly] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
   // so the shown stock is what's physically in the warehouse today.
@@ -5019,6 +5020,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     const matches = items.filter(i => {
       if (!showInactive && !i.active) return false;
       if (hideSeasonal && isSeasonal(i)) return false;
+      // "Missing case pack": items with a box pack but no boxes-per-case set, so
+      // the master case can't be calculated. (Skip the "c" case-unit entries.)
+      if (missingCaseOnly && (Number(i.caseSize) > 0 || String(i.id).endsWith('c'))) return false;
       const brandMatch = brand === 'All' || i.brand === brand;
       const qDigits = q.replace(/\D/g, '');
       const upcDigits = i.upc ? String(i.upc).replace(/\D/g, '') : '';
@@ -5027,7 +5031,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       return brandMatch && queryMatch;
     });
     return sortInventoryItems(matches, sortField, sortDir, popularity, printSequence);
-  }, [items, query, brand, showInactive, hideSeasonal, sortField, sortDir, popularity, printSequence]);
+  }, [items, query, brand, showInactive, hideSeasonal, missingCaseOnly, sortField, sortDir, popularity, printSequence]);
 
   const brandAllActive = brand !== 'All' && items.filter(i => i.brand === brand).every(i => !!i.active);
 
@@ -5279,6 +5283,15 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           <input type="checkbox" checked={hideSeasonal} onChange={e => setHideSeasonal(e.target.checked)} />
           Hide seasonal
         </label>
+        {isItems && (
+          <button
+            style={{ ...officeStyles.smallBtn, ...(missingCaseOnly ? { background: '#8A5A2B', color: '#fff' } : {}) }}
+            onClick={() => setMissingCaseOnly(v => !v)}
+            title="Show only items missing their boxes-per-case (master case pack can't be calculated). Switch to 'Edit: Boxes per case' to fill them in."
+          >
+            {missingCaseOnly ? 'Missing case pack ✓' : 'Missing case pack'}
+          </button>
+        )}
         <button
           style={{ ...officeStyles.smallBtn, ...(todaysView ? { background: '#2B5D50', color: '#fff' } : {}) }}
           onClick={() => setTodaysView(v => !v)}
@@ -5308,6 +5321,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
             <option value="name">Edit: Item name</option>
             <option value="brand">Edit: Brand</option>
             <option value="pack">Edit: Pack</option>
+            <option value="caseSize">Edit: Boxes per case</option>
             <option value="price">Edit: Price</option>
             <option value="cost">Edit: Cost</option>
             <option value="stock">Edit: Stock</option>
@@ -5433,9 +5447,15 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                       <NumberFieldEditor item={item} field="pack" onSaved={onRefresh} min={1} width={56} />
                       <TextFieldEditor item={item} field="packLabel" onSaved={onRefresh} placeholder="add label" small />
                     </div>
+                  ) : canEdit('caseSize') ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                      <NumberFieldEditor item={item} field="caseSize" onSaved={onRefresh} min={1} width={56} placeholder="boxes/case" />
+                      <span style={{ fontSize: 10, color: '#8A8F87' }}>{item.packLabel || `${item.pack}/box`}</span>
+                      {Number(item.caseSize) > 0 && <span style={{ fontSize: 10, color: '#2B5D50' }}>case = {(Number(item.pack) || 1) * Number(item.caseSize)} ea</span>}
+                    </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <span>{item.pack || 1}</span>
+                      <span>{item.pack || 1}{Number(item.caseSize) > 0 ? <span style={{ color: '#8A8F87' }}> ×{item.caseSize}</span> : null}</span>
                       {item.packLabel && <span style={{ fontSize: 10.5, color: '#8A8F87' }}>{item.packLabel}</span>}
                     </div>
                   )}
