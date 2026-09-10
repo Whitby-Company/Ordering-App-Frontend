@@ -5448,15 +5448,17 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 )}
                 {isItems && (
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  {canEdit('pack') ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <NumberFieldEditor item={item} field="pack" onSaved={onRefresh} min={1} width={56} />
-                      <TextFieldEditor item={item} field="packLabel" onSaved={onRefresh} placeholder="add label" small />
-                    </div>
-                  ) : canEdit('caseSize') ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <NumberFieldEditor item={item} field="caseSize" onSaved={onRefresh} min={1} width={56} placeholder="boxes/case" />
-                      <span style={{ fontSize: 10, color: '#8A8F87' }}>{item.packLabel || `${item.pack}/box`}</span>
+                  {(canEdit('pack') || canEdit('caseSize')) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <span style={{ fontSize: 10, color: '#8A8F87' }}>ea/box</span>
+                        <NumberFieldEditor item={item} field="pack" onSaved={onRefresh} min={1} width={48} />
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <span style={{ fontSize: 10, color: '#8A8F87' }}>box/case</span>
+                        <NumberFieldEditor item={item} field="caseSize" onSaved={onRefresh} min={1} width={48} />
+                      </span>
+                      <TextFieldEditor item={item} field="packLabel" onSaved={onRefresh} placeholder="label e.g. 12/12/2oz" small />
                       {Number(item.caseSize) > 0 && <span style={{ fontSize: 10, color: '#2B5D50' }}>case = {(Number(item.pack) || 1) * Number(item.caseSize)} ea</span>}
                     </div>
                   ) : (
