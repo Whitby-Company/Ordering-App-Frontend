@@ -5257,6 +5257,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         >
           {todaysView ? "Today's inventory ✓" : "Today's inventory"}
         </button>
+        <a href={`${API_BASE}/items/export-inventory`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the current inventory as a CSV">↓ Inventory CSV</a>
+        <a href={`${API_BASE}/items/export-stock-log`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the full stock change history as a CSV">↓ Stock history CSV</a>
         <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
           onClick={handleToggleEdit}
