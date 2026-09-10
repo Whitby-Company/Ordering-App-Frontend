@@ -50,6 +50,22 @@ export function casePrice(item) {
   return (Number(item.price) || 0) * (Number(item.pack) || 1);
 }
 
+// ---- Pack label with the master-case level ----
+// An item's stored packLabel is usually box-level, e.g. "12/2oz" (12 eaches per
+// box, 2oz each). When the item has a master case (case_size = boxes per case),
+// show the full breakdown "12/12/2oz" (12 boxes per case / 12 per box / 2oz) so
+// the whole structure is clear. Items with no case_size are shown as-is.
+export function fullPackLabel(item) {
+  const label = item.packLabel || '';
+  const cs = Number(item.caseSize) || 0;
+  if (cs <= 0 || !label) return label;
+  // A box-level label has one slash ("12/2oz"). A full label already has two
+  // ("12/12/2oz"). Only prepend the master-case count when it's box-level.
+  const slashes = (label.match(/\//g) || []).length;
+  if (slashes >= 2) return label; // already includes the case level
+  return cs + '/' + label;
+}
+
 // ---- Item id display ----
 // Item numbers are stored brand-prefixed (e.g. "Ritter Sport:2146") because
 // that's the real DB key. For DISPLAY ONLY, strip the brand prefix so users

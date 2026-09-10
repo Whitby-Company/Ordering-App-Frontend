@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
-import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal } from './utils.js';
+import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal, fullPackLabel } from './utils.js';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
@@ -1454,7 +1454,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     </span>
                   )}
                 </td>
-                <td style={{ ...qeStyles.td, textAlign: 'center', color: '#5B6058', fontSize: 12 }}>{l.packLabel || (l.pack ? `${l.pack}` : '')}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'center', color: '#5B6058', fontSize: 12 }}>{fullPackLabel(l) || (l.pack ? `${l.pack}` : '')}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
                   {l.caseSize ? (
                     <div style={qeStyles.unitToggle}>
@@ -2594,7 +2594,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                   <div style={styles.itemName}>{item.name}</div>
                   <div style={styles.itemMeta}>
                     <span style={styles.sku}>{displayCode(item.id)}</span>
-                    {item.packLabel && <span style={styles.brandLabel}>{item.packLabel}</span>}
+                    {fullPackLabel(item) && <span style={styles.brandLabel}>{fullPackLabel(item)}</span>}
                     <span style={{ ...styles.stockTag, ...(low ? styles.stockTagLow : {}) }}>
                       {item.stock} in stock
                     </span>
@@ -3245,7 +3245,7 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
                   <div style={styles.itemMeta}>
                     <span style={styles.sku}>{displayCode(item.id)}</span>
                     <span style={styles.brandLabel}>{item.brand}</span>
-                    {item.packLabel && <span style={styles.brandLabel}>{item.packLabel}</span>}
+                    {fullPackLabel(item) && <span style={styles.brandLabel}>{fullPackLabel(item)}</span>}
                     {item.price > 0 && (
                       <span style={styles.brandLabel}>
                         {formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/cs` : ''}
@@ -5456,7 +5456,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                       <span>{item.pack || 1}{Number(item.caseSize) > 0 ? <span style={{ color: '#8A8F87' }}> ×{item.caseSize}</span> : null}</span>
-                      {item.packLabel && <span style={{ fontSize: 10.5, color: '#8A8F87' }}>{item.packLabel}</span>}
+                      {fullPackLabel(item) && <span style={{ fontSize: 10.5, color: "#8A8F87" }}>{fullPackLabel(item)}</span>}
                     </div>
                   )}
                 </td>
