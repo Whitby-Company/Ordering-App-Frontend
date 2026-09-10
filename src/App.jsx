@@ -519,7 +519,8 @@ function printOrder(order, printSequence, options = {}) {
     const [py, pm, pd] = String(order.deliveryDate).split('-');
     poNumber = `${pm}${pd}${py.slice(2)}-${abbr}`;
   }
-  const total = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+  const subTotal = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+  const total = Math.round((subTotal + Math.round(subTotal * 0.005 * 100) / 100) * 100) / 100; // incl 0.5% tax
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const totalUnits = order.lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
   const orderedLines = sortLinesForPrint(order.lines, printSequence, options.forcePrintOrder || getPrintInvOrder() || !!(customer && customer.usePrintOrder));
@@ -2731,7 +2732,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
               <div style={styles.sheetTotal}>
                 <span>Order total</span>
                 <span style={styles.sheetTotalNum}>
-                  {formatMoney(orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0))}
+                  {(() => { const sub = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0); return formatMoney(sub + Math.round(sub * 0.005 * 100) / 100); })()}
                 </span>
               </div>
             )}
@@ -3085,7 +3086,7 @@ function Confirmation({ data, onNewOrder }) {
             <div style={styles.receiptTotalRow}>
               <span>Order total</span>
               <span style={styles.receiptTotalNum}>
-                {formatMoney(data.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0))}
+                {(() => { const sub = data.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0); return formatMoney(sub + Math.round(sub * 0.005 * 100) / 100); })()}
               </span>
             </div>
           )}
@@ -4603,7 +4604,10 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   }, [orders, query, showUnprocessedOnly, sortField, sortDir, activeScope]);
 
   function orderTotal(o) {
-    return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+    const sub = o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
+    // Include 0.5% sales tax, matching the invoice grand total.
+    const tax = Math.round(sub * 0.005 * 100) / 100;
+    return Math.round((sub + tax) * 100) / 100;
   }
 
   // Submitted (non-pending) orders not yet processed — what the batch exports.
