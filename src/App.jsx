@@ -6489,7 +6489,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
           // simple CSV split (values have no embedded commas except quoted Item)
           const parts = splitCsvLine(lines[i]);
           const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
-          if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
+          if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], po: (idx('PO #') >= 0 ? parts[idx('PO #')] : ''), submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
           byInv[inv].items.push({ name: parts[idx('Item')], code: parts[idx('Item #')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
           byInv[inv].subtotal += Number(parts[idx('Line total')]) || 0;
         }
@@ -6514,10 +6514,10 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sn = wb.SheetNames.includes('Sheet1') ? 'Sheet1' : wb.SheetNames[wb.SheetNames.length - 1];
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, blankrows: false, defval: '' });
-      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, memoCol = -1, amtCol = -1, qtyCol = -1, itemCol = -1, shipCol = -1;
+      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, memoCol = -1, amtCol = -1, qtyCol = -1, itemCol = -1, shipCol = -1, poCol = -1;
       for (let i = 0; i < Math.min(rows.length, 15); i++) {
         const r = rows[i].map(c => String(c).trim().toLowerCase());
-        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); memoCol = r.indexOf('memo'); amtCol = r.indexOf('amount'); qtyCol = r.indexOf('qty'); itemCol = r.indexOf('item'); shipCol = r.findIndex(h => h.startsWith('ship to')); break; }
+        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); memoCol = r.indexOf('memo'); amtCol = r.indexOf('amount'); qtyCol = r.indexOf('qty'); itemCol = r.indexOf('item'); shipCol = r.findIndex(h => h.startsWith('ship to')); poCol = r.findIndex(h => h.replace(/[^a-z]/g, '') === 'po' || h.replace(/[^a-z]/g, '') === 'pono'); break; }
       }
       if (numCol < 0) { setErr('No "Num" column found — use the QuickBooks invoice detail export.'); setBusy(false); return; }
       const seen = new Map(); let cust = '';
@@ -6540,9 +6540,10 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
             continue;
           }
         }
-        if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), store: '', memos: [], lines: [], total: 0 });
+        if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), store: '', po: '', memos: [], lines: [], total: 0 });
         // Store name from the ship-to column (if present) — confirms the customer.
         if (shipCol >= 0 && r[shipCol] && !seen.get(num).store) seen.get(num).store = String(r[shipCol]).trim();
+        if (poCol >= 0 && r[poCol] && !seen.get(num).po) seen.get(num).po = String(r[poCol]).trim();
         if (memoCol >= 0) {
           const m = String(r[memoCol] || '').trim();
           if (m) {
@@ -6844,6 +6845,19 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
                         : <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} disabled={busy} onClick={() => applyNumber(o, picked)}>Set app invoice # → {picked}</button>))}
                     {numberAlsoMatches && <span style={{ fontSize: 11, color: '#8A8F87' }}>(number also matches — confirmed)</span>}
                   </div>
+                  {(o.po || (matchedQb && matchedQb.po)) && (() => {
+                    const appPo = (o.po || '').trim();
+                    const qbPo = (matchedQb && matchedQb.po || '').trim();
+                    const poMatch = appPo && qbPo && appPo.toLowerCase().replace(/[^a-z0-9]/g, '') === qbPo.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    return (
+                      <div style={{ marginTop: 6, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ color: '#8A8F87' }}>PO#</span>
+                        <span style={{ fontWeight: 700 }}>app: {appPo || <span style={{ color: '#B9BDB2', fontWeight: 400 }}>—</span>}</span>
+                        {matchedQb && <span style={{ fontWeight: 700 }}>· QB: {qbPo || <span style={{ color: '#B9BDB2', fontWeight: 400 }}>—</span>}</span>}
+                        {matchedQb && appPo && qbPo && <span style={{ fontWeight: 700, color: poMatch ? '#2B7A4B' : '#B5493B' }}>{poMatch ? '✓ match' : '≠ differ'}</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Totals comparison banner */}
