@@ -6473,7 +6473,7 @@ function InvoiceMatchReport({ onBack }) {
           const parts = splitCsvLine(lines[i]);
           const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
           if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
-          byInv[inv].items.push({ name: parts[idx('Item')], qty: parts[idx('Qty')], unit: parts[idx('Unit')] });
+          byInv[inv].items.push({ name: parts[idx('Item')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
           byInv[inv].subtotal += Number(parts[idx('Line total')]) || 0;
         }
         // App invoice total = subtotal + 0.5% tax, matching the printed invoice
@@ -6639,6 +6639,33 @@ function InvoiceMatchReport({ onBack }) {
             const diff = matchedQb ? Math.round((o.total - matchedQb.total) * 100) / 100 : null;
             const totalsMatch = matchedQb && Math.abs(diff) < 0.01;
             const custCands = (qbInv || []).filter(q => { const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return nc(q.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6))); }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            // Line up app items with QB items by name (in eaches). Each app item is
+            // paired to its best QB match; unmatched items on either side show alone.
+            const alignRows = (() => {
+              const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              const appItems = (o.items || []).map(it => ({ ...it, key: norm(it.name) }));
+              const qbLines = (matchedQb && matchedQb.lines) ? matchedQb.lines.map(ln => ({ memo: ln.memo, eaches: Number(ln.qty) || 0, key: norm(ln.memo) })) : [];
+              const usedQb = new Set();
+              const out = [];
+              for (const a of appItems) {
+                // best QB match: strongest shared-prefix / containment on normalized name
+                let bi = -1, bscore = 0;
+                qbLines.forEach((q, i) => {
+                  if (usedQb.has(i)) return;
+                  const short = a.key.slice(0, 12), qshort = q.key.slice(0, 12);
+                  let score = 0;
+                  if (a.key && q.key && (q.key.includes(short) || a.key.includes(qshort))) score = Math.min(short.length, qshort.length);
+                  if (score > bscore) { bscore = score; bi = i; }
+                });
+                if (bi >= 0 && bscore >= 6) { usedQb.add(bi); out.push({ name: a.name, appEa: a.eaches, qbEa: qbLines[bi].eaches, qbName: qbLines[bi].memo }); }
+                else out.push({ name: a.name, appEa: a.eaches, qbEa: null, qbName: null });
+              }
+              // QB items with no app match
+              qbLines.forEach((q, i) => { if (!usedQb.has(i)) out.push({ name: null, appEa: null, qbEa: q.eaches, qbName: q.memo }); });
+              return out;
+            })();
+            const appEaTotal = (o.items || []).reduce((s, it) => s + (it.eaches || 0), 0);
+            const qbEaTotal = (matchedQb && matchedQb.lines) ? matchedQb.lines.reduce((s, ln) => s + (Number(ln.qty) || 0), 0) : 0;
             return (
               <div>
                 {/* Navigator bar */}
@@ -6687,39 +6714,46 @@ function InvoiceMatchReport({ onBack }) {
                   </div>
                 )}
 
-                {/* Side-by-side items */}
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                  <div style={{ flex: '1 1 320px', minWidth: 280, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 12px', background: '#EAF1EE', fontWeight: 700, fontSize: 13, color: '#2B5D50' }}>
-                      APP · {o.items.length} items · total {formatMoney(o.total)} (w/tax)
-                    </div>
-                    <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
-                      <tbody>
-                        {o.items.map((it, i) => (
-                          <tr key={i}><td style={{ padding: '4px 10px', borderBottom: '1px solid #EFEDE3' }}>{it.name}</td><td style={{ padding: '4px 10px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', whiteSpace: 'nowrap', color: '#5B6058' }}>{it.qty} {it.unit}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ flex: '1 1 320px', minWidth: 280, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 12px', background: '#FBF3E4', fontWeight: 700, fontSize: 13, color: '#8A6D1B' }}>
-                      QUICKBOOKS {matchedQb ? `· #${matchedQb.number} · ${matchedQb.date} · ${matchedQb.memos.length} lines · total ${formatMoney(matchedQb.total)}` : ''}
-                    </div>
-                    {matchedQb ? (
-                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
-                        <tbody>
-                          {(matchedQb.lines && matchedQb.lines.length ? matchedQb.lines : matchedQb.memos.map(m => ({ memo: m, qty: '' }))).map((ln, i) => (
-                            <tr key={i}>
-                              <td style={{ padding: '4px 10px', borderBottom: '1px solid #EFEDE3' }}>{ln.memo}</td>
-                              {ln.qty !== '' && <td style={{ padding: '4px 10px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', whiteSpace: 'nowrap', color: '#5B6058' }}>{ln.qty}</td>}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : <div style={{ padding: 14, fontSize: 12.5, color: '#B9BDB2' }}>Pick a QB invoice above to see its items.</div>}
-                  </div>
+                {/* Aligned item comparison — app eaches vs QB eaches, matched by name */}
+                <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#F3F4F0' }}>
+                        <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#5B6058' }}>ITEM</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#2B5D50', width: 90 }}>APP (ea)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#8A6D1B', width: 90 }}>QB (ea)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'center', fontSize: 11, color: '#5B6058', width: 60 }}>Δ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alignRows.map((r, i) => {
+                        const both = r.appEa != null && r.qbEa != null;
+                        const diff = both ? r.appEa - r.qbEa : null;
+                        const mismatch = both ? diff !== 0 : true; // unmatched-on-one-side counts as a diff
+                        return (
+                          <tr key={i} style={{ background: mismatch ? '#FBEEE7' : undefined }}>
+                            <td style={{ padding: '4px 10px', borderBottom: '1px solid #EFEDE3' }}>
+                              {r.name || <span style={{ color: '#B9BDB2' }}>(only in QB) {r.qbName}</span>}
+                            </td>
+                            <td style={{ padding: '4px 10px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', color: r.appEa == null ? '#B9BDB2' : '#14181F', whiteSpace: 'nowrap' }}>{r.appEa == null ? '—' : r.appEa}</td>
+                            <td style={{ padding: '4px 10px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', color: r.qbEa == null ? '#B9BDB2' : '#14181F', whiteSpace: 'nowrap' }}>{r.qbEa == null ? '—' : r.qbEa}</td>
+                            <td style={{ padding: '4px 10px', textAlign: 'center', borderBottom: '1px solid #EFEDE3', fontWeight: 700, color: !mismatch ? '#2B7A4B' : '#B5493B' }}>{!mismatch ? '✓' : (diff != null ? (diff > 0 ? '+' + diff : diff) : '≠')}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: '#F3F4F0', fontWeight: 700 }}>
+                        <td style={{ padding: '6px 10px' }}>Total eaches</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', color: '#2B5D50' }}>{appEaTotal}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', color: '#8A6D1B' }}>{matchedQb ? qbEaTotal : '—'}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center', color: matchedQb && appEaTotal === qbEaTotal ? '#2B7A4B' : '#B5493B' }}>{matchedQb ? (appEaTotal === qbEaTotal ? '✓' : (appEaTotal - qbEaTotal > 0 ? '+' + (appEaTotal - qbEaTotal) : appEaTotal - qbEaTotal)) : ''}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-                <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>To change quantities or items, edit order #{o.orderId} in the Orders/History tab (that also corrects stock).</div>
+                {!matchedQb && <div style={{ fontSize: 12, color: '#B9BDB2', marginTop: 6 }}>Pick a QB invoice above to compare items.</div>}
+                <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>Quantities shown in eaches. Rows highlighted red differ. To change quantities, edit order #{o.orderId} in the Orders/History tab.</div>
               </div>
             );
           })()}
