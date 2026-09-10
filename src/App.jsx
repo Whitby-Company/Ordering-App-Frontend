@@ -5,7 +5,7 @@ import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
   AlertTriangle, ChevronRight, Loader2, WifiOff, RefreshCw, Monitor,
-  Grid2x2, Rows, Image as ImageIcon, Trash2,
+  Grid2x2, Rows, Image as ImageIcon, Trash2, Pencil,
 } from 'lucide-react';
 
 const GRID_SIZES = [
@@ -4330,13 +4330,14 @@ function InvoiceNumberCell({ order, onSaved }) {
   if (!editing) {
     return (
       <button
-        style={{ background: 'none', border: '1px solid transparent', borderRadius: 6, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#14181F', fontWeight: order.invoiceNumber != null && order.invoiceNumber !== '' ? 700 : 400 }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #D6D3C6', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#14181F', fontWeight: order.invoiceNumber != null && order.invoiceNumber !== '' ? 700 : 400 }}
         title="Click to change this invoice number (e.g. to match QuickBooks)"
         onClick={() => { setValue(String(current || '')); setEditing(true); }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = '#D6D3C6'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#F3F4F0'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
       >
         {current}
+        <Pencil size={11} color="#8A8F87" />
       </button>
     );
   }
@@ -4825,6 +4826,26 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
+  // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
+  // so the shown stock is what's physically in the warehouse today.
+  const [todaysView, setTodaysView] = useState(false);
+  const futureCommittedByItem = useMemo(() => {
+    const today = todayISODate();
+    const m = {};
+    for (const o of orders) {
+      if (o.status === 'pending') continue; // pending hasn't reserved stock
+      if (!o.deliveryDate || o.deliveryDate <= today) continue; // only future deliveries
+      for (const l of (o.lines || [])) {
+        const eaches = (Number(l.qty) || 0) * (Number(l.pack) || 1);
+        m[l.id] = (m[l.id] || 0) + eaches;
+      }
+    }
+    return m;
+  }, [orders]);
+  const displayStock = useCallback((item) => {
+    const base = Number(item.stock) || 0;
+    return todaysView ? base + (futureCommittedByItem[item.id] || 0) : base;
+  }, [todaysView, futureCommittedByItem]);
   const [renamingBrand, setRenamingBrand] = useState(false);
   const [brandNameInput, setBrandNameInput] = useState('');
   const [importing, setImporting] = useState(false);
@@ -4917,7 +4938,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // Build the list of orders that include a given item, newest first, with the
   // quantity (cases + eaches) and status for each — used by the expandable
   // per-item order history on the Inventory page to help confirm stock.
-  function orderHistoryFor(itemId) {
+  function orderHistoryFor(itemId, currentStock = 0) {
     const rows = [];
     for (const o of orders) {
       const line = (o.lines || []).find(l => l.id === itemId);
@@ -4936,6 +4957,15 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       });
     }
     rows.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    // Running stock AFTER each order. Current stock reflects all submitted-order
+    // consumption. Walk newest→oldest: the newest submitted order left us at
+    // current stock; each older one had that much + what the newer orders took.
+    let after = Number(currentStock) || 0;
+    for (const r of rows) {
+      if (r.status === 'pending') { r.stockAfter = null; continue; } // pending hasn't consumed
+      r.stockAfter = after;        // stock right after this order was placed
+      after = after + r.eaches;    // before it = after it + what it consumed
+    }
     const submitted = rows.filter(r => r.status !== 'pending');
     const consumedEaches = submitted.reduce((s, r) => s + r.eaches, 0);
     const consumedCases = submitted.reduce((s, r) => s + r.cases, 0);
@@ -5221,6 +5251,15 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           Hide seasonal
         </label>
         <button
+          style={{ ...officeStyles.smallBtn, ...(todaysView ? { background: '#2B5D50', color: '#fff' } : {}) }}
+          onClick={() => setTodaysView(v => !v)}
+          title="Show physical warehouse stock today — adds back stock committed to future-delivery orders"
+        >
+          {todaysView ? "Today's inventory ✓" : "Today's inventory"}
+        </button>
+        <a href={`${API_BASE}/items/export-inventory`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the current inventory as a CSV">↓ Inventory CSV</a>
+        <a href={`${API_BASE}/items/export-stock-log`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the full stock change history as a CSV">↓ Stock history CSV</a>
+        <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
           onClick={handleToggleEdit}
           title={isItems ? 'Turn on to edit item details' : 'Turn on to adjust stock counts'}
@@ -5294,7 +5333,15 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <th style={officeStyles.th}></th>
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              {todaysView ? (
+                <>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand today (future-delivery orders added back)">Today's stock</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Stock after all submitted orders (including future deliveries)">Total stock</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Committed to future-delivery orders (Today's − Total)">Difference</th>
+                </>
+              ) : (
+                <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              )}
               <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
               {isItems && editMode && (editField === 'all' || editField === 'photo') && (
                 <th style={{ ...officeStyles.th, textAlign: 'center' }}>Photo</th>
@@ -5376,6 +5423,18 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   <button style={{ ...officeStyles.smallBtn, padding: '4px 8px' }} title="View stock change history" onClick={() => setHistoryItem(item)}>History</button>
                 </td>
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
+                {todaysView ? (
+                  <>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>
+                      <span style={displayStock(item) <= 5 ? { color: '#B5493B' } : undefined} title="Physical on hand today">{displayStock(item)}</span>
+                      {item.incoming > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2B5D50' }} title="Incoming from open purchase orders">+{item.incoming}</span>}
+                    </td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', color: '#5B6058' }} title="Stock after future orders ship">{item.stock}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', color: (futureCommittedByItem[item.id] || 0) > 0 ? '#B5793B' : '#B9BDB2', fontWeight: (futureCommittedByItem[item.id] || 0) > 0 ? 700 : 400 }} title="Committed to future-delivery orders">
+                      {(futureCommittedByItem[item.id] || 0) > 0 ? `−${futureCommittedByItem[item.id]}` : '0'}
+                    </td>
+                  </>
+                ) : (
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                   {canEdit('stock') ? (
                     <StockEditor
@@ -5388,6 +5447,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   )}
                   {item.incoming > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2B5D50' }} title="Incoming from open purchase orders">+{item.incoming}</span>}
                 </td>
+                )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
                   {(isItems && canEdit('active')) ? (
                     <ActiveToggle
@@ -5407,8 +5467,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 )}
               </tr>
               {isOpen && (() => {
-                const hist = orderHistoryFor(item.id);
-                const colSpan = isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7;
+                const hist = orderHistoryFor(item.id, item.stock);
+                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (todaysView ? 2 : 0);
                 return (
                   <tr>
                     <td colSpan={colSpan} style={officeStyles.itemHistoryCell}>
@@ -5987,9 +6047,8 @@ function StockHistoryModal({ item, onClose, onChanged }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead><tr>
                   <th style={shStyles.th}>When</th><th style={shStyles.th}>Who</th>
-                  <th style={{ ...shStyles.th, textAlign: 'right' }}>From</th>
-                  <th style={{ ...shStyles.th, textAlign: 'right' }}>To</th>
                   <th style={{ ...shStyles.th, textAlign: 'right' }}>Change</th>
+                  <th style={{ ...shStyles.th, textAlign: 'right' }}>Stock after</th>
                   <th style={shStyles.th}>Reason</th>
                   <th style={shStyles.th} />
                 </tr></thead>
@@ -5998,9 +6057,8 @@ function StockHistoryModal({ item, onClose, onChanged }) {
                     <tr key={r.id}>
                       <td style={shStyles.td}>{formatDateTime(r.changedAt)}</td>
                       <td style={shStyles.td}>{r.changedBy || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
-                      <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.oldStock}</td>
-                      <td style={{ ...shStyles.td, textAlign: 'right' }}>{r.newStock}</td>
                       <td style={{ ...shStyles.td, textAlign: 'right', color: r.delta < 0 ? '#B5493B' : '#2B5D50', fontWeight: 700 }}>{r.delta > 0 ? '+' : ''}{r.delta}</td>
+                      <td style={{ ...shStyles.td, textAlign: 'right', fontWeight: 700 }}>{r.newStock}</td>
                       <td style={{ ...shStyles.td, whiteSpace: 'normal', color: '#5B6058' }}>{r.reason || ''}</td>
                       <td style={{ ...shStyles.td, textAlign: 'center' }}>
                         <button
