@@ -1530,7 +1530,16 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   />
                 </td>
                 {showEach && <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{(Number(l.qty) || 0) * pack}</td>}
-                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{formatMoney(l.price)}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'right' }}>
+                  <input
+                    type="text" inputMode="decimal"
+                    value={priceOverrides[l.id] !== undefined ? priceOverrides[l.id] : (l.price != null ? String(l.price) : '')}
+                    onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); setPriceOverrides(p => ({ ...p, [l.id]: v })); }}
+                    style={{ width: 64, textAlign: 'right', fontSize: 12, borderRadius: 4, padding: '2px 4px', border: l.priceOverridden ? '1px solid #8A5A2B' : '1px solid #D6D3C6', background: l.priceOverridden ? '#FBF3E7' : '#fff' }}
+                    title="Price per each — override if needed"
+                    tabIndex={-1}
+                  />
+                </td>
                 <td style={{ ...qeStyles.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineTotal(l, l.qty))}</td>
                 <td style={{ ...qeStyles.td, textAlign: 'center' }}>
                   <button style={qeStyles.rm} tabIndex={-1} onClick={() => removeLine(l.id)} title="Remove">×</button>
@@ -1866,7 +1875,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [uploadOpen, setUploadOpen] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
-  const [quickEntry, setQuickEntry] = useState(desktop); // desktop default: QuickBooks-style grid entry (new + edit)
+  const [quickEntry, setQuickEntry] = useState(desktop || isEdit); // grid entry: desktop default, and always when editing an existing order
+  const [priceOverrides, setPriceOverrides] = useState(() => {
+    // When editing, seed overrides with each line's SAVED price so they show and
+    // stay unless the user changes them (preserves prices set on the original order).
+    if (!editOrder || !editOrder.lines) return {};
+    const m = {};
+    for (const l of editOrder.lines) if (l.price != null) m[l.id] = String(l.price);
+    return m;
+  }); // itemId -> manual price/each override
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
     if (distributorTouched) return;
@@ -2065,10 +2082,12 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       // Ordering unit for this line: chosen on the line, else the store's default.
       const unit = o.unit || unitOf(item);
       const pack = packFor(item, unit);
-      const price = priceOf(item, unit);
-      return { ...item, qty: o.qty, checkin: !!o.checkin, unit, pack, price };
+      // Price: a manual per-line override wins; otherwise the resolved price.
+      const ov = priceOverrides[o.id];
+      const price = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit);
+      return { ...item, qty: o.qty, checkin: !!o.checkin, unit, pack, price, priceOverridden: ov !== undefined && ov !== '' };
     }).filter(Boolean);
-  }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf]);
+  }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf, priceOverrides]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
   const totalPrice = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
