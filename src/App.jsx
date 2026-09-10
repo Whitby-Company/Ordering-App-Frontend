@@ -6297,6 +6297,7 @@ const REPORT_LIST = [
   { id: 'order-margin', name: 'Order margin', desc: 'Pick any order and see the margin per item and total profit instantly.' },
   { id: 'stock-changes', name: 'Stock changes', desc: 'Full audit trail of inventory changes — who changed what, when, and by how much.' },
   { id: 'invoice-numbers', name: 'Invoice numbers', desc: 'Check invoice numbers for gaps or duplicates, and reconcile against a QuickBooks export.' },
+  { id: 'invoice-matching', name: 'Match invoices to QuickBooks', desc: 'Upload a QuickBooks export and match each app order to its QB invoice, even when the numbers differ. Edit items/quantities as you go.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -6400,6 +6401,205 @@ function SalesByPersonReport({ onBack }) {
       )}
     </div>
   );
+}
+
+// Match app orders to QuickBooks invoices (numbers often differ). Upload a QB
+// export; we suggest the best QB match per app order by customer + items + date,
+// and you confirm or pick another, then set the app's invoice # to match QB.
+function InvoiceMatchReport({ onBack }) {
+  const [orders, setOrders] = useState(null);   // app orders (from reconcile-export)
+  const [qbInv, setQbInv] = useState(null);      // parsed QB invoices
+  const [picks, setPicks] = useState({});        // appInvoice -> chosen QB number
+  const [saved, setSaved] = useState({});        // orderId -> true
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [filter, setFilter] = useState('all');
+  const fileRef = useRef(null);
+
+  // Load app orders (grouped) on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const txt = await fetch(`${API_BASE}/orders/reconcile-export`).then(r => r.text());
+        const lines = txt.split('\n').filter(Boolean);
+        const hdr = lines[0].split(',');
+        const idx = name => hdr.indexOf(name);
+        const byInv = {};
+        for (let i = 1; i < lines.length; i++) {
+          // simple CSV split (values have no embedded commas except quoted Item)
+          const parts = splitCsvLine(lines[i]);
+          const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
+          if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], total: 0 };
+          byInv[inv].items.push({ name: parts[idx('Item')], qty: parts[idx('Qty')], unit: parts[idx('Unit')] });
+          byInv[inv].total += Number(parts[idx('Line total')]) || 0;
+        }
+        setOrders(Object.values(byInv).sort((a, b) => Number(b.invoice) - Number(a.invoice)));
+      } catch (e) { setErr('Could not load app orders: ' + (e.message || e)); }
+    })();
+  }, []);
+
+  async function onQbFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setBusy(true); setErr('');
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const sn = wb.SheetNames.includes('Sheet1') ? 'Sheet1' : wb.SheetNames[wb.SheetNames.length - 1];
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, blankrows: false, defval: '' });
+      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, memoCol = -1, amtCol = -1;
+      for (let i = 0; i < Math.min(rows.length, 15); i++) {
+        const r = rows[i].map(c => String(c).trim().toLowerCase());
+        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); memoCol = r.indexOf('memo'); amtCol = r.indexOf('amount'); break; }
+      }
+      if (numCol < 0) { setErr('No "Num" column found — use the QuickBooks invoice detail export.'); setBusy(false); return; }
+      const seen = new Map(); let cust = '';
+      for (let i = hdrIdx + 1; i < rows.length; i++) {
+        const r = rows[i];
+        const type = typeCol >= 0 ? String(r[typeCol] || '').trim() : '';
+        if (!type && r[1] && String(r[1]).trim()) { cust = String(r[1]).trim(); continue; }
+        if (type.toLowerCase() !== 'invoice') continue;
+        const num = String(r[numCol] || '').trim();
+        if (!num) continue;
+        if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), memos: [], total: 0 });
+        if (memoCol >= 0) { const m = String(r[memoCol] || '').trim(); if (m) seen.get(num).memos.push(m); }
+        if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(num).total += a; }
+      }
+      setQbInv([...seen.values()]);
+    } catch (e2) { setErr('Could not read that file: ' + (e2.message || e2)); }
+    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+  }
+
+  // Suggest best QB match for an app order
+  function suggestFor(o) {
+    if (!qbInv) return null;
+    const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const appWords = new Set(o.items.flatMap(it => (it.name || '').toLowerCase().split(/\s+/)).filter(w => w.length > 2));
+    let best = null, bestScore = 0;
+    for (const q of qbInv) {
+      const custOk = nc(o.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6)));
+      if (!custOk) continue;
+      const qbWords = new Set(q.memos.flatMap(m => m.toLowerCase().split(/\s+/)).filter(w => w.length > 2));
+      let inter = 0; appWords.forEach(w => { if (qbWords.has(w)) inter++; });
+      const overlap = inter / Math.max(appWords.size, 1);
+      let score = overlap;
+      // date: QB should be on/after submit, prefer close
+      if (o.submitted && q.date && q.date >= o.submitted) {
+        const gap = (new Date(q.date) - new Date(o.submitted)) / 86400000;
+        if (gap >= 0 && gap <= 21) score += 0.4 * (1 - gap / 21);
+      } else if (o.submitted && q.date && q.date < o.submitted) { score -= 0.3; }
+      if (o.items.length === q.memos.length) score += 0.2;
+      if (score > bestScore) { bestScore = score; best = q; }
+    }
+    return best ? { ...best, score: bestScore } : null;
+  }
+
+  async function applyNumber(o, qbNumber) {
+    setBusy(true);
+    try {
+      await apiPatch(`/orders/${o.orderId}/invoice-number`, { invoiceNumber: Number(qbNumber) });
+      setSaved(s => ({ ...s, [o.orderId]: true }));
+    } catch (e) { setErr('Could not set invoice number: ' + (e.message || e)); }
+    finally { setBusy(false); }
+  }
+
+  const rows = useMemo(() => {
+    if (!orders) return [];
+    return orders.map(o => {
+      const qbNums = new Set((qbInv || []).map(q => String(q.number)));
+      const sameNumber = qbNums.has(String(o.invoice));
+      const suggestion = sameNumber ? null : suggestFor(o);
+      return { o, sameNumber, suggestion };
+    });
+  }, [orders, qbInv, picks]);
+
+  const shown = rows.filter(r => filter === 'all' ? true : filter === 'same' ? r.sameNumber : filter === 'diff' ? (!r.sameNumber && r.suggestion) : (!r.sameNumber && !r.suggestion));
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Match invoices to QuickBooks</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 10, maxWidth: 720 }}>
+        Upload a QuickBooks invoice export (Sales by Customer Detail, with Num / Date / Memo columns). We'll suggest the QB invoice that matches each app order — even when the numbers differ — using customer, items, and date. Confirm a suggestion to set the app's invoice number to match QuickBooks.
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.xlsm,.csv" onChange={onQbFile} disabled={busy} />
+        {busy && <span style={{ color: '#8A8F87' }}>Working…</span>}
+        {qbInv && <span style={{ fontSize: 13, color: '#2B5D50' }}>{qbInv.length} QB invoices loaded</span>}
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
+      {!orders && <div style={{ color: '#8A8F87', padding: 12 }}>Loading app orders…</div>}
+      {orders && qbInv && (
+        <>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {[['all', 'All'], ['same', 'Number matches'], ['diff', 'Different number'], ['none', 'No match']].map(([k, label]) => (
+              <button key={k} style={{ ...officeStyles.smallBtn, ...(filter === k ? { background: '#2B5D50', color: '#fff' } : {}) }} onClick={() => setFilter(k)}>{label}</button>
+            ))}
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr>
+              <th style={repStyles.th}>App inv</th>
+              <th style={repStyles.th}>Customer</th>
+              <th style={repStyles.th}>Submitted</th>
+              <th style={repStyles.th}>Items</th>
+              <th style={repStyles.th}>QB match</th>
+              <th style={repStyles.th}></th>
+            </tr></thead>
+            <tbody>
+              {shown.map(({ o, sameNumber, suggestion }) => {
+                const picked = picks[o.invoice] || (suggestion ? suggestion.number : '');
+                return (
+                  <tr key={o.invoice} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                    <td style={{ ...repStyles.tdItem, fontWeight: 700 }}>{o.invoice}<div style={{ fontSize: 10, color: '#B9BDB2' }}>#{o.orderId}</div></td>
+                    <td style={repStyles.tdItem}>{o.customer}</td>
+                    <td style={repStyles.tdItem}>{o.submitted}</td>
+                    <td style={{ ...repStyles.tdItem, maxWidth: 240, fontSize: 11.5, color: '#5B6058' }}>{o.items.slice(0, 4).map(it => it.name).join(', ')}{o.items.length > 4 ? ` +${o.items.length - 4}` : ''}</td>
+                    <td style={repStyles.tdItem}>
+                      {sameNumber ? (
+                        <span style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ same #</span>
+                      ) : (
+                        <select value={picked} onChange={e => setPicks(p => ({ ...p, [o.invoice]: e.target.value }))} style={{ ...officeStyles.searchSlim, minWidth: 180 }}>
+                          <option value="">— pick QB invoice —</option>
+                          {(qbInv || []).filter(q => { const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return nc(q.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6))); })
+                            .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+                            .map(q => <option key={q.number} value={q.number}>#{q.number} · {q.date} · ${q.total.toFixed(0)} {suggestion && String(q.number) === String(suggestion.number) ? '(suggested)' : ''}</option>)}
+                        </select>
+                      )}
+                    </td>
+                    <td style={repStyles.tdItem}>
+                      {!sameNumber && picked && (
+                        saved[o.orderId]
+                          ? <span style={{ color: '#2B7A4B' }}>✓ set to {picked}</span>
+                          : <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} disabled={busy} onClick={() => applyNumber(o, picked)}>Set app # → {picked}</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>
+            To edit items or quantities on an order, open it in the Orders/History tab (order #s shown above) — changes there also correct stock.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Split a CSV line respecting double-quoted fields (Item names may contain commas).
+function splitCsvLine(line) {
+  const out = []; let cur = ''; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+    else if (c === ',' && !q) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
 }
 
 function InvoiceAuditReport({ onBack }) {
@@ -7399,6 +7599,7 @@ function OfficeReports() {
   if (active === 'order-margin') return <OrderMarginReport onBack={() => setActive(null)} />;
   if (active === 'stock-changes') return <StockChangesReport onBack={() => setActive(null)} />;
   if (active === 'invoice-numbers') return <InvoiceAuditReport onBack={() => setActive(null)} />;
+  if (active === 'invoice-matching') return <InvoiceMatchReport onBack={() => setActive(null)} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
