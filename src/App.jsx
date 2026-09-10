@@ -467,6 +467,17 @@ function barcodeSVG(rawUpc) {
         lineColor: '#000000',
       });
       if (node.childNodes.length > 0) {
+        // JsBarcode sets fixed width/height attributes. For print cells that may
+        // be narrower than the barcode, convert those to a viewBox so the SVG
+        // scales to fit its cell instead of being clipped ("cut in half").
+        const w = node.getAttribute('width');
+        const h = node.getAttribute('height');
+        if (w && h && !node.getAttribute('viewBox')) {
+          node.setAttribute('viewBox', `0 0 ${parseFloat(w)} ${parseFloat(h)}`);
+          node.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          node.removeAttribute('width');
+          node.removeAttribute('height');
+        }
         return new XMLSerializer().serializeToString(node);
       }
     } catch (e) {
@@ -774,8 +785,8 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '.colhdr th.r { text-align: right; } .colhdr th.ctr { text-align: center; }' +
     'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.2; }' +
     'td.c-item { white-space: nowrap; } td.c-cs, td.c-each { text-align: center; }' +
-    'td.c-upc { text-align: center; font-size: 11px; }' +
-    'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 20px; width: auto; max-width: 100%; }' +
+    'td.c-upc { text-align: center; font-size: 11px; min-width: 140px; overflow: visible; }' +
+    'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 20px; width: 130px; max-width: 100%; }' +
     'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
     'td.c-price, td.c-total { text-align: right; white-space: nowrap; }' +
     '.contd { position: absolute; right: 0; bottom: 0; font-size: 12px; font-weight: bold; font-style: italic; }' +
