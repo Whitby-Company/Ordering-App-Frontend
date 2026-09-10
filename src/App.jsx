@@ -6476,20 +6476,32 @@ function InvoiceMatchReport({ onBack }) {
     if (!qbInv) return null;
     const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const appWords = new Set(o.items.flatMap(it => (it.name || '').toLowerCase().split(/\s+/)).filter(w => w.length > 2));
-    let best = null, bestScore = 0;
+    // Anchor date: the app DELIVERY date lines up closest with the QB invoice
+    // date (usually a few days before it). Date is the strongest signal, so it
+    // dominates the score; items/customer confirm.
+    const anchor = o.delivery || o.submitted;
+    let best = null, bestScore = -Infinity;
     for (const q of qbInv) {
       const custOk = nc(o.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6)));
       if (!custOk) continue;
+      let score = 0;
+      // DATE FIRST: closeness of QB invoice date to the app delivery date.
+      // QB is typically 0–10 days after delivery; heavily prefer the nearest.
+      if (anchor && q.date) {
+        const gap = (new Date(q.date) - new Date(anchor)) / 86400000; // + = QB after delivery
+        // Window: -3 to +14 days is plausible; nearest wins big.
+        if (gap >= -3 && gap <= 14) {
+          score += 3 * (1 - Math.abs(gap) / 14);   // up to +3 for an exact date, primary weight
+        } else {
+          score -= 1; // outside window, unlikely
+        }
+      }
+      // Items confirm (secondary).
       const qbWords = new Set(q.memos.flatMap(m => m.toLowerCase().split(/\s+/)).filter(w => w.length > 2));
       let inter = 0; appWords.forEach(w => { if (qbWords.has(w)) inter++; });
       const overlap = inter / Math.max(appWords.size, 1);
-      let score = overlap;
-      // date: QB should be on/after submit, prefer close
-      if (o.submitted && q.date && q.date >= o.submitted) {
-        const gap = (new Date(q.date) - new Date(o.submitted)) / 86400000;
-        if (gap >= 0 && gap <= 21) score += 0.4 * (1 - gap / 21);
-      } else if (o.submitted && q.date && q.date < o.submitted) { score -= 0.3; }
-      if (o.items.length === q.memos.length) score += 0.2;
+      score += overlap; // up to +1
+      if (o.items.length === q.memos.length) score += 0.3;
       if (score > bestScore) { bestScore = score; best = q; }
     }
     return best ? { ...best, score: bestScore } : null;
