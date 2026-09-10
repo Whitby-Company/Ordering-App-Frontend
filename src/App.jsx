@@ -6418,6 +6418,7 @@ function InvoiceMatchReport({ onBack }) {
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState('all');
   const [expanded, setExpanded] = useState(null); // app invoice # whose comparison is open
+  const [cursor, setCursor] = useState(0); // index into the filtered list (one-by-one view)
   const fileRef = useRef(null);
 
   // Load app orders (grouped) on mount
@@ -6562,109 +6563,94 @@ function InvoiceMatchReport({ onBack }) {
       {!orders && <div style={{ color: '#8A8F87', padding: 12 }}>Loading app orders…</div>}
       {orders && qbInv && (
         <>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            {[['all', 'All'], ['same', 'Number matches'], ['diff', 'Different number'], ['none', 'No match']].map(([k, label]) => (
-              <button key={k} style={{ ...officeStyles.smallBtn, ...(filter === k ? { background: '#2B5D50', color: '#fff' } : {}) }} onClick={() => setFilter(k)}>{label}</button>
-            ))}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            {[['all', 'All'], ['same', 'Number matches'], ['diff', 'Different number'], ['none', 'No match']].map(([k, label]) => {
+              const count = rows.filter(r => k === 'all' ? true : k === 'same' ? r.sameNumber : k === 'diff' ? (!r.sameNumber && r.suggestion) : (!r.sameNumber && !r.suggestion)).length;
+              return <button key={k} style={{ ...officeStyles.smallBtn, ...(filter === k ? { background: '#2B5D50', color: '#fff' } : {}) }} onClick={() => { setFilter(k); setCursor(0); }}>{label} ({count})</button>;
+            })}
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead><tr>
-              <th style={repStyles.th}>App inv</th>
-              <th style={repStyles.th}>Customer</th>
-              <th style={repStyles.th}>Submitted</th>
-              <th style={repStyles.th}>Items</th>
-              <th style={repStyles.th}>QB match</th>
-              <th style={repStyles.th}></th>
-            </tr></thead>
-            <tbody>
-              {shown.map(({ o, sameNumber, suggestion }) => {
-                const picked = picks[o.invoice] || (suggestion ? suggestion.number : '') || (sameNumber ? o.invoice : '');
-                const isOpen = expanded === o.invoice;
-                const matchedQb = (qbInv || []).find(q => String(q.number) === String(picked));
-                return (
-                  <React.Fragment key={o.invoice}>
-                  <tr style={{ borderBottom: isOpen ? 'none' : '1px solid #EFEDE3' }}>
-                    <td style={{ ...repStyles.tdItem, fontWeight: 700, cursor: 'pointer' }} onClick={() => setExpanded(isOpen ? null : o.invoice)}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <ChevronRight size={12} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
-                        {o.invoice}
-                      </span>
-                      <div style={{ fontSize: 10, color: '#B9BDB2', paddingLeft: 16 }}>#{o.orderId}</div>
-                    </td>
-                    <td style={repStyles.tdItem}>{o.customer}</td>
-                    <td style={repStyles.tdItem}>{o.submitted}</td>
-                    <td style={{ ...repStyles.tdItem, maxWidth: 240, fontSize: 11.5, color: '#5B6058' }}>{o.items.slice(0, 4).map(it => it.name).join(', ')}{o.items.length > 4 ? ` +${o.items.length - 4}` : ''}</td>
-                    <td style={repStyles.tdItem}>
-                      {sameNumber ? (
-                        <span style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ same #</span>
-                      ) : (
-                        <select value={picked} onChange={e => setPicks(p => ({ ...p, [o.invoice]: e.target.value }))} style={{ ...officeStyles.searchSlim, minWidth: 180 }}>
-                          <option value="">— pick QB invoice —</option>
-                          {(qbInv || []).filter(q => { const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return nc(q.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6))); })
-                            .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-                            .map(q => <option key={q.number} value={q.number}>#{q.number} · {q.date} · ${q.total.toFixed(0)} {suggestion && String(q.number) === String(suggestion.number) ? '(suggested)' : ''}</option>)}
-                        </select>
-                      )}
-                    </td>
-                    <td style={repStyles.tdItem}>
-                      {!sameNumber && picked && (
-                        saved[o.orderId]
-                          ? <span style={{ color: '#2B7A4B' }}>✓ set to {picked}</span>
-                          : <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} disabled={busy} onClick={() => applyNumber(o, picked)}>Set app # → {picked}</button>
-                      )}
-                    </td>
-                  </tr>
-                  {isOpen && (
-                    <tr style={{ borderBottom: '1px solid #EFEDE3', background: '#FBFAF6' }}>
-                      <td colSpan={6} style={{ padding: '10px 16px' }}>
-                        {matchedQb && (() => {
-                          const diff = Math.round((o.total - matchedQb.total) * 100) / 100;
-                          const match = Math.abs(diff) < 0.01;
-                          return (
-                            <div style={{ marginBottom: 8, fontSize: 12.5, fontWeight: 700, color: match ? '#2B7A4B' : '#B5493B' }}>
-                              App {formatMoney(o.total)} vs QuickBooks {formatMoney(matchedQb.total)} —
-                              {match ? ' totals match ✓' : ` differ by ${formatMoney(Math.abs(diff))} ${diff > 0 ? '(app higher)' : '(QB higher)'}`}
-                            </div>
-                          );
-                        })()}
-                        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                          <div style={{ flex: '1 1 300px', minWidth: 260 }}>
-                            <div style={{ fontWeight: 700, fontSize: 12, color: '#2B5D50', marginBottom: 4 }}>App order {o.invoice} — {o.items.length} items · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(o.total)}</span></div>
-                            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                              <tbody>
-                                {o.items.map((it, i) => (
-                                  <tr key={i}><td style={{ padding: '2px 6px', borderBottom: '1px solid #EFEDE3' }}>{it.name}</td><td style={{ padding: '2px 6px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', whiteSpace: 'nowrap' }}>{it.qty} {it.unit}</td></tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          <div style={{ flex: '1 1 300px', minWidth: 260 }}>
-                            <div style={{ fontWeight: 700, fontSize: 12, color: '#8A6D1B', marginBottom: 4 }}>
-                              QuickBooks {matchedQb ? `#${matchedQb.number} (${matchedQb.date})` : '— no QB invoice selected —'} {matchedQb ? <>· {matchedQb.memos.length} lines · <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(matchedQb.total)}</span></> : ''}
-                            </div>
-                            {matchedQb ? (
-                              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                                <tbody>
-                                  {matchedQb.memos.map((m, i) => (
-                                    <tr key={i}><td style={{ padding: '2px 6px', borderBottom: '1px solid #EFEDE3' }}>{m}</td></tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            ) : <div style={{ fontSize: 12, color: '#B9BDB2' }}>Pick a QB invoice above to compare its items.</div>}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 11, color: '#8A8F87', marginTop: 8 }}>To change quantities/items, edit order #{o.orderId} in the Orders/History tab.</div>
-                      </td>
-                    </tr>
+          {shown.length === 0 ? (
+            <div style={{ color: '#8A8F87', padding: 20 }}>No orders in this filter.</div>
+          ) : (() => {
+            const idx = Math.min(cursor, shown.length - 1);
+            const { o, sameNumber, suggestion } = shown[idx];
+            const picked = picks[o.invoice] || (suggestion ? suggestion.number : '') || (sameNumber ? o.invoice : '');
+            const matchedQb = (qbInv || []).find(q => String(q.number) === String(picked));
+            const diff = matchedQb ? Math.round((o.total - matchedQb.total) * 100) / 100 : null;
+            const totalsMatch = matchedQb && Math.abs(diff) < 0.01;
+            const custCands = (qbInv || []).filter(q => { const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return nc(q.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6))); }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            return (
+              <div>
+                {/* Navigator bar */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, padding: '8px 12px', background: '#F3F4F0', borderRadius: 8 }}>
+                  <button style={officeStyles.smallBtn} disabled={idx === 0} onClick={() => setCursor(Math.max(0, idx - 1))}>← Previous</button>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{idx + 1} of {shown.length}</div>
+                  <button style={officeStyles.smallBtn} disabled={idx >= shown.length - 1} onClick={() => setCursor(Math.min(shown.length - 1, idx + 1))}>Next →</button>
+                </div>
+
+                {/* Match status + picker */}
+                <div style={{ marginBottom: 12, padding: '10px 14px', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <span style={{ fontWeight: 800, fontSize: 16 }}>{o.customer}</span>
+                    <span style={{ color: '#8A8F87', fontSize: 13 }}>App invoice {o.invoice} · order #{o.orderId} · submitted {o.submitted}{o.delivery ? ` · delivery ${o.delivery}` : ''}</span>
+                  </div>
+                  {sameNumber ? (
+                    <div style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ Invoice number matches QuickBooks (both {o.invoice})</div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, color: '#5B6058' }}>Match to QuickBooks invoice:</span>
+                      <select value={picked} onChange={e => setPicks(p => ({ ...p, [o.invoice]: e.target.value }))} style={{ ...officeStyles.searchSlim, minWidth: 260 }}>
+                        <option value="">— pick QB invoice —</option>
+                        {custCands.map(q => <option key={q.number} value={q.number}>#{q.number} · {q.date} · {formatMoney(q.total)}{suggestion && String(q.number) === String(suggestion.number) ? '  ★ suggested' : ''}</option>)}
+                      </select>
+                      {picked && (saved[o.orderId]
+                        ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ app # set to {picked}</span>
+                        : <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} disabled={busy} onClick={() => applyNumber(o, picked)}>Set app invoice # → {picked}</button>)}
+                    </div>
                   )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>
-            To edit items or quantities on an order, open it in the Orders/History tab (order #s shown above) — changes there also correct stock.
-          </div>
+                </div>
+
+                {/* Totals comparison banner */}
+                {matchedQb && (
+                  <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, fontSize: 15, fontWeight: 800, textAlign: 'center', background: totalsMatch ? '#EAF3EE' : '#FBEEE7', color: totalsMatch ? '#2B7A4B' : '#B5493B', border: `1px solid ${totalsMatch ? '#C4DDD2' : '#E6C6B4'}` }}>
+                    App {formatMoney(o.total)}  vs  QuickBooks {formatMoney(matchedQb.total)}
+                    {totalsMatch ? '  ✓ totals match' : `  ·  differ by ${formatMoney(Math.abs(diff))} (${diff > 0 ? 'app higher' : 'QB higher'})`}
+                  </div>
+                )}
+
+                {/* Side-by-side items */}
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 320px', minWidth: 280, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 12px', background: '#EAF1EE', fontWeight: 700, fontSize: 13, color: '#2B5D50' }}>
+                      APP · {o.items.length} items · {formatMoney(o.total)}
+                    </div>
+                    <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                      <tbody>
+                        {o.items.map((it, i) => (
+                          <tr key={i}><td style={{ padding: '4px 10px', borderBottom: '1px solid #EFEDE3' }}>{it.name}</td><td style={{ padding: '4px 10px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', whiteSpace: 'nowrap', color: '#5B6058' }}>{it.qty} {it.unit}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ flex: '1 1 320px', minWidth: 280, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 12px', background: '#FBF3E4', fontWeight: 700, fontSize: 13, color: '#8A6D1B' }}>
+                      QUICKBOOKS {matchedQb ? `· #${matchedQb.number} · ${matchedQb.date} · ${matchedQb.memos.length} lines · ${formatMoney(matchedQb.total)}` : ''}
+                    </div>
+                    {matchedQb ? (
+                      <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
+                        <tbody>
+                          {matchedQb.memos.map((m, i) => (
+                            <tr key={i}><td style={{ padding: '4px 10px', borderBottom: '1px solid #EFEDE3' }}>{m}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : <div style={{ padding: 14, fontSize: 12.5, color: '#B9BDB2' }}>Pick a QB invoice above to see its items.</div>}
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>To change quantities or items, edit order #{o.orderId} in the Orders/History tab (that also corrects stock).</div>
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
