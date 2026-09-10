@@ -6576,6 +6576,31 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
   }
 
   // Suggest best QB match for an app order
+  // Whether a QB invoice belongs to the SAME store as the app order. Exact
+  // normalized match on customer or ship-to; else a strict similarity (≥80% of
+  // the shorter name's characters shared as a prefix) to tolerate small format
+  // differences — but NOT a loose prefix that would confuse different stores.
+  function sameStore(appCustomer, q) {
+    const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const a = nc(appCustomer);
+    if (!a) return false;
+    const cands = [nc(q.customer), nc(q.store)].filter(Boolean);
+    for (const c of cands) {
+      if (c === a) return true;
+      const shorter = Math.min(a.length, c.length);
+      // One name fully contained in the other (e.g. "aclyau" in "aclyaucompany"),
+      // when the shorter is distinctive enough (≥6 chars) — a store abbreviation.
+      if (shorter >= 6 && (a.includes(c) || c.includes(a))) return true;
+      // Otherwise require an 80%+ shared prefix on names long enough that it's not
+      // just "times"/"tamura" matching everything.
+      if (shorter < 8) continue;
+      let p = 0; const n = Math.min(a.length, c.length);
+      while (p < n && a[p] === c[p]) p++;
+      if (p / shorter >= 0.8) return true;
+    }
+    return false;
+  }
+
   function suggestFor(o) {
     if (!qbInv) return null;
     const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -6587,8 +6612,12 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
     const appCodes = new Set((o.items || []).map(it => (it.code || '').toLowerCase().trim()).filter(Boolean));
     let best = null, bestScore = -Infinity;
     for (const q of qbInv) {
-      const custOk = nc(o.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6)));
-      if (!custOk) continue;
+      // STORE NAME is a hard gate: the QB customer/ship-to must be the SAME store
+      // as the app order. Match on customer OR ship-to, exact-normalized first, so
+      // e.g. "Don Quijote-Kaheka" never matches "Don Quijote Kapolei". Falls back
+      // to a STRICT similarity (most of the name shared) for slight name
+      // differences (e.g. "AC Lyau" vs "A.C. Lyau Company") — never a loose prefix.
+      if (!sameStore(o.customer, q)) continue;
       let score = 0;
       // ITEM MATCH is the strongest signal. Prefer exact item-code overlap (from
       // the QB export's Item column); fall back to name words if codes absent.
@@ -6688,7 +6717,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
             const matchedQb = (qbInv || []).find(q => String(q.number) === String(picked));
             const diff = matchedQb ? Math.round((o.total - matchedQb.total) * 100) / 100 : null;
             const totalsMatch = matchedQb && Math.abs(diff) < 0.01;
-            const custCands = (qbInv || []).filter(q => { const nc = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); return nc(q.customer).slice(0, 6) && (nc(q.customer).includes(nc(o.customer).slice(0, 6)) || nc(o.customer).includes(nc(q.customer).slice(0, 6))); }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            const custCands = (qbInv || []).filter(q => sameStore(o.customer, q)).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
             // Line up app items with QB items by name (in eaches). Each app item is
             // paired to its best QB match; unmatched items on either side show alone.
             const alignRows = (() => {
