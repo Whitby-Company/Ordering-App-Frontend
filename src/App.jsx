@@ -6463,9 +6463,16 @@ function InvoiceMatchReport({ onBack }) {
           // simple CSV split (values have no embedded commas except quoted Item)
           const parts = splitCsvLine(lines[i]);
           const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
-          if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], total: 0 };
+          if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
           byInv[inv].items.push({ name: parts[idx('Item')], qty: parts[idx('Qty')], unit: parts[idx('Unit')] });
-          byInv[inv].total += Number(parts[idx('Line total')]) || 0;
+          byInv[inv].subtotal += Number(parts[idx('Line total')]) || 0;
+        }
+        // App invoice total = subtotal + 0.5% tax, matching the printed invoice
+        // grand total (so it compares fairly to QuickBooks, which includes tax).
+        for (const o of Object.values(byInv)) {
+          o.subtotal = Math.round(o.subtotal * 100) / 100;
+          o.tax = Math.round(o.subtotal * 0.005 * 100) / 100;
+          o.total = Math.round((o.subtotal + o.tax) * 100) / 100;
         }
         setOrders(Object.values(byInv).sort((a, b) => Number(b.invoice) - Number(a.invoice)));
       } catch (e) { setErr('Could not load app orders: ' + (e.message || e)); }
@@ -6641,9 +6648,16 @@ function InvoiceMatchReport({ onBack }) {
 
                 {/* Totals comparison banner */}
                 {matchedQb && (
-                  <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, fontSize: 15, fontWeight: 800, textAlign: 'center', background: totalsMatch ? '#EAF3EE' : '#FBEEE7', color: totalsMatch ? '#2B7A4B' : '#B5493B', border: `1px solid ${totalsMatch ? '#C4DDD2' : '#E6C6B4'}` }}>
-                    App {formatMoney(o.total)}  vs  QuickBooks {formatMoney(matchedQb.total)}
-                    {totalsMatch ? '  ✓ totals match' : `  ·  differ by ${formatMoney(Math.abs(diff))} (${diff > 0 ? 'app higher' : 'QB higher'})`}
+                  <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 8, textAlign: 'center', background: totalsMatch ? '#EAF3EE' : '#FBEEE7', color: totalsMatch ? '#2B7A4B' : '#B5493B', border: `1px solid ${totalsMatch ? '#C4DDD2' : '#E6C6B4'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 40, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <div><div style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>APP INVOICE TOTAL</div><div style={{ fontSize: 20, fontWeight: 800 }}>{formatMoney(o.total)}</div></div>
+                      <div style={{ alignSelf: 'center', fontSize: 15, fontWeight: 700 }}>vs</div>
+                      <div><div style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>QUICKBOOKS INVOICE TOTAL</div><div style={{ fontSize: 20, fontWeight: 800 }}>{formatMoney(matchedQb.total)}</div></div>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>
+                      {totalsMatch ? '✓ totals match' : `differ by ${formatMoney(Math.abs(diff))} (${diff > 0 ? 'app higher' : 'QB higher'})`}
+                    </div>
+                    <div style={{ fontSize: 10.5, opacity: 0.7, marginTop: 2 }}>app total = {formatMoney(o.subtotal)} subtotal + {formatMoney(o.tax)} tax (0.5%)</div>
                   </div>
                 )}
 
@@ -6651,7 +6665,7 @@ function InvoiceMatchReport({ onBack }) {
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   <div style={{ flex: '1 1 320px', minWidth: 280, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
                     <div style={{ padding: '8px 12px', background: '#EAF1EE', fontWeight: 700, fontSize: 13, color: '#2B5D50' }}>
-                      APP · {o.items.length} items · {formatMoney(o.total)}
+                      APP · {o.items.length} items · total {formatMoney(o.total)} (w/tax)
                     </div>
                     <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
                       <tbody>
@@ -6663,7 +6677,7 @@ function InvoiceMatchReport({ onBack }) {
                   </div>
                   <div style={{ flex: '1 1 320px', minWidth: 280, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
                     <div style={{ padding: '8px 12px', background: '#FBF3E4', fontWeight: 700, fontSize: 13, color: '#8A6D1B' }}>
-                      QUICKBOOKS {matchedQb ? `· #${matchedQb.number} · ${matchedQb.date} · ${matchedQb.memos.length} lines · ${formatMoney(matchedQb.total)}` : ''}
+                      QUICKBOOKS {matchedQb ? `· #${matchedQb.number} · ${matchedQb.date} · ${matchedQb.memos.length} lines · total ${formatMoney(matchedQb.total)}` : ''}
                     </div>
                     {matchedQb ? (
                       <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
