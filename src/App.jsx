@@ -6497,10 +6497,10 @@ function InvoiceMatchReport({ onBack }) {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sn = wb.SheetNames.includes('Sheet1') ? 'Sheet1' : wb.SheetNames[wb.SheetNames.length - 1];
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, blankrows: false, defval: '' });
-      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, memoCol = -1, amtCol = -1;
+      let hdrIdx = -1, numCol = -1, typeCol = -1, dateCol = -1, memoCol = -1, amtCol = -1, qtyCol = -1;
       for (let i = 0; i < Math.min(rows.length, 15); i++) {
         const r = rows[i].map(c => String(c).trim().toLowerCase());
-        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); memoCol = r.indexOf('memo'); amtCol = r.indexOf('amount'); break; }
+        const ni = r.indexOf('num'); if (ni >= 0) { hdrIdx = i; numCol = ni; typeCol = r.indexOf('type'); dateCol = r.indexOf('date'); memoCol = r.indexOf('memo'); amtCol = r.indexOf('amount'); qtyCol = r.indexOf('qty'); break; }
       }
       if (numCol < 0) { setErr('No "Num" column found — use the QuickBooks invoice detail export.'); setBusy(false); return; }
       const seen = new Map(); let cust = '';
@@ -6523,8 +6523,15 @@ function InvoiceMatchReport({ onBack }) {
             continue;
           }
         }
-        if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), memos: [], total: 0 });
-        if (memoCol >= 0) { const m = String(r[memoCol] || '').trim(); if (m) seen.get(num).memos.push(m); }
+        if (!seen.has(num)) seen.set(num, { number: num, customer: cust, date: fmtQbDate(dateCol >= 0 ? r[dateCol] : ''), memos: [], lines: [], total: 0 });
+        if (memoCol >= 0) {
+          const m = String(r[memoCol] || '').trim();
+          if (m) {
+            seen.get(num).memos.push(m);
+            const qtyRaw = qtyCol >= 0 ? String(r[qtyCol] || '').trim() : '';
+            seen.get(num).lines.push({ memo: m, qty: qtyRaw });
+          }
+        }
         if (amtCol >= 0) { const a = parseFloat(String(r[amtCol]).replace(/[^0-9.-]/g, '')); if (!isNaN(a)) seen.get(num).total += a; }
       }
       if (!seen.size) { setErr('No invoices found in that file. Make sure it has Num and Date columns.'); setBusy(false); return; }
@@ -6701,8 +6708,11 @@ function InvoiceMatchReport({ onBack }) {
                     {matchedQb ? (
                       <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
                         <tbody>
-                          {matchedQb.memos.map((m, i) => (
-                            <tr key={i}><td style={{ padding: '4px 10px', borderBottom: '1px solid #EFEDE3' }}>{m}</td></tr>
+                          {(matchedQb.lines && matchedQb.lines.length ? matchedQb.lines : matchedQb.memos.map(m => ({ memo: m, qty: '' }))).map((ln, i) => (
+                            <tr key={i}>
+                              <td style={{ padding: '4px 10px', borderBottom: '1px solid #EFEDE3' }}>{ln.memo}</td>
+                              {ln.qty !== '' && <td style={{ padding: '4px 10px', textAlign: 'right', borderBottom: '1px solid #EFEDE3', whiteSpace: 'nowrap', color: '#5B6058' }}>{ln.qty}</td>}
+                            </tr>
                           ))}
                         </tbody>
                       </table>
