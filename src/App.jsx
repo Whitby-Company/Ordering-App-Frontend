@@ -6476,34 +6476,30 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
   const [cursor, setCursor] = useState(0); // index into the filtered list (one-by-one view)
   const fileRef = useRef(null);
 
-  // Load app orders (grouped) on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const txt = await fetch(`${API_BASE}/orders/reconcile-export`).then(r => r.text());
-        const lines = txt.split('\n').filter(Boolean);
-        const hdr = lines[0].split(',');
-        const idx = name => hdr.indexOf(name);
-        const byInv = {};
-        for (let i = 1; i < lines.length; i++) {
-          // simple CSV split (values have no embedded commas except quoted Item)
-          const parts = splitCsvLine(lines[i]);
-          const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
-          if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], po: (idx('PO #') >= 0 ? parts[idx('PO #')] : ''), submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
-          byInv[inv].items.push({ name: parts[idx('Item')], code: parts[idx('Item #')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
-          byInv[inv].subtotal += Number(parts[idx('Line total')]) || 0;
-        }
-        // App invoice total = subtotal + 0.5% tax, matching the printed invoice
-        // grand total (so it compares fairly to QuickBooks, which includes tax).
-        for (const o of Object.values(byInv)) {
-          o.subtotal = Math.round(o.subtotal * 100) / 100;
-          o.tax = Math.round(o.subtotal * 0.005 * 100) / 100;
-          o.total = Math.round((o.subtotal + o.tax) * 100) / 100;
-        }
-        setOrders(Object.values(byInv).sort((a, b) => Number(b.invoice) - Number(a.invoice)));
-      } catch (e) { setErr('Could not load app orders: ' + (e.message || e)); }
-    })();
+  // Load app orders (grouped). Reusable so a button can refresh after edits/backfills.
+  const loadAppOrders = useCallback(async () => {
+    try {
+      const txt = await fetch(`${API_BASE}/orders/reconcile-export`).then(r => r.text());
+      const lines = txt.split('\n').filter(Boolean);
+      const hdr = lines[0].split(',');
+      const idx = name => hdr.indexOf(name);
+      const byInv = {};
+      for (let i = 1; i < lines.length; i++) {
+        const parts = splitCsvLine(lines[i]);
+        const inv = parts[idx('Invoice #')], oid = parts[idx('Order ID')];
+        if (!byInv[inv]) byInv[inv] = { invoice: inv, orderId: oid, customer: parts[idx('Customer')], po: (idx('PO #') >= 0 ? parts[idx('PO #')] : ''), submitted: parts[idx('Submitted')], delivery: parts[idx('Delivery')], items: [], subtotal: 0, total: 0 };
+        byInv[inv].items.push({ name: parts[idx('Item')], code: parts[idx('Item #')], qty: parts[idx('Qty')], unit: parts[idx('Unit')], pack: parts[idx('Pack')], eaches: (Number(parts[idx('Qty')]) || 0) * (Number(parts[idx('Pack')]) || 1) });
+        byInv[inv].subtotal += Number(parts[idx('Line total')]) || 0;
+      }
+      for (const o of Object.values(byInv)) {
+        o.subtotal = Math.round(o.subtotal * 100) / 100;
+        o.tax = Math.round(o.subtotal * 0.005 * 100) / 100;
+        o.total = Math.round((o.subtotal + o.tax) * 100) / 100;
+      }
+      setOrders(Object.values(byInv).sort((a, b) => Number(b.invoice) - Number(a.invoice)));
+    } catch (e) { setErr('Could not load app orders: ' + (e.message || e)); }
   }, []);
+  useEffect(() => { loadAppOrders(); }, [loadAppOrders]);
 
   async function onQbFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -6706,6 +6702,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.xlsm,.csv" onChange={onQbFile} disabled={busy} />
         {busy && <span style={{ color: '#8A8F87' }}>Working…</span>}
         {qbInv && <span style={{ fontSize: 13, color: '#2B5D50' }}>{qbInv.length} QB invoices loaded</span>}
+        <button style={{ ...officeStyles.smallBtn, marginLeft: 'auto' }} onClick={() => loadAppOrders()} title="Reload the app orders (e.g. after fixing prices or editing an order)">↻ Reload app orders</button>
       </div>
       {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
       {!orders && <div style={{ color: '#8A8F87', padding: 12 }}>Loading app orders…</div>}
@@ -6917,7 +6914,7 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
           printSequence={printSequence}
           desktop={false}
           onClose={() => setEditingOrder(null)}
-          onSaved={async () => { setEditingOrder(null); await onRefresh(); }}
+          onSaved={async () => { setEditingOrder(null); await onRefresh(); await loadAppOrders(); }}
         />
       )}
     </div>
