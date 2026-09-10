@@ -682,6 +682,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       '<td class="c-cs">' + casesShown + '</td>' +
       (allCases ? '' : '<td class="c-each">' + each + '</td>') +
       '<td class="c-desc">' + desc + '</td>' +
+      '<td class="c-pack">' + esc(l.packLabel || (l.pack ? String(l.pack) : '')) + '</td>' +
       '<td class="c-upc">' + upcCell + '</td>' +
       '<td class="c-price">' + money(priceShown) + '</td>' +
       '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
@@ -691,7 +692,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     if (Array.isArray(contains) && contains.length) {
       const leadEmpty = '<td></td><td></td>' + (allCases ? '' : '<td></td>');
       row += '<tr class="containrow">' + leadEmpty +
-        '<td class="c-desc"><div class="contains-lbl">Contains below:</div></td><td></td><td></td><td></td></tr>';
+        '<td class="c-desc"><div class="contains-lbl">Contains below:</div></td><td></td><td></td><td></td><td></td></tr>';
       for (const x of contains) {
         const label = (x.qty ? x.qty + 'ea ' : '') + esc(x.name || '');
         const bc = hideUpc ? '' : barcodeSVG(x.upc);
@@ -699,6 +700,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
         row += '<tr class="containrow">' +
           '<td></td><td></td>' + (allCases ? '' : '<td></td>') +
           '<td class="c-desc contain-name">' + label + '</td>' +
+          '<td></td>' +
           '<td class="c-upc">' + upcCellC + '</td>' +
           '<td></td><td></td></tr>';
       }
@@ -738,8 +740,9 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   colDefs.push('<col style="width:9%"/>'); headCells.push('<th>ITEM #</th>');
   colDefs.push('<col style="width:5%"/>'); headCells.push('<th class="ctr">CS</th>');
   if (!allCases) { colDefs.push('<col style="width:6%"/>'); headCells.push('<th class="ctr">EACH</th>'); }
-  colDefs.push('<col style="width:39%"/>'); headCells.push('<th>DESCRIPTION</th>');
-  colDefs.push('<col style="width:20%"/>'); headCells.push('<th class="ctr">UPC</th>');
+  colDefs.push('<col style="width:34%"/>'); headCells.push('<th>DESCRIPTION</th>');
+  colDefs.push('<col style="width:7%"/>'); headCells.push('<th class="ctr">PACK</th>');
+  colDefs.push('<col style="width:18%"/>'); headCells.push('<th class="ctr">UPC</th>');
   colDefs.push('<col style="width:8%"/>'); headCells.push('<th class="r">PRICE</th>');
   colDefs.push('<col style="width:13%"/>'); headCells.push('<th class="r">TOTAL($)</th>');
   const COLG = '<colgroup>' + colDefs.join('') + '</colgroup>';
@@ -785,6 +788,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '.colhdr th.r { text-align: right; } .colhdr th.ctr { text-align: center; }' +
     'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.2; }' +
     'td.c-item { white-space: nowrap; } td.c-cs, td.c-each { text-align: center; }' +
+    'td.c-pack { text-align: center; font-size: 11px; white-space: nowrap; color: #333; }' +
     'td.c-upc { text-align: center; font-size: 11px; min-width: 140px; overflow: visible; }' +
     'td.c-upc .barcode svg { display: block; margin: 0 auto; height: 20px; width: 130px; max-width: 100%; }' +
     'td.c-upc .barcode + .barcode { margin-top: 2px; }' +
