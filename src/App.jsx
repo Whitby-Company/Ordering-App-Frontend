@@ -4826,6 +4826,26 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [brand, setBrand] = useState('All');
   const [showInactive, setShowInactive] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
+  // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
+  // so the shown stock is what's physically in the warehouse today.
+  const [todaysView, setTodaysView] = useState(false);
+  const futureCommittedByItem = useMemo(() => {
+    const today = todayISODate();
+    const m = {};
+    for (const o of orders) {
+      if (o.status === 'pending') continue; // pending hasn't reserved stock
+      if (!o.deliveryDate || o.deliveryDate <= today) continue; // only future deliveries
+      for (const l of (o.lines || [])) {
+        const eaches = (Number(l.qty) || 0) * (Number(l.pack) || 1);
+        m[l.id] = (m[l.id] || 0) + eaches;
+      }
+    }
+    return m;
+  }, [orders]);
+  const displayStock = useCallback((item) => {
+    const base = Number(item.stock) || 0;
+    return todaysView ? base + (futureCommittedByItem[item.id] || 0) : base;
+  }, [todaysView, futureCommittedByItem]);
   const [renamingBrand, setRenamingBrand] = useState(false);
   const [brandNameInput, setBrandNameInput] = useState('');
   const [importing, setImporting] = useState(false);
@@ -5231,6 +5251,13 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           Hide seasonal
         </label>
         <button
+          style={{ ...officeStyles.smallBtn, ...(todaysView ? { background: '#2B5D50', color: '#fff' } : {}) }}
+          onClick={() => setTodaysView(v => !v)}
+          title="Show physical warehouse stock today — adds back stock committed to future-delivery orders"
+        >
+          {todaysView ? "Today's inventory ✓" : "Today's inventory"}
+        </button>
+        <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
           onClick={handleToggleEdit}
           title={isItems ? 'Turn on to edit item details' : 'Turn on to adjust stock counts'}
@@ -5387,7 +5414,12 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 </td>
                 {isItems && <td style={{ ...officeStyles.td, textAlign: 'right' }}>{formatMoney(casePrice(item))}</td>}
                 <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                  {canEdit('stock') ? (
+                  {todaysView ? (
+                    <span style={displayStock(item) <= 5 ? { color: '#B5493B', fontWeight: 700 } : { fontWeight: 700 }} title="Physical warehouse stock today (future-delivery orders added back)">
+                      {displayStock(item)}
+                      {(futureCommittedByItem[item.id] || 0) > 0 && <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 400, color: '#8A8F87' }}>({item.stock} after future)</span>}
+                    </span>
+                  ) : canEdit('stock') ? (
                     <StockEditor
                       item={item}
                       pendingValue={pendingStock[item.id]}
