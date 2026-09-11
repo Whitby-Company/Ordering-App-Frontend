@@ -5664,6 +5664,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 return (
                   <tr>
                     <td colSpan={colSpan} style={officeStyles.itemHistoryCell}>
+                      <ItemStockEvents itemId={item.id} />
                       {hist.rows.length === 0 ? (
                         <div style={officeStyles.itemHistoryEmpty}>This item hasn't been on any orders yet.</div>
                       ) : (
@@ -5802,6 +5803,66 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           onClose={() => setShowAddItem(false)}
           onSaved={async () => { setShowAddItem(false); await onRefresh(); }}
         />
+      )}
+    </div>
+  );
+}
+
+// Shows an item's stock EVENTS — physical counts/edits (from the stock log) and
+// purchase orders (incoming/received) — above its order history in the dropdown.
+function ItemStockEvents({ itemId }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let live = true;
+    apiGet(`/items/${encodeURIComponent(itemId)}/stock-log`).then(d => { if (live) setData(d); }).catch(() => { if (live) setData({ log: [], purchaseOrders: [] }); });
+    return () => { live = false; };
+  }, [itemId]);
+  if (!data) return null;
+  const log = data.log || [];
+  const pos = (data.purchaseOrders || []).filter(p => Number(p.qtyOrdered) > 0 || Number(p.qtyReceived) > 0);
+  if (log.length === 0 && pos.length === 0) return null;
+  const th = { textAlign: 'left', fontSize: 11, color: '#8A8F87', fontWeight: 700, padding: '3px 8px', borderBottom: '1px solid #E3E1D6' };
+  const td = { fontSize: 12.5, padding: '3px 8px', borderBottom: '1px solid #EFEDE3' };
+  return (
+    <div style={{ marginBottom: 12 }}>
+      {log.length > 0 && (
+        <div style={{ marginBottom: pos.length ? 10 : 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 12, color: '#2B5D50', marginBottom: 4 }}>Stock changes (counts / receipts / edits)</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 640 }}>
+            <thead><tr><th style={th}>When</th><th style={th}>Reason</th><th style={{ ...th, textAlign: 'right' }}>Change</th><th style={{ ...th, textAlign: 'right' }}>Stock after</th><th style={th}>By</th></tr></thead>
+            <tbody>
+              {log.slice(0, 20).map(e => (
+                <tr key={e.id}>
+                  <td style={td}>{(e.changedAt || '').slice(0, 10)}</td>
+                  <td style={td}>{e.reason || '—'}</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: e.delta >= 0 ? '#2B7A4B' : '#B5493B' }}>{e.delta >= 0 ? '+' : ''}{e.delta}</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{e.newStock}</td>
+                  <td style={{ ...td, color: '#8A8F87' }}>{e.changedBy || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {pos.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 12, color: '#8A6D1B', marginBottom: 4 }}>Purchase orders</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 640 }}>
+            <thead><tr><th style={th}>PO ref</th><th style={th}>Supplier</th><th style={{ ...th, textAlign: 'right' }}>Ordered</th><th style={{ ...th, textAlign: 'right' }}>Received</th><th style={th}>Received date</th><th style={th}>Status</th></tr></thead>
+            <tbody>
+              {pos.map((p, i) => (
+                <tr key={i}>
+                  <td style={td}>{p.reference || '—'}</td>
+                  <td style={td}>{p.supplier || '—'}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{p.qtyOrdered}</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: '#2B7A4B' }}>{p.qtyReceived}</td>
+                  <td style={td}>{p.receivedDate || (p.expectedDate ? `exp ${p.expectedDate}` : '—')}</td>
+                  <td style={td}>{p.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
