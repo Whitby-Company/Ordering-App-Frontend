@@ -2839,25 +2839,41 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
               {deliveryDate ? <span>Delivery {formatDate(deliveryDate)}</span> : <span style={{ color: '#B5493B' }}>No delivery date set</span>}
             </div>
             <div style={styles.sheetLines}>
-              {orderLines.map(l => (
-                <div key={l.id} style={styles.sheetLine}>
+              {/* Column header — invoice-style */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 4px 6px', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid #E3E1D6' }}>
+                <span style={{ width: 34, textAlign: 'center' }}>Cs</span>
+                <span style={{ width: 40, textAlign: 'center' }}>Each</span>
+                <span style={{ flex: 1, minWidth: 0 }}>Description</span>
+                <span style={{ width: 64, textAlign: 'center' }}>Pack</span>
+                <span style={{ width: 62, textAlign: 'right' }}>Price</span>
+                <span style={{ width: 30 }} />
+              </div>
+              {orderLines.map(l => {
+                const eaches = (Number(l.qty) || 0) * (l.unit === 'case' ? ((Number(l.pack) || 1) * (Number(l.caseSize) || 1)) : (Number(l.pack) || 1));
+                const packLbl = (l.unit === 'case' && Number(l.caseSize) > 0) ? (fullPackLabel(l) || String((Number(l.pack) || 1) * Number(l.caseSize))) : (l.packLabel || (l.pack ? String(l.pack) : ''));
+                return (
+                <div key={l.id} style={{ ...styles.sheetLine, alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 34, display: 'flex', justifyContent: 'center' }}>
+                    <TicketQtyInput qty={l.qty} onSet={v => setQty(l.id, v)} disabled={submitting} />
+                  </div>
+                  <span style={{ width: 40, textAlign: 'center', color: '#5B6058', fontSize: 12.5 }}>{eaches}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.sheetLineName}>
                       <span style={styles.sheetLineCode}>{displayCode(l.id)}</span>
                       {l.name}
                     </div>
-                    <div style={styles.sheetLineSku}>
-                      {l.pack > 1 ? `${l.pack}ea` : ''}
-                      {l.price > 0 && l.qty > 0 ? `${l.pack > 1 ? ' · ' : ''}${formatMoney(l.price)}/ea · ${formatMoney(lineTotal(l, l.qty))}` : ''}
-                    </div>
+                    {l.checkin && l.qty === 0 && <span style={styles.checkinTag}>check-in</span>}
                   </div>
-                  {l.checkin && l.qty === 0 && <div style={styles.checkinTag}>check-in</div>}
-                  <TicketQtyInput qty={l.qty} onSet={v => setQty(l.id, v)} disabled={submitting} />
-                  <button style={styles.removeBtn} onClick={() => removeLine(l.id)} disabled={submitting}>
-                    <X size={14} color="#8A8F87" />
-                  </button>
+                  <span style={{ width: 64, textAlign: 'center', fontSize: 11.5, color: '#5B6058' }}>{packLbl}</span>
+                  <span style={{ width: 62, textAlign: 'right', fontSize: 12.5 }}>{l.price > 0 ? formatMoney(l.price) : '—'}</span>
+                  <div style={{ width: 30, display: 'flex', justifyContent: 'flex-end' }}>
+                    <button style={styles.removeBtn} onClick={() => removeLine(l.id)} disabled={submitting}>
+                      <X size={14} color="#8A8F87" />
+                    </button>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <div style={styles.sheetTotal}>
               <span>Total units</span>
