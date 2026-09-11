@@ -5433,6 +5433,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
             <option value="active">Edit: Active</option>
             <option value="upc">Edit: UPC</option>
             <option value="photo">Edit: Photo</option>
+            <option value="delete">Delete items</option>
           </select>
         )}
         <div style={officeStyles.countPill}>{filtered.length} item{filtered.length === 1 ? '' : 's'}</div>
@@ -5627,7 +5628,16 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 </td>
                 )}
                 <td style={{ ...officeStyles.td, textAlign: 'center' }}>
-                  {(isItems && canEdit('active')) ? (
+                  {(isItems && editMode && editField === 'delete') ? (
+                    <button
+                      style={{ ...officeStyles.smallBtn, background: '#B5493B', color: '#fff' }}
+                      onClick={async () => {
+                        if (!window.confirm(`Delete "${item.name}" permanently? This can't be undone. (Items on past orders are protected and won't delete.)`)) return;
+                        try { await apiDelete(`/items/${encodeURIComponent(item.id)}`); await onRefresh(); }
+                        catch (e) { window.alert(e.message || 'Could not delete — the item may be on past orders. Make it inactive instead.'); }
+                      }}
+                    >Delete</button>
+                  ) : (isItems && canEdit('active')) ? (
                     <ActiveToggle
                       active={!!item.active}
                       onToggle={async next => { await apiPatch(`/items/${encodeURIComponent(item.id)}`, { active: next }); await onRefresh(); }}
@@ -8875,6 +8885,16 @@ function OfficeCustomers({ customers, onRefresh }) {
                     active={!!c.active}
                     onToggle={async next => { await apiPatch(`/customers/${c.id}`, { active: next }); await onRefresh(); }}
                   />
+                  {editMode && (
+                    <button
+                      style={{ ...officeStyles.smallBtn, background: '#B5493B', color: '#fff', marginLeft: 6 }}
+                      onClick={async () => {
+                        if (!window.confirm(`Delete "${c.name}" permanently? This can't be undone. (Customers with past orders are protected and won't delete.)`)) return;
+                        try { await apiDelete(`/customers/${c.id}`); await onRefresh(); }
+                        catch (e) { window.alert(e.message || 'Could not delete — the customer may have past orders. Make them inactive instead.'); }
+                      }}
+                    >Delete</button>
+                  )}
                 </td>
               </tr>
               {editMode && shipOpen && (
