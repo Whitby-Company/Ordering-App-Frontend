@@ -9172,7 +9172,7 @@ const styles = {
     fontFamily: "'Inter', system-ui, sans-serif",
     background: '#F7F8F4',
     width: '100%',
-    maxWidth: 1440,
+    maxWidth: '100%',
     height: '100vh',
     overflow: 'hidden',
     margin: '0 auto',
