@@ -2790,7 +2790,18 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                 <span style={{ fontWeight: 700, fontSize: 13 }}>Invoice preview</span>
                 <button style={styles.iconBtn} onClick={() => setPreviewHtml(null)} title="Close preview">✕</button>
               </div>
-              <iframe title="Invoice preview" srcDoc={previewHtml} style={{ flex: 1, border: 'none', width: '100%' }} />
+              <iframe
+                title="Invoice preview"
+                ref={el => {
+                  if (el && previewHtml && el.getAttribute('data-rendered') !== 'yes') {
+                    const doc = el.contentWindow.document;
+                    doc.open(); doc.write(previewHtml); doc.close();
+                    el.setAttribute('data-rendered', 'yes');
+                  }
+                }}
+                key={previewHtml ? previewHtml.length + ':' + Date.now() : 'none'}
+                style={{ flex: 1, border: 'none', width: '100%' }}
+              />
             </div>
           )}
           <div style={sheetStyle} onClick={e => e.stopPropagation()}>
