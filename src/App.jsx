@@ -5695,7 +5695,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 return (
                   <tr>
                     <td colSpan={colSpan} style={officeStyles.itemHistoryCell}>
-                      <ItemStockEvents itemId={item.id} />
+                      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 560px', minWidth: 400 }}>
                       {hist.rows.length === 0 ? (
                         <div style={officeStyles.itemHistoryEmpty}>This item hasn't been on any orders yet.</div>
                       ) : (
@@ -5747,6 +5748,11 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                           </table>
                         </div>
                       )}
+                        </div>
+                        <div style={{ flex: '1 1 360px', minWidth: 300 }}>
+                          <ItemStockEvents itemId={item.id} />
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -5855,7 +5861,7 @@ function ItemStockEvents({ itemId }) {
   const th = { textAlign: 'left', fontSize: 11, color: '#8A8F87', fontWeight: 700, padding: '3px 8px', borderBottom: '1px solid #E3E1D6' };
   const td = { fontSize: 12.5, padding: '3px 8px', borderBottom: '1px solid #EFEDE3' };
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div>
       {log.length > 0 && (
         <div style={{ marginBottom: pos.length ? 10 : 0 }}>
           <div style={{ fontWeight: 700, fontSize: 12, color: '#2B5D50', marginBottom: 4 }}>Stock changes (counts / receipts / edits)</div>
