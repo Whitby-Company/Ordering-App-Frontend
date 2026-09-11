@@ -1458,8 +1458,14 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
   // Always show the EACH column, even for case lines (a case still has eaches).
   const showEach = true;
 
+  // Only make the grid scroll once there are 5+ filled lines; below that it sits
+  // at its natural height (no inner scrollbar).
+  const scrollWhenFull = orderLines.length >= 5
+    ? { flex: 1, minHeight: 0, overflowY: 'auto' }
+    : { overflowY: 'visible' };
+
   return (
-    <div style={qeStyles.wrap}>
+    <div style={{ ...qeStyles.wrap, ...scrollWhenFull }}>
       <div style={qeStyles.hint}>Type an item # or name, press <b>Tab</b> to pick the highlighted match and jump to Cases, then <b>Tab</b> to the next row.</div>
       <table style={qeStyles.table}>
         <thead><tr>
@@ -1651,7 +1657,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
 }
 
 const qeStyles = {
-  wrap: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px 120px' },
+  wrap: { padding: '4px 16px 120px' },
   hint: { fontSize: 12, color: '#8A8F87', padding: '2px 2px 8px' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 },
   th: { textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '6px 8px', borderBottom: '1px solid #E3E1D6' },
