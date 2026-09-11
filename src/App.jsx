@@ -1597,6 +1597,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                           >
                             <span style={qeStyles.matchCode}>{displayCode(it.id)}</span>
                             <span style={qeStyles.matchName}>{it.name}</span>
+                            {fullPackLabel(it) && <span style={{ fontSize: 11, color: '#8A8F87', marginLeft: 6 }}>{fullPackLabel(it)}</span>}
                             {(Number(it.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{it.stock} in stock</span>}
                             {(Number(it.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
                             {it.incoming > 0 && <span style={qeStyles.incomingTag}>+{it.incoming} incoming</span>}
