@@ -8990,7 +8990,7 @@ function OfficeCustomers({ customers, onRefresh }) {
           {shipToSeedMsg && <span style={{ fontSize: 12.5, color: '#5B6058' }}>{shipToSeedMsg}</span>}
         </div>
       )}
-      <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
+      <div style={officeStyles.tableCard}>
         <table className={editMode ? 'cust-edit-tight' : ''} style={{ ...officeStyles.table, ...(editMode ? { minWidth: 900 } : {}) }}>
           <style>{`
             .cust-edit-tight th, .cust-edit-tight td { padding: 4px 6px !important; }
