@@ -894,7 +894,12 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       'setTimeout(go,500);})();'
     : '';
 
-  const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
+  // For the inline preview, gently zoom the page out so the whole sheet fits in
+  // the preview window (doesn't affect the real print/pop-up).
+  const previewZoom = opts.inline
+    ? '<style>@media screen { body { zoom: 0.92; } .no-print { display: none !important; } }</style>'
+    : '';
+  const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style>' + previewZoom + '</head><body>' +
     (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
     '<div id="pages"></div>' +
     '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
