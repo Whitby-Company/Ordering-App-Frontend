@@ -7625,7 +7625,7 @@ function POUploadModal({ items, onClose, onCreated }) {
   const [supplier, setSupplier] = useState('');
   const [reference, setReference] = useState('');
   const [poNotes, setPoNotes] = useState('');
-  const [caseMode, setCaseMode] = useState(true); // true = PO qty is cases (convert to boxes); false = qty is boxes
+  const [caseMode, setCaseMode] = useState(true); // true = Inners item (cases × bx-per-case = inners); false = Cases item (cases as-is)
   const [expectedDate, setExpectedDate] = useState('');
   const [rawText, setRawText] = useState('');
   const [showRaw, setShowRaw] = useState(false);
@@ -7841,27 +7841,27 @@ function POUploadModal({ items, onClose, onCreated }) {
               </div>
               <div style={{ display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 8, overflow: 'hidden', fontSize: 12.5, fontWeight: 700 }}>
                 <button
-                  onClick={() => setCaseMode(true)}
-                  style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: caseMode ? '#2B5D50' : '#fff', color: caseMode ? '#fff' : '#5B6058' }}
-                  title="The PO quantities are in cases — convert to boxes using the case pack"
-                >Cases</button>
-                <button
                   onClick={() => setCaseMode(false)}
                   style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: !caseMode ? '#2B5D50' : '#fff', color: !caseMode ? '#fff' : '#5B6058' }}
-                  title="The PO quantities are already in boxes — no case-pack conversion"
+                  title="Item has no inners — the PO cases go into inventory as cases (1:1)"
+                >Cases</button>
+                <button
+                  onClick={() => setCaseMode(true)}
+                  style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: caseMode ? '#2B5D50' : '#fff', color: caseMode ? '#fff' : '#5B6058' }}
+                  title="Item has inners — the PO cases convert to inners (cases × inners-per-case)"
                 >Inners</button>
               </div>
             </div>
             <div style={uplStyles.previewWrap}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>{caseMode ? 'Qty (cs → bx)' : 'Qty (boxes)'}</th><th style={uplStyles.th}>Matched item</th></tr></thead>
+                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>{caseMode ? 'Qty (cs → inners)' : 'Qty (cases)'}</th><th style={uplStyles.th}>Matched item</th></tr></thead>
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.pack ? ` · ${r.pack}` : ''}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {!r.item ? <span style={{ color: '#8A8F87' }}>{r.qty}</span>
-                          : !caseMode ? <span style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}><strong>{r.qty} bx</strong></span>
+                          : !caseMode ? <span style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}><strong>{r.qty} cs</strong></span>
                           : (() => {
                           // Real pack from the item's case size or a manual override.
                           // If none, leave the field empty (flagged red) — no auto-fill.
@@ -7891,7 +7891,7 @@ function POUploadModal({ items, onClose, onCreated }) {
                                 style={{ width: 36, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasRealPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasRealPack ? '#fff' : '#FBEEE7' }}
                                 title={hasRealPack ? "Boxes per case — edit if the PO's case pack differs" : "No case size on file — enter the boxes per case to convert (saved for next time)."}
                               />
-                              <span>bx/cs {hasRealPack ? <>= <strong>{r.qty * Number(effPack)} bx</strong></> : null}</span>
+                              <span>bx/cs {hasRealPack ? <>= <strong>{r.qty * Number(effPack)} inners</strong></> : null}</span>
                             </div>
                           );
                         })()}
