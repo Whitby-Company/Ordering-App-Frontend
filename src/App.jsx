@@ -4986,6 +4986,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
+  const [histSort, setHistSort] = useState({ field: 'delivery', dir: 'desc' }); // sort for the expanded item's order history
   const [editingOrder, setEditingOrder] = useState(null); // order opened for editing from history
   const [viewingOrder, setViewingOrder] = useState(null); // order opened read-only from history
   // Stock changes are held here while editing and committed together on "Done
@@ -5661,6 +5662,36 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isOpen && (() => {
                 const hist = orderHistoryFor(item.id, item.stock);
                 const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (todaysView ? 2 : 0);
+                // Sort the history rows by the chosen column.
+                const sortVal = (r, f) => {
+                  switch (f) {
+                    case 'order': return Number(r.orderId) || 0;
+                    case 'delivery': return r.deliveryDate || '';
+                    case 'customer': return (r.customer || '').toLowerCase();
+                    case 'qty': return Number(r.qty) || 0;
+                    case 'unit': return r.unit || '';
+                    case 'boxes': return Number(r.boxesConsumed) || 0;
+                    case 'stockAfter': return r.stockAfter == null ? -Infinity : Number(r.stockAfter);
+                    case 'status': return r.status === 'pending' ? 0 : (r.processed ? 2 : 1);
+                    default: return 0;
+                  }
+                };
+                const sortedRows = [...hist.rows].sort((a, b) => {
+                  const va = sortVal(a, histSort.field), vb = sortVal(b, histSort.field);
+                  const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+                  return histSort.dir === 'asc' ? cmp : -cmp;
+                });
+                const HTh = ({ field, label, align }) => {
+                  const active = histSort.field === field;
+                  return (
+                    <th
+                      style={{ ...officeStyles.itemHistoryTh, textAlign: align || 'left', cursor: 'pointer', userSelect: 'none', color: active ? '#14181F' : undefined }}
+                      onClick={() => setHistSort(s => ({ field, dir: s.field === field && s.dir === 'asc' ? 'desc' : 'asc' }))}
+                    >
+                      {label}{active ? (histSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+                    </th>
+                  );
+                };
                 return (
                   <tr>
                     <td colSpan={colSpan} style={officeStyles.itemHistoryCell}>
@@ -5677,19 +5708,19 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                           <table style={officeStyles.itemHistoryTable}>
                             <thead>
                               <tr>
-                                <th style={officeStyles.itemHistoryTh}>Order</th>
-                                <th style={officeStyles.itemHistoryTh}>Delivery</th>
-                                <th style={officeStyles.itemHistoryTh}>Customer</th>
-                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}>Qty</th>
-                                <th style={officeStyles.itemHistoryTh}>Unit</th>
-                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }} title="Boxes subtracted from stock (case × case size, else qty)">Boxes out</th>
-                                <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }} title="Running stock (boxes) right after this order">Stock after</th>
-                                <th style={officeStyles.itemHistoryTh}>Status</th>
+                                <HTh field="order" label="Order" />
+                                <HTh field="delivery" label="Delivery" />
+                                <HTh field="customer" label="Customer" />
+                                <HTh field="qty" label="Qty" align="right" />
+                                <HTh field="unit" label="Unit" />
+                                <HTh field="boxes" label="Boxes out" align="right" />
+                                <HTh field="stockAfter" label="Stock after" align="right" />
+                                <HTh field="status" label="Status" />
                                 <th style={{ ...officeStyles.itemHistoryTh, textAlign: 'right' }}></th>
                               </tr>
                             </thead>
                             <tbody>
-                              {hist.rows.map(r => (
+                              {sortedRows.map(r => (
                                 <tr key={r.orderId}>
                                   <td style={officeStyles.itemHistoryTd}>#{r.orderId}</td>
                                   <td style={officeStyles.itemHistoryTd}>{formatDate(r.deliveryDate)}</td>
