@@ -894,10 +894,15 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       'setTimeout(go,500);})();'
     : '';
 
-  // For the inline preview, gently zoom the page out so the whole sheet fits in
-  // the preview window (doesn't affect the real print/pop-up).
+  // For the inline preview, auto-scale the page so its WIDTH exactly fills the
+  // preview window (doesn't affect the real print/pop-up). A tiny script runs on
+  // load + resize and sets zoom = available width / natural page width.
   const previewZoom = opts.inline
-    ? '<style>@media screen { body { zoom: 0.65; } .no-print { display: none !important; } }</style>'
+    ? '<style>@media screen { .no-print { display: none !important; } body { margin: 0; } }</style>' +
+      '<script>(function(){function fit(){try{var p=document.querySelector(".page");if(!p){return setTimeout(fit,120);}' +
+      'document.body.style.zoom="";var pageW=p.getBoundingClientRect().width;var avail=document.documentElement.clientWidth;' +
+      'if(pageW>0){var z=avail/pageW;if(z>0.2&&z<3){document.body.style.zoom=z;}}}catch(e){}}' +
+      'window.addEventListener("load",fit);window.addEventListener("resize",fit);setTimeout(fit,200);setTimeout(fit,600);setTimeout(fit,1200);})();<\/script>'
     : '';
   const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style>' + previewZoom + '</head><body>' +
     (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
