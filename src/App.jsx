@@ -4936,6 +4936,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // so the shown stock is what's physically in the warehouse today.
   const [todaysView, setTodaysView] = useState(false);
   const [countMode, setCountMode] = useState(false);
+  const [showAddItem, setShowAddItem] = useState(false);
   const [counts, setCounts] = useState({}); // itemId -> typed count
   const [countBusy, setCountBusy] = useState(false);
   const [countSaved, setCountSaved] = useState({}); // itemId -> true after saved
@@ -5413,6 +5414,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         </button>
         <a href={`${API_BASE}/items/export-inventory`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the current inventory as a CSV">↓ Inventory CSV</a>
         <a href={`${API_BASE}/items/export-stock-log`} download style={{ ...officeStyles.smallBtn, textDecoration: 'none', display: 'inline-block' }} title="Download the full stock change history as a CSV">↓ Stock history CSV</a>
+        {isItems && (
+          <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={() => setShowAddItem(true)} title="Add a new item to the catalog">+ New item</button>
+        )}
         <button
           style={{ ...officeStyles.smallBtn, ...(editMode ? officeStyles.editModeBtnActive : {}) }}
           onClick={handleToggleEdit}
@@ -5792,12 +5796,112 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           onSaved={async () => { setEditingContents(null); await onRefresh(); }}
         />
       )}
+      {showAddItem && (
+        <AddItemModal
+          brands={[...new Set(items.map(i => i.brand).filter(Boolean))].sort()}
+          onClose={() => setShowAddItem(false)}
+          onSaved={async () => { setShowAddItem(false); await onRefresh(); }}
+        />
+      )}
     </div>
   );
 }
 
-// Modal to edit a shipper item's contained sub-items (qty / name / UPC), which
-// print under the item on the invoice, each with its own barcode.
+// Modal to add a brand-new item to the catalog.
+function AddItemModal({ brands = [], onClose, onSaved }) {
+  const [brand, setBrand] = useState('');
+  const [newBrand, setNewBrand] = useState('');
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [pack, setPack] = useState('');
+  const [caseSize, setCaseSize] = useState('');
+  const [packLabel, setPackLabel] = useState('');
+  const [price, setPrice] = useState('');
+  const [casePrice, setCasePrice] = useState('');
+  const [cost, setCost] = useState('');
+  const [upc, setUpc] = useState('');
+  const [stock, setStock] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function save() {
+    const useBrand = (newBrand.trim() || brand).trim();
+    if (!useBrand) { setErr('Pick or type a brand.'); return; }
+    if (!code.trim()) { setErr('Enter an item code / SKU.'); return; }
+    if (!name.trim()) { setErr('Enter an item name.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await apiPost('/items', {
+        brand: useBrand, code: code.trim(), name: name.trim(),
+        pack: pack || undefined, caseSize: caseSize || undefined, packLabel: packLabel.trim() || undefined,
+        price: price || undefined, casePrice: casePrice || undefined, cost: cost || undefined,
+        upc: upc.trim() || undefined, stock: stock || undefined,
+      });
+      await onSaved();
+    } catch (e) { setErr(e.message || 'Could not add the item'); setBusy(false); }
+  }
+
+  const fld = { padding: '6px 8px', border: '1px solid #D6D3C6', borderRadius: 6, fontSize: 13, width: '100%', boxSizing: 'border-box' };
+  const lbl = { fontSize: 11, color: '#8A8F87', fontWeight: 700, marginBottom: 3, display: 'block' };
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: 20, width: 520, maxWidth: '92vw', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 12 }}>Add a new item</div>
+        {err && <div style={{ color: '#B5493B', marginBottom: 10, fontSize: 13 }}>{err}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label style={lbl}>Brand</label>
+            <select style={fld} value={brand} onChange={e => setBrand(e.target.value)}>
+              <option value="">— pick brand —</option>
+              {brands.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <input style={{ ...fld, marginTop: 4 }} placeholder="…or type a new brand" value={newBrand} onChange={e => setNewBrand(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Item code / SKU</label>
+            <input style={fld} placeholder="e.g. 14336c" value={code} onChange={e => setCode(e.target.value)} />
+          </div>
+          <div style={{ gridColumn: '1 / span 2' }}>
+            <label style={lbl}>Item name</label>
+            <input style={fld} placeholder="e.g. Loacker Quad - Strawberry" value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Pack (eaches per box)</label>
+            <input style={fld} inputMode="numeric" placeholder="e.g. 6" value={pack} onChange={e => setPack(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Boxes per case</label>
+            <input style={fld} inputMode="numeric" placeholder="e.g. 12 (blank = none)" value={caseSize} onChange={e => setCaseSize(e.target.value)} />
+          </div>
+          <div style={{ gridColumn: '1 / span 2' }}>
+            <label style={lbl}>Pack label (optional)</label>
+            <input style={fld} placeholder="e.g. 12/6/8.82oz — leave blank to auto" value={packLabel} onChange={e => setPackLabel(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Price / each</label>
+            <input style={fld} inputMode="decimal" placeholder="e.g. 3.75" value={price} onChange={e => setPrice(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Cost / each (optional)</label>
+            <input style={fld} inputMode="decimal" placeholder="e.g. 2.90" value={cost} onChange={e => setCost(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>UPC (optional)</label>
+            <input style={fld} placeholder="barcode" value={upc} onChange={e => setUpc(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Starting stock (boxes)</label>
+            <input style={fld} inputMode="numeric" placeholder="0" value={stock} onChange={e => setStock(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={save} disabled={busy}>{busy ? 'Adding…' : 'Add item'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
   // Each contained row references an existing item (searched/picked from the
   // catalog) plus a quantity. Name + UPC are pulled from the chosen item, but a
