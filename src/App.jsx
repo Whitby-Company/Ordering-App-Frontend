@@ -8044,6 +8044,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   const [po, setPo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recv, setRecv] = useState({}); // itemId -> qty to receive
+  const [receivedDate, setReceivedDate] = useState(todayISODate());
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -8058,8 +8059,8 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
     try {
       const who = getSubmitterName() || undefined;
       const body = all
-        ? { all: true, receivedBy: who }
-        : { receivedBy: who, receipts: Object.entries(recv).map(([itemId, qty]) => ({ itemId, qty: Number(qty) || 0 })).filter(r => r.qty > 0) };
+        ? { all: true, receivedBy: who, receivedDate }
+        : { receivedBy: who, receivedDate, receipts: Object.entries(recv).map(([itemId, qty]) => ({ itemId, qty: Number(qty) || 0 })).filter(r => r.qty > 0) };
       await apiPost(`/purchase-orders/${poId}/receive`, body);
       setRecv({});
       await load(); await onChanged();
@@ -8153,10 +8154,14 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
       </div>
       {po.status !== 'received' && po.status !== 'cancelled' && outstanding > 0 && (
         <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 12.5, color: '#5B6058', display: 'flex', alignItems: 'center', gap: 6 }}>
+            Received date:
+            <input type="date" value={receivedDate} onChange={e => setReceivedDate(e.target.value)} style={{ ...officeStyles.smallBtn, padding: '4px 8px' }} title="The date this stock physically arrived — it counts toward on-hand as of this date (can be back-dated)" />
+          </label>
           <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#F7F8F4' }} onClick={() => receive(false)} disabled={busy || Object.values(recv).every(v => !Number(v))}>Receive entered</button>
           <button style={officeStyles.smallBtn} onClick={() => receive(true)} disabled={busy}>Receive all ({outstanding})</button>
           <button style={{ ...officeStyles.smallBtn, color: '#B5493B', borderColor: '#E6C6B4' }} onClick={closeShort} disabled={busy} title="Mark the PO done and record the outstanding quantity as short/damaged">Close short ({outstanding})</button>
-          <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Receiving adds to stock. Close short records the rest as short/damaged.</span>
+          <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Received stock counts toward on-hand as of the received date.</span>
         </div>
       )}
     </div>
