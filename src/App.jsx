@@ -5496,8 +5496,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {todaysView ? (
                 <>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand today (future-delivery orders added back)">Today's stock</th>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Stock after all submitted orders (including future deliveries)">Total stock</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand right now">On hand</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Available to sell = on-hand minus future-delivery orders">Available</th>
                   <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Committed to future-delivery orders (Today's − Total)">Difference</th>
                 </>
               ) : (
@@ -5610,12 +5610,12 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 ) : todaysView ? (
                   <>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>
-                      <span style={displayStock(item) <= 5 ? { color: '#B5493B' } : undefined} title="Physical on hand today">{displayStock(item)}</span>
+                      <span style={(item.onHand != null ? item.onHand : item.stock) <= 5 ? { color: '#B5493B' } : undefined} title="Physical stock on hand right now">{item.onHand != null ? item.onHand : item.stock}</span>
                       {item.incoming > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2B5D50' }} title="Incoming from open purchase orders">+{item.incoming}</span>}
                     </td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right', color: '#5B6058' }} title="Stock after future orders ship">{item.stock}</td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right', color: (futureCommittedByItem[item.id] || 0) > 0 ? '#B5793B' : '#B9BDB2', fontWeight: (futureCommittedByItem[item.id] || 0) > 0 ? 700 : 400 }} title="Committed to future-delivery orders">
-                      {(futureCommittedByItem[item.id] || 0) > 0 ? `−${futureCommittedByItem[item.id]}` : '0'}
+                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: (item.available != null ? item.available : item.stock) < 0 ? '#B5493B' : '#14181F' }} title="Available to sell = on-hand minus future orders">{item.available != null ? item.available : item.stock}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.futureBoxes || 0) > 0 ? '#B5793B' : '#B9BDB2', fontWeight: (item.futureBoxes || 0) > 0 ? 700 : 400 }} title="Committed to future-delivery orders (not shipped yet)">
+                      {(item.futureBoxes || 0) > 0 ? `−${item.futureBoxes}` : '0'}
                     </td>
                   </>
                 ) : (
