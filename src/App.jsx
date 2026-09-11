@@ -7877,19 +7877,8 @@ function POUploadModal({ items, onClose, onCreated }) {
                                 placeholder="?"
                                 value={shownValue}
                                 onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
-                                onBlur={() => {
-                                  // If the item had no case size and a pack was entered, offer to
-                                  // save it to the item so it auto-fills on future POs.
-                                  const entered = Number(r.packOverride);
-                                  if (r.item && !(Number(r.item.caseSize) > 0) && entered > 0 && !r.packSaved) {
-                                    if (window.confirm(`Save ${entered} boxes/case as the case size for "${r.item.name}"? This updates the item everywhere, not just this PO.`)) {
-                                      apiPatch(`/items/${encodeURIComponent(r.item.id)}`, { caseSize: entered }).catch(() => {});
-                                      setRows(prev => prev.map((x, j) => j === i ? { ...x, packSaved: true } : x));
-                                    }
-                                  }
-                                }}
                                 style={{ width: 36, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasRealPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasRealPack ? '#fff' : '#FBEEE7' }}
-                                title={hasRealPack ? "Boxes per case — edit if the PO's case pack differs" : "No case size on file — enter the boxes per case to convert (saved for next time)."}
+                                title="Inners per case for THIS PO only — does not change the item."
                               />
                               <span>bx/cs {hasRealPack ? <>= <strong>{r.qty * Number(effPack)} inners</strong></> : null}</span>
                             </div>
@@ -7905,14 +7894,6 @@ function POUploadModal({ items, onClose, onCreated }) {
                             if (key) {
                               setSavedMap(m => ({ ...m, [key.toLowerCase()]: it.id }));
                               apiPost('/items/import-map', { source: 'po', fileKey: key, itemId: it.id }).catch(() => {});
-                            }
-                            // If a pack was entered on this row and the chosen item has no
-                            // case size yet, offer to save the pack to it too.
-                            const entered = Number(r.packOverride);
-                            if (entered > 0 && !(Number(it.caseSize) > 0)) {
-                              if (window.confirm(`Save ${entered} boxes/case as the case size for "${it.name}"? This updates the item everywhere, not just this PO.`)) {
-                                apiPatch(`/items/${encodeURIComponent(it.id)}`, { caseSize: entered }).catch(() => {});
-                              }
                             }
                           }
                         }} />
