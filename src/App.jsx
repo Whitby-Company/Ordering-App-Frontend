@@ -2286,6 +2286,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   function previewInvoice() {
     const cust = findCust(customerId);
     if (!cust) { window.alert('Pick a customer first.'); return; }
+    if (!orderLines.length) { window.alert('Add at least one item first.'); return; }
     const tempOrder = {
       id: 0,
       customer: cust.name,
@@ -2297,8 +2298,18 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       invoiceNumber: invEdited ? (invNumber || null) : null,
       lines: orderLines.map(l => ({ id: l.id, name: l.name, brand: l.brand, price: l.price, pack: l.pack, unit: l.unit, upc: l.upc, qty: l.qty, caseSize: l.caseSize })),
     };
-    const html = printInvoice(tempOrder, cust, printSequence, items, { inline: true });
-    setPreviewHtml(html || null);
+    try {
+      const html = printInvoice(tempOrder, cust, printSequence, items, { inline: true });
+      if (html && typeof html === 'string' && html.length > 100) {
+        setPreviewHtml(html);
+      } else {
+        // Inline build returned nothing usable — fall back to the pop-up window.
+        printInvoice(tempOrder, cust, printSequence, items, {});
+      }
+    } catch (e) {
+      console.error('Invoice preview failed:', e);
+      window.alert('Could not build the preview: ' + (e.message || e));
+    }
   }
 
   async function submitOrder(pending = false) {
@@ -2793,13 +2804,14 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
               <iframe
                 title="Invoice preview"
                 ref={el => {
-                  if (el && previewHtml && el.getAttribute('data-rendered') !== 'yes') {
-                    const doc = el.contentWindow.document;
-                    doc.open(); doc.write(previewHtml); doc.close();
-                    el.setAttribute('data-rendered', 'yes');
+                  if (el && previewHtml && el.getAttribute('data-html-len') !== String(previewHtml.length)) {
+                    try {
+                      const doc = el.contentWindow.document;
+                      doc.open(); doc.write(previewHtml); doc.close();
+                      el.setAttribute('data-html-len', String(previewHtml.length));
+                    } catch (e) { console.error('iframe write failed', e); }
                   }
                 }}
-                key={previewHtml ? previewHtml.length + ':' + Date.now() : 'none'}
                 style={{ flex: 1, border: 'none', width: '100%' }}
               />
             </div>
