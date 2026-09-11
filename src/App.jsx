@@ -5497,8 +5497,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {todaysView ? (
                 <>
                   <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand right now">On hand</th>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Available to sell = on-hand minus future-delivery orders">Available</th>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Committed to future-delivery orders (Today's − Total)">Difference</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders = what's left to sell">After allocation</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Boxes allocated to future-delivery orders (not shipped yet)">Allocated</th>
                 </>
               ) : (
                 <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
