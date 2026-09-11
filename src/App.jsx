@@ -2405,7 +2405,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     ? { ...styles.sheetOverlay, alignItems: 'center', justifyContent: 'center', position: 'fixed' }
     : styles.sheetOverlay;
   const sheetStyle = desktop
-    ? { ...styles.sheet, width: 560, maxWidth: '92vw', maxHeight: '88vh', borderRadius: 16, padding: '18px 22px 22px' }
+    ? { ...styles.sheet, width: 640, maxWidth: '94vw', maxHeight: '88vh', borderRadius: 16, padding: '18px 22px 22px' }
     : styles.sheet;
   // On desktop, lay item rows out in multiple columns so far more fit on
   // screen at once. The card width follows the grid-size toggle (same control
@@ -2846,6 +2846,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                 <span style={{ flex: 1, minWidth: 0 }}>Description</span>
                 <span style={{ width: 64, textAlign: 'center' }}>Pack</span>
                 <span style={{ width: 62, textAlign: 'right' }}>Price</span>
+                <span style={{ width: 74, textAlign: 'right' }}>Total</span>
                 <span style={{ width: 30 }} />
               </div>
               {orderLines.map(l => {
@@ -2866,6 +2867,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                   </div>
                   <span style={{ width: 64, textAlign: 'center', fontSize: 11.5, color: '#5B6058' }}>{packLbl}</span>
                   <span style={{ width: 62, textAlign: 'right', fontSize: 12.5 }}>{l.price > 0 ? formatMoney(l.price) : '—'}</span>
+                  <span style={{ width: 74, textAlign: 'right', fontSize: 12.5, fontWeight: 700 }}>{l.price > 0 && l.qty > 0 ? formatMoney(lineTotal(l, l.qty)) : '—'}</span>
                   <div style={{ width: 30, display: 'flex', justifyContent: 'flex-end' }}>
                     <button style={styles.removeBtn} onClick={() => removeLine(l.id)} disabled={submitting}>
                       <X size={14} color="#8A8F87" />
