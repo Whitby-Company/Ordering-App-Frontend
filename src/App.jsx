@@ -775,19 +775,6 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const pdfName = [delivMMDDYY, shortNm, poNumber ? `PO#${poNumber}` : ''].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]/g, '') + '.pdf';
 
   const printTitle0 = pdfName.replace(/\.pdf$/, '');
-  const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
-    (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
-    '<div id="pages"></div>' +
-    '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
-    '<script>' + script + '<\/script>' +
-    (savePdf ? '<script>' + pdfScript + '<\/script>' : '') + '</body></html>';
-
-  // Inline mode: return the HTML so it can be shown in an iframe next to the
-  // order ticket (no pop-up window).
-  if (opts.inline) return fullHtml;
-
-  const win = window.open('', '_blank', 'width=880,height=1000');
-  if (!win) return;
   const style =
     '* { box-sizing: border-box; }' +
     'html, body { margin: 0; padding: 0; }' +
@@ -907,7 +894,19 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       'setTimeout(go,500);})();'
     : '';
 
-  const printTitle = pdfName.replace(/\.pdf$/, '');
+  const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
+    (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
+    '<div id="pages"></div>' +
+    '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
+    '<script>' + script + '<\/script>' +
+    (savePdf ? '<script>' + pdfScript + '<\/script>' : '') + '</body></html>';
+
+  // Inline mode: return the HTML so it can be shown in an iframe next to the
+  // order ticket (no pop-up window).
+  if (opts.inline) return fullHtml;
+
+  const win = window.open('', '_blank', 'width=880,height=1000');
+  if (!win) return;
   win.document.write(fullHtml);
   win.document.close();
   win.focus();
