@@ -2405,7 +2405,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     ? { ...styles.sheetOverlay, alignItems: 'center', justifyContent: 'center', position: 'fixed' }
     : styles.sheetOverlay;
   const sheetStyle = desktop
-    ? { ...styles.sheet, width: 460, maxWidth: '92vw', maxHeight: '88vh', borderRadius: 16, padding: '18px 22px 22px' }
+    ? { ...styles.sheet, width: 560, maxWidth: '92vw', maxHeight: '88vh', borderRadius: 16, padding: '18px 22px 22px' }
     : styles.sheet;
   // On desktop, lay item rows out in multiple columns so far more fit on
   // screen at once. The card width follows the grid-size toggle (same control
@@ -2876,7 +2876,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
               })}
             </div>
             <div style={styles.sheetTotal}>
-              <span>Total units</span>
+              <span>Total cases</span>
               <span style={styles.sheetTotalNum}>{totalUnits}</span>
             </div>
             {orderLines.some(l => l.price > 0) && (
