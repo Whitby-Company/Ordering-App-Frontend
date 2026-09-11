@@ -1643,14 +1643,6 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
             );
           })}
         </tbody>
-        <tfoot><tr>
-          <td style={qeStyles.tfoot}>Totals</td>
-          <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalCases}</td>
-          {showEach && <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalEach}</td>}
-          <td style={qeStyles.tfoot} colSpan={3} />
-          <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{formatMoney(totalAmt)}</td>
-          <td style={qeStyles.tfoot} />
-        </tr></tfoot>
       </table>
     </div>
   );
