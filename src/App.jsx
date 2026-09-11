@@ -774,6 +774,18 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const shortNm = (c.shortName || c.name || '').trim();
   const pdfName = [delivMMDDYY, shortNm, poNumber ? `PO#${poNumber}` : ''].filter(Boolean).join(' ').replace(/[\\/:*?"<>|]/g, '') + '.pdf';
 
+  const printTitle0 = pdfName.replace(/\.pdf$/, '');
+  const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
+    (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
+    '<div id="pages"></div>' +
+    '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
+    '<script>' + script + '<\/script>' +
+    (savePdf ? '<script>' + pdfScript + '<\/script>' : '') + '</body></html>';
+
+  // Inline mode: return the HTML so it can be shown in an iframe next to the
+  // order ticket (no pop-up window).
+  if (opts.inline) return fullHtml;
+
   const win = window.open('', '_blank', 'width=880,height=1000');
   if (!win) return;
   const style =
@@ -896,12 +908,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     : '';
 
   const printTitle = pdfName.replace(/\.pdf$/, '');
-  win.document.write('<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle) + '</title>' + pdfLibs + '<style>' + style + '</style></head><body>' +
-    (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
-    '<div id="pages"></div>' +
-    '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
-    '<script>' + script + '<\/script>' +
-    (savePdf ? '<script>' + pdfScript + '<\/script>' : '') + '</body></html>');
+  win.document.write(fullHtml);
   win.document.close();
   win.focus();
 }
@@ -2273,8 +2280,9 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     }
   }
 
-  // Build a temporary order from the in-progress entry and open the printed
-  // invoice preview (desktop) — lets you see the invoice before submitting.
+  // Build a temporary order from the in-progress entry and show the printed
+  // invoice inline (desktop) next to the ticket — lets you see it before submitting.
+  const [previewHtml, setPreviewHtml] = useState(null);
   function previewInvoice() {
     const cust = findCust(customerId);
     if (!cust) { window.alert('Pick a customer first.'); return; }
@@ -2289,7 +2297,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       invoiceNumber: invEdited ? (invNumber || null) : null,
       lines: orderLines.map(l => ({ id: l.id, name: l.name, brand: l.brand, price: l.price, pack: l.pack, unit: l.unit, upc: l.upc, qty: l.qty, caseSize: l.caseSize })),
     };
-    printInvoice(tempOrder, cust, printSequence, items, { preview: true });
+    const html = printInvoice(tempOrder, cust, printSequence, items, { inline: true });
+    setPreviewHtml(html || null);
   }
 
   async function submitOrder(pending = false) {
@@ -2775,6 +2784,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
 
       {ticketOpen && (
         <div style={overlayStyle} onClick={() => !submitting && setTicketOpen(false)}>
+          {desktop && previewHtml && (
+            <div onClick={e => e.stopPropagation()} style={{ width: 'min(50vw, 760px)', height: '92vh', background: '#fff', borderRadius: 12, marginRight: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(20,24,31,0.4)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #E3E1D6' }}>
+                <span style={{ fontWeight: 700, fontSize: 13 }}>Invoice preview</span>
+                <button style={styles.iconBtn} onClick={() => setPreviewHtml(null)} title="Close preview">✕</button>
+              </div>
+              <iframe title="Invoice preview" srcDoc={previewHtml} style={{ flex: 1, border: 'none', width: '100%' }} />
+            </div>
+          )}
           <div style={sheetStyle} onClick={e => e.stopPropagation()}>
             {!desktop && <div style={styles.sheetHandle} />}
             <div style={styles.sheetHeader}>
