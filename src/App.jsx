@@ -5593,8 +5593,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {todaysView ? (
                 <>
                   <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand right now">On hand</th>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders = what's left to sell">After allocation</th>
                   <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Boxes allocated to future-delivery orders (not shipped yet)">Allocated</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders = what's left to sell">After allocation</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Stock incoming on open purchase orders (not yet received)">Incoming</th>
                 </>
               ) : (
                 <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
@@ -5707,11 +5708,13 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   <>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>
                       <span style={(item.onHand != null ? item.onHand : item.stock) <= 5 ? { color: '#B5493B' } : undefined} title="Physical stock on hand right now">{item.onHand != null ? item.onHand : item.stock}</span>
-                      {item.incoming > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2B5D50' }} title="Incoming from open purchase orders">+{item.incoming}</span>}
                     </td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: (item.available != null ? item.available : item.stock) < 0 ? '#B5493B' : '#14181F' }} title="Available to sell = on-hand minus future orders">{item.available != null ? item.available : item.stock}</td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.futureBoxes || 0) > 0 ? '#B5793B' : '#B9BDB2', fontWeight: (item.futureBoxes || 0) > 0 ? 700 : 400 }} title="Committed to future-delivery orders (not shipped yet)">
+                    <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.futureBoxes || 0) > 0 ? '#B5793B' : '#B9BDB2', fontWeight: (item.futureBoxes || 0) > 0 ? 700 : 400 }} title="Allocated to future-delivery orders (not shipped yet)">
                       {(item.futureBoxes || 0) > 0 ? `−${item.futureBoxes}` : '0'}
+                    </td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: (item.available != null ? item.available : item.stock) < 0 ? '#B5493B' : '#14181F' }} title="After allocation = on-hand minus allocated orders">{item.available != null ? item.available : item.stock}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.incoming || 0) > 0 ? '#2B5D50' : '#B9BDB2', fontWeight: (item.incoming || 0) > 0 ? 700 : 400 }} title="Incoming on open purchase orders (not yet received)">
+                      {(item.incoming || 0) > 0 ? `+${item.incoming}` : '0'}
                     </td>
                   </>
                 ) : (
@@ -5757,7 +5760,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               </tr>
               {isOpen && (() => {
                 const hist = orderHistoryFor(item.id, item.stock);
-                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (todaysView ? 2 : 0);
+                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (todaysView ? 3 : 0);
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
                   switch (f) {
