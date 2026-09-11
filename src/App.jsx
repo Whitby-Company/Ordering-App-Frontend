@@ -2801,8 +2801,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       {ticketOpen && (
         <div style={overlayStyle} onClick={() => !submitting && setTicketOpen(false)}>
           {desktop && previewHtml && (
-            <div onClick={e => e.stopPropagation()} style={{ width: 'min(50vw, 760px)', height: '92vh', background: '#fff', borderRadius: 12, marginRight: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(20,24,31,0.4)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #E3E1D6' }}>
+            <div onClick={e => e.stopPropagation()} style={{ height: '92vh', width: 'calc(92vh * 8.5 / 11)', maxWidth: '48vw', background: '#fff', borderRadius: 12, marginRight: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(20,24,31,0.4)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #E3E1D6', flexShrink: 0 }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>Invoice preview</span>
                 <button style={styles.iconBtn} onClick={() => setPreviewHtml(null)} title="Close preview">✕</button>
               </div>
