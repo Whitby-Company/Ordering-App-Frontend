@@ -8203,7 +8203,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (cs · bx)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Outstanding</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Short/dmg</th>
-            {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 140 }}>Receive now</th>}
+            {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 180 }}>Receive (enter cases)</th>}
           </tr></thead>
           <tbody>
             {po.lines.map(l => {
@@ -8228,18 +8228,19 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                       {out > 0 ? (
                         cs > 0 ? (
-                          // Enter in CASES (converts to boxes, capped at outstanding).
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
-                            <input style={{ ...poStyles.input, width: 56, textAlign: 'right' }} inputMode="numeric" placeholder="0"
+                          // Enter in CASES → auto-converts to inventory boxes.
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
+                            <input style={{ ...poStyles.input, width: 52, textAlign: 'right', fontWeight: 700 }} inputMode="numeric" placeholder="0"
                               value={recv[l.itemId] != null && recv[l.itemId] !== '' ? String((Number(recv[l.itemId]) / cs) % 1 === 0 ? Number(recv[l.itemId]) / cs : (Number(recv[l.itemId]) / cs).toFixed(2)) : ''}
                               onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); const boxes = Math.min(Math.round((Number(v) || 0) * cs), out); setRecv(prev => ({ ...prev, [l.itemId]: boxes })); }} />
-                            <span style={{ fontSize: 11, color: '#8A8F87' }}>cs{recv[l.itemId] > 0 ? ` = ${recv[l.itemId]} bx` : ''}</span>
+                            <span style={{ fontSize: 11.5, color: '#5B6058', whiteSpace: 'nowrap' }}>cases{recv[l.itemId] > 0 ? <span style={{ color: '#2B5D50', fontWeight: 700 }}> → {recv[l.itemId]} boxes</span> : <span style={{ color: '#B9BDB2' }}> (×{cs}/cs)</span>}</span>
                           </span>
                         ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
-                            <input style={{ ...poStyles.input, width: 60, textAlign: 'right' }} value={recv[l.itemId] || ''} inputMode="numeric" placeholder="0"
+                          // No inners: 1 case = 1 box, entered directly.
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end' }}>
+                            <input style={{ ...poStyles.input, width: 52, textAlign: 'right', fontWeight: 700 }} value={recv[l.itemId] || ''} inputMode="numeric" placeholder="0"
                               onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRecv(prev => ({ ...prev, [l.itemId]: Math.min(Number(v) || 0, out) })); }} />
-                            <span style={{ fontSize: 11, color: '#8A8F87' }}>bx</span>
+                            <span style={{ fontSize: 11.5, color: '#5B6058', whiteSpace: 'nowrap' }}>cases <span style={{ color: '#B9BDB2' }}>(no inners)</span></span>
                           </span>
                         )
                       ) : <span style={{ color: '#B9BDB2' }}>—</span>}
@@ -8260,7 +8261,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
           <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#F7F8F4' }} onClick={() => receive(false)} disabled={busy || Object.values(recv).every(v => !Number(v))}>Receive entered</button>
           <button style={officeStyles.smallBtn} onClick={() => receive(true)} disabled={busy}>Receive all ({outstanding})</button>
           <button style={{ ...officeStyles.smallBtn, color: '#B5493B', borderColor: '#E6C6B4' }} onClick={closeShort} disabled={busy} title="Mark the PO done and record the outstanding quantity as short/damaged">Close short ({outstanding})</button>
-          <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Received stock counts toward on-hand as of the received date.</span>
+          <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Enter how many <b>cases</b> arrived — items with inners auto-convert to boxes. Stock counts toward on-hand as of the received date.</span>
         </div>
       )}
     </div>
