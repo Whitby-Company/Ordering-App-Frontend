@@ -2273,6 +2273,25 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     }
   }
 
+  // Build a temporary order from the in-progress entry and open the printed
+  // invoice preview (desktop) — lets you see the invoice before submitting.
+  function previewInvoice() {
+    const cust = findCust(customerId);
+    if (!cust) { window.alert('Pick a customer first.'); return; }
+    const tempOrder = {
+      id: 0,
+      customer: cust.name,
+      customerId: cust.id,
+      deliveryDate,
+      submittedAt: new Date().toISOString(),
+      notes: notes || '',
+      poNumber: poEdited ? (poNumber || null) : null,
+      invoiceNumber: invEdited ? (invNumber || null) : null,
+      lines: orderLines.map(l => ({ id: l.id, name: l.name, brand: l.brand, price: l.price, pack: l.pack, unit: l.unit, upc: l.upc, qty: l.qty, caseSize: l.caseSize })),
+    };
+    printInvoice(tempOrder, cust, printSequence, items, { preview: true });
+  }
+
   async function submitOrder(pending = false) {
     if (!customerId || !deliveryDate || orderLines.length === 0) return;
     // First submit on this device asks who's submitting (a pending draft can
@@ -2873,6 +2892,16 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                   {submitting ? 'Submitting…' : 'Submit order'}
                 </button>
                 <div style={styles.ticketSecondaryRow}>
+                  {desktop && orderLines.length > 0 && (
+                    <button
+                      style={styles.pendingBtn}
+                      disabled={!customerId || submitting}
+                      onClick={previewInvoice}
+                      title="Preview the printed invoice for this order before submitting"
+                    >
+                      Preview invoice
+                    </button>
+                  )}
                   <button
                     style={{ ...styles.pendingBtn, ...((customerId && deliveryDate && !submitting) ? {} : styles.pendingBtnDisabled) }}
                     disabled={!customerId || !deliveryDate || submitting}
@@ -9401,7 +9430,7 @@ const officeStyles = {
   importBanner: { display: 'flex', alignItems: 'center', gap: 10, background: '#DCEEE8', color: '#1E4238', border: '1px solid #B7DBCF', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
-  body: { flex: 1, minHeight: 0, padding: '16px 24px 20px', background: '#F7F8F4', overflowY: 'auto' },
+  body: { flex: 1, minHeight: 0, padding: '16px 24px 20px', background: '#F7F8F4', overflow: 'auto' },
   bodyNoScroll: { flex: 1, minHeight: 0, padding: '12px 24px 16px', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
   orderFormWrap: { width: '100%', flex: 1, minHeight: 0, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
