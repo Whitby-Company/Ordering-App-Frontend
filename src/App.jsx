@@ -9401,7 +9401,7 @@ const officeStyles = {
   importBanner: { display: 'flex', alignItems: 'center', gap: 10, background: '#DCEEE8', color: '#1E4238', border: '1px solid #B7DBCF', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   importBannerError: { display: 'flex', alignItems: 'center', gap: 10, background: '#F7DEDA', color: '#7A2E22', border: '1px solid #EFBEB4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 },
   dismissBtn: { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 16, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: '0 4px' },
-  body: { flex: 1, minHeight: 0, padding: '20px 24px', background: '#F7F8F4', overflowY: 'auto' },
+  body: { flex: 1, minHeight: 0, padding: '0 24px 20px', background: '#F7F8F4', overflowY: 'auto' },
   bodyNoScroll: { flex: 1, minHeight: 0, padding: '12px 24px 16px', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
   orderFormWrap: { width: '100%', flex: 1, minHeight: 0, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
