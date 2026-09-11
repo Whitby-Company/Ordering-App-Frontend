@@ -1460,7 +1460,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
 
   // Only make the grid scroll once there are 5+ filled lines; below that it sits
   // at its natural height (no inner scrollbar).
-  const scrollWhenFull = orderLines.length >= 5
+  const scrollWhenFull = orderLines.length >= 3
     ? { flex: 1, minHeight: 0, overflowY: 'auto' }
     : { overflowY: 'visible' };
 
