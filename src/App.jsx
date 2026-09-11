@@ -7844,12 +7844,12 @@ function POUploadModal({ items, onClose, onCreated }) {
                   onClick={() => setCaseMode(true)}
                   style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: caseMode ? '#2B5D50' : '#fff', color: caseMode ? '#fff' : '#5B6058' }}
                   title="The PO quantities are in cases — convert to boxes using the case pack"
-                >Receiving cases</button>
+                >Cases</button>
                 <button
                   onClick={() => setCaseMode(false)}
                   style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: !caseMode ? '#2B5D50' : '#fff', color: !caseMode ? '#fff' : '#5B6058' }}
                   title="The PO quantities are already in boxes — no case-pack conversion"
-                >Receiving boxes</button>
+                >Inners</button>
               </div>
             </div>
             <div style={uplStyles.previewWrap}>
