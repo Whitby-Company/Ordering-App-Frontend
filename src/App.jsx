@@ -1465,11 +1465,11 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
       <table style={qeStyles.table}>
         <thead><tr>
           <th style={{ ...qeStyles.th, width: 130 }}>Item #</th>
-          <th style={qeStyles.th}>Description</th>
-          <th style={{ ...qeStyles.th, textAlign: 'center', width: 70 }}>Pack</th>
-          <th style={{ ...qeStyles.th, textAlign: 'center', width: 90 }}>Unit</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 80 }}>Qty</th>
           {showEach && <th style={{ ...qeStyles.th, textAlign: 'right', width: 70 }}>Each</th>}
+          <th style={{ ...qeStyles.th, textAlign: 'center', width: 90 }}>Unit</th>
+          <th style={qeStyles.th}>Description</th>
+          <th style={{ ...qeStyles.th, textAlign: 'center', width: 70 }}>Pack</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 90 }}>Price/ea</th>
           <th style={{ ...qeStyles.th, textAlign: 'right', width: 100 }}>Total</th>
           <th style={{ ...qeStyles.th, width: 34 }} />
@@ -1501,6 +1501,37 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   onDragStart={e => { setDragId(l.id); e.dataTransfer.effectAllowed = 'move'; }}
                   onDragEnd={() => { setDragId(null); setDragOverIdx(null); }}
                 ><span style={{ color: '#B9BDB2', marginRight: 4 }}>⋮⋮</span>{displayCode(l.id)}</td>
+                <td style={{ ...qeStyles.td, textAlign: 'right' }}>
+                  <input
+                    ref={el => { qtyRefs.current[l.id] = el; }}
+                    style={qeStyles.qtyInput}
+                    value={l.qty}
+                    inputMode="numeric"
+                    onFocus={e => e.target.select()}
+                    onChange={e => {
+                      const n = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
+                      onSetQty(l.id, n);
+                    }}
+                    onKeyDown={e => onQtyKey(e, l.id, i === orderLines.length - 1)}
+                  />
+                </td>
+                {showEach && <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{(Number(l.qty) || 0) * pack}</td>}
+                <td style={{ ...qeStyles.td, textAlign: 'center' }}>
+                  {l.caseSize ? (
+                    <div style={qeStyles.unitToggle}>
+                      <button
+                        style={{ ...qeStyles.unitBtn, ...((l.unit || 'box') === 'box' ? qeStyles.unitBtnOn : {}) }}
+                        tabIndex={-1}
+                        onClick={() => setUnit(l.id, 'box')}
+                      >Box</button>
+                      <button
+                        style={{ ...qeStyles.unitBtn, ...(l.unit === 'case' ? qeStyles.unitBtnOn : {}) }}
+                        tabIndex={-1}
+                        onClick={() => setUnit(l.id, 'case')}
+                      >Case</button>
+                    </div>
+                  ) : <span style={{ fontSize: 12, color: '#B9BDB2' }}>ea</span>}
+                </td>
                 <td style={qeStyles.td}>
                   {l.name}
                   {(Number(l.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{l.stock} in stock</span>}
@@ -1521,37 +1552,6 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     ? (fullPackLabel(l) || `${(Number(l.pack) || 1) * Number(l.caseSize)}`)
                     : (l.packLabel || (l.pack ? `${l.pack}` : ''))
                 }</td>
-                <td style={{ ...qeStyles.td, textAlign: 'center' }}>
-                  {l.caseSize ? (
-                    <div style={qeStyles.unitToggle}>
-                      <button
-                        style={{ ...qeStyles.unitBtn, ...((l.unit || 'box') === 'box' ? qeStyles.unitBtnOn : {}) }}
-                        tabIndex={-1}
-                        onClick={() => setUnit(l.id, 'box')}
-                      >Box</button>
-                      <button
-                        style={{ ...qeStyles.unitBtn, ...(l.unit === 'case' ? qeStyles.unitBtnOn : {}) }}
-                        tabIndex={-1}
-                        onClick={() => setUnit(l.id, 'case')}
-                      >Case</button>
-                    </div>
-                  ) : <span style={{ fontSize: 12, color: '#B9BDB2' }}>ea</span>}
-                </td>
-                <td style={{ ...qeStyles.td, textAlign: 'right' }}>
-                  <input
-                    ref={el => { qtyRefs.current[l.id] = el; }}
-                    style={qeStyles.qtyInput}
-                    value={l.qty}
-                    inputMode="numeric"
-                    onFocus={e => e.target.select()}
-                    onChange={e => {
-                      const n = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 0;
-                      onSetQty(l.id, n);
-                    }}
-                    onKeyDown={e => onQtyKey(e, l.id, i === orderLines.length - 1)}
-                  />
-                </td>
-                {showEach && <td style={{ ...qeStyles.td, textAlign: 'right', color: '#8A8F87' }}>{(Number(l.qty) || 0) * pack}</td>}
                 <td style={{ ...qeStyles.td, textAlign: 'right' }}>
                   <input
                     key={l.id + ':' + (l.price ?? '')}
@@ -1617,10 +1617,12 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   </div>
                 </td>
                 {/* live preview of the best-fitting item as you type */}
+                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? '—' : ''}</td>
+                {showEach && <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? (Number(preview.pack) || 1) : ''}</td>}
+                <td style={qeStyles.td} />
                 <td style={{ ...qeStyles.td, color: '#5B6058' }}>
                   {preview ? (
                     <span>
-                      <span style={{ color: '#8A8F87', fontWeight: 700, marginRight: 8 }}>{displayCode(preview.id)}</span>
                       {preview.name}
                       {(Number(preview.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{preview.stock} in stock</span>}
                       {(Number(preview.stock) || 0) <= 0 && <span style={qeStyles.oosTag}>out of stock</span>}
@@ -1630,8 +1632,6 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   ) : null}
                 </td>
                 <td style={qeStyles.td} />
-                <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? '—' : ''}</td>
-                {showEach && <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? (Number(preview.pack) || 1) : ''}</td>}
                 <td style={{ ...qeStyles.td, textAlign: 'right', color: '#B9BDB2' }}>{preview ? formatMoney(preview.price) : ''}</td>
                 <td style={qeStyles.td} colSpan={2} />
               </tr>
@@ -1639,10 +1639,10 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
           })}
         </tbody>
         <tfoot><tr>
-          <td style={qeStyles.tfoot} colSpan={3}>Totals</td>
+          <td style={qeStyles.tfoot}>Totals</td>
           <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalCases}</td>
           {showEach && <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{totalEach}</td>}
-          <td style={qeStyles.tfoot} />
+          <td style={qeStyles.tfoot} colSpan={3} />
           <td style={{ ...qeStyles.tfoot, textAlign: 'right' }}>{formatMoney(totalAmt)}</td>
           <td style={qeStyles.tfoot} />
         </tr></tfoot>
