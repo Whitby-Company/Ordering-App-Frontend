@@ -7740,7 +7740,7 @@ function POUploadModal({ items, onClose, onCreated }) {
       setRawText(text);
       const parsed = parseWhitbyPO(text);
       if (!parsed.rows.length) { setErr(`Could not find PO lines in "${file.name}". Use "Show extracted text" to check.`); setShowRaw(true); setRows([]); setStep('review'); setBusy(false); return; }
-      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc, parsed.supplier); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, pack: r.pack, item: m.item, score: m.score }; });
+      const matched = parsed.rows.map(r => { const m = matchItem(r.code, r.desc, r.upc, parsed.supplier); return { code: r.code, desc: r.desc, qty: r.qty, price: r.price, pack: r.pack, item: m.item, score: m.score, mode: (m.item && Number(m.item.caseSize) > 0) ? 'inners' : 'cases' }; });
       setRows(matched);
       setReference(parsed.reference || '');
       setPoNotes('');
@@ -7777,8 +7777,9 @@ function POUploadModal({ items, onClose, onCreated }) {
   // item's caseSize (boxes per case). Items without a caseSize receive as-is.
   const boxesFor = (r) => {
     if (!r.item) return r.qty;
-    if (!caseMode) return r.qty; // receiving boxes: quantity is already in boxes
-    // The user's edited pack wins; otherwise the item's case size.
+    // Per-line mode: 'cases' = qty is cases, goes in as-is (no-inner item);
+    // 'inners' = qty is cases × inners-per-case (the pack) → inners into inventory.
+    if (r.mode === 'cases') return r.qty;
     const eff = (r.packOverride !== undefined && r.packOverride !== '')
       ? Number(r.packOverride)
       : Number(r.item.caseSize);
@@ -7837,50 +7838,44 @@ function POUploadModal({ items, onClose, onCreated }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
               <div style={{ fontSize: 13, color: '#5B6058' }}>
-                <strong>{matchedCount}</strong> of {rows.length} lines matched. Fix any unmatched item below.
-              </div>
-              <div style={{ display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 8, overflow: 'hidden', fontSize: 12.5, fontWeight: 700 }}>
-                <button
-                  onClick={() => setCaseMode(false)}
-                  style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: !caseMode ? '#2B5D50' : '#fff', color: !caseMode ? '#fff' : '#5B6058' }}
-                  title="Item has no inners — the PO cases go into inventory as cases (1:1)"
-                >Cases</button>
-                <button
-                  onClick={() => setCaseMode(true)}
-                  style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: caseMode ? '#2B5D50' : '#fff', color: caseMode ? '#fff' : '#5B6058' }}
-                  title="Item has inners — the PO cases convert to inners (cases × inners-per-case)"
-                >Inners</button>
+                <strong>{matchedCount}</strong> of {rows.length} lines matched. Each line is set to <b>Cases</b> or <b>Inners</b> automatically from the item — change it per line if needed.
               </div>
             </div>
             <div style={uplStyles.previewWrap}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>{caseMode ? 'Qty (cs → inners)' : 'Qty (cases)'}</th><th style={uplStyles.th}>Matched item</th></tr></thead>
+                <thead><tr><th style={uplStyles.th}>From PO</th><th style={{ ...uplStyles.th, textAlign: 'right' }}>Receiving</th><th style={uplStyles.th}>Matched item</th></tr></thead>
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={i} style={!r.item ? { background: '#FBEEE7' } : (r.score < 0.9 ? { background: '#FDF3E3' } : undefined)}>
                       <td style={uplStyles.td}><div style={{ fontWeight: 600 }}>{r.desc}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>#{r.code}{r.pack ? ` · ${r.pack}` : ''}{r.price ? ` · $${r.price.toFixed(2)}/cs` : ''}</div></td>
                       <td style={{ ...uplStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {!r.item ? <span style={{ color: '#8A8F87' }}>{r.qty}</span>
-                          : !caseMode ? <span style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}><strong>{r.qty} cs</strong></span>
                           : (() => {
-                          // Real pack from the item's case size or a manual override.
-                          // If none, leave the field empty (flagged red) — no auto-fill.
+                          const isInners = r.mode === 'inners';
                           const hasOverride = r.packOverride !== undefined && r.packOverride !== '';
                           const hasRealPack = hasOverride ? Number(r.packOverride) > 0 : Number(r.item.caseSize) > 0;
                           const effPack = hasOverride ? Number(r.packOverride) : Number(r.item.caseSize);
                           const shownValue = hasOverride ? r.packOverride : (Number(r.item.caseSize) > 0 ? String(r.item.caseSize) : '');
+                          const setMode = m => setRows(prev => prev.map((x, j) => j === i ? { ...x, mode: m } : x));
                           return (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 11.5, color: hasRealPack ? '#2B5D50' : '#B5793B', fontWeight: 600 }}>
-                              <span>{r.qty} cs ×</span>
-                              <input
-                                type="text" inputMode="numeric"
-                                placeholder="?"
-                                value={shownValue}
-                                onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
-                                style={{ width: 36, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasRealPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasRealPack ? '#fff' : '#FBEEE7' }}
-                                title="Inners per case for THIS PO only — does not change the item."
-                              />
-                              <span>bx/cs {hasRealPack ? <>= <strong>{r.qty * Number(effPack)} inners</strong></> : null}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
+                              {/* per-line mode toggle */}
+                              <span style={{ display: 'inline-flex', border: '1px solid #D6D3C6', borderRadius: 6, overflow: 'hidden', fontSize: 10.5, fontWeight: 700 }}>
+                                <button onClick={() => setMode('cases')} style={{ padding: '2px 7px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: !isInners ? '#2B5D50' : '#fff', color: !isInners ? '#fff' : '#8A8F87' }}>Cases</button>
+                                <button onClick={() => setMode('inners')} style={{ padding: '2px 7px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: isInners ? '#2B5D50' : '#fff', color: isInners ? '#fff' : '#8A8F87' }}>Inners</button>
+                              </span>
+                              {isInners ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11.5, color: hasRealPack ? '#2B5D50' : '#B5793B', fontWeight: 600 }}>
+                                  {r.qty} cs ×
+                                  <input type="text" inputMode="numeric" placeholder="?" value={shownValue}
+                                    onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ''); setRows(prev => prev.map((x, j) => j === i ? { ...x, packOverride: v } : x)); }}
+                                    style={{ width: 34, fontSize: 11, textAlign: 'center', borderRadius: 4, padding: '1px 2px', border: hasRealPack ? '1px solid #C4DDD2' : '1px solid #E6C6B4', background: hasRealPack ? '#fff' : '#FBEEE7' }}
+                                    title="Inners per case for THIS PO only — does not change the item." />
+                                  bx/cs {hasRealPack ? <>= <strong>{r.qty * Number(effPack)}</strong></> : null}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: 11.5, color: '#2B5D50', fontWeight: 600 }}><strong>{r.qty} cs</strong></span>
+                              )}
                             </div>
                           );
                         })()}
@@ -7914,7 +7909,7 @@ function POUploadModal({ items, onClose, onCreated }) {
               <span style={{ display: 'flex', gap: 18 }}>
                 <span><strong>{rows.length}</strong> line{rows.length === 1 ? '' : 's'}</span>
                 <span><strong>{matchedCount}</strong> matched</span>
-                <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> {caseMode ? 'cases' : 'boxes'}</span>
+                <span><strong>{rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong> cases</span>
                 <span><strong>{rows.reduce((s, r) => s + boxesFor(r), 0)}</strong> boxes to receive</span>
               </span>
             </div>
