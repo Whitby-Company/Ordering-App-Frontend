@@ -6710,6 +6710,47 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
     finally { setBusy(false); }
   }
 
+  // Approve: update the app order's line quantities to match QuickBooks (QB is in
+  // eaches; convert back to the app line's unit via its pack). Only touches items
+  // whose eaches differ; leaves everything else as-is. Requires the matched QB
+  // invoice and the full order (from allOrders) so we have real item IDs.
+  const [savedQty, setSavedQty] = useState({}); // orderId -> true
+  async function applyQbQuantities(o, matchedQb, alignRows) {
+    const full = allOrders.find(x => String(x.id) === String(o.orderId));
+    if (!full) { setErr('Could not load that order to update.'); return; }
+    if (!matchedQb) { setErr('Pick a QB invoice first.'); return; }
+    // Map app item code -> QB eaches (only for rows that differ and exist in app).
+    const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/c$/, '');
+    const qbByCode = {};
+    for (const ln of (matchedQb.lines || [])) {
+      const s = String(ln.itemId || ''); const code = (s.includes(':') ? s.split(':').pop() : s);
+      if (code) qbByCode[norm(code)] = Number(ln.qty) || 0;
+    }
+    // Build the updated line set from the full order, adjusting qty where QB differs.
+    let changes = 0;
+    const lines = full.lines.map(l => {
+      const codeKey = norm(String(l.id).split(':').pop());
+      const pack = Number(l.pack) || 1;
+      const curEaches = (Number(l.qty) || 0) * pack;
+      if (codeKey in qbByCode && Math.abs(qbByCode[codeKey] - curEaches) >= 0.001) {
+        const newQty = Math.round((qbByCode[codeKey] / pack) * 1000) / 1000; // eaches -> unit qty
+        changes++;
+        return { itemId: l.id, qty: newQty, unit: l.unit, price: l.price };
+      }
+      return { itemId: l.id, qty: l.qty, unit: l.unit, price: l.price };
+    });
+    if (!changes) { setErr('Nothing to change — app already matches QB on quantities.'); return; }
+    if (!window.confirm(`Update ${changes} line(s) on order #${o.orderId} to match QuickBooks quantities? This changes the order and its stock.`)) return;
+    setBusy(true);
+    try {
+      await apiPatch(`/orders/${o.orderId}`, { customerId: full.customerId, deliveryDate: full.deliveryDate, lines });
+      setSavedQty(s => ({ ...s, [o.orderId]: true }));
+      await onRefresh();
+      await loadAppOrders();
+    } catch (e) { setErr('Could not update the order: ' + (e.message || e)); }
+    finally { setBusy(false); }
+  }
+
   const rows = useMemo(() => {
     if (!orders) return [];
     return orders.map(o => {
@@ -6947,7 +6988,19 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
                   </table>
                 </div>
                 {!matchedQb && <div style={{ fontSize: 12, color: '#B9BDB2', marginTop: 6 }}>Pick a QB invoice above to compare items.</div>}
-                <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>Quantities shown in eaches. Rows highlighted red differ. Use “Edit order” above to change quantities — you’ll return here after saving.</div>
+                {matchedQb && (() => {
+                  const anyDiff = alignRows.some(r => r.name && r.appEa != null && r.qbEa != null && r.appEa !== r.qbEa);
+                  if (!anyDiff) return null;
+                  return (
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      {savedQty[o.orderId]
+                        ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>✓ order updated to match QuickBooks</span>
+                        : <button style={{ ...officeStyles.smallBtn, background: '#8A5A2B', color: '#fff' }} disabled={busy} onClick={() => applyQbQuantities(o, matchedQb, alignRows)}>Approve → make app match QB quantities</button>}
+                      <span style={{ fontSize: 12, color: '#8A8F87' }}>Sets the differing lines (red) to the QB eaches. Review them above first.</span>
+                    </div>
+                  );
+                })()}
+                <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 10 }}>Quantities shown in eaches. Rows highlighted red differ. Use “Edit order” above to change quantities manually — you’ll return here after saving.</div>
               </div>
             );
           })()}
