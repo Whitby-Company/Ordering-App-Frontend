@@ -8189,9 +8189,9 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
               const inCs = (boxes) => cs > 0 ? ((boxes / cs) % 1 === 0 ? boxes / cs : (boxes / cs).toFixed(1)) : null;
               const boxCs = (boxes) => {
                 const c = inCs(boxes);
-                // Cases bold (primary), boxes grey (secondary).
-                if (c != null) return <><strong>{c} cs</strong><span style={{ color: '#8A8F87', fontSize: 11 }}> · {boxes} bx</span></>;
-                return <>{boxes} bx</>;
+                // Inner item: show "N cs · M inners". No-inner item: just "N cs".
+                if (c != null) return <><strong>{c} cs</strong><span style={{ color: '#8A8F87', fontSize: 11 }}> · {boxes} inner</span></>;
+                return <><strong>{boxes} cs</strong></>;
               };
               return (
                 <tr key={l.id}>
