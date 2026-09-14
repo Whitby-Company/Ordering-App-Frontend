@@ -1874,8 +1874,9 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   }, []);
   // Effective per-each price for an item at a given unit for the selected customer.
   const priceOf = React.useCallback((item, unit) => {
-    // Out-of-stock items are ordered as $0 (no stock to fulfill/charge for).
-    if ((Number(item.stock) || 0) <= 0) return 0;
+    // Orders can be placed for future delivery when an out-of-stock item will be
+    // back in stock, so we DON'T force $0 for out-of-stock items — use the real
+    // catalog/base price.
     const u = unit || unitOf(item);
     // The store's catalog price is per-each, so it applies to either unit.
     if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
