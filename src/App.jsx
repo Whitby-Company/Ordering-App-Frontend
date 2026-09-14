@@ -5159,7 +5159,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // Show the Today's-inventory columns (On hand / Allocated / After allocation /
   // Incoming) when the toggle is on OR when editing stock — so it's clear which
   // number you're changing (you edit On hand).
-  const showTodays = todaysView || (isItems && editMode && (editField === 'stock' || editField === 'all'));
+  const showTodays = todaysView || (isItems && editMode);
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
