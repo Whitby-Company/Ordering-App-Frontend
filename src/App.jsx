@@ -3639,6 +3639,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                     )}
                     <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) || null, printSequence, items, {})}>Invoice</button>
                   </div>
                 </div>
               )}
