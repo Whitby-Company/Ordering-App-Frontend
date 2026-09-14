@@ -5156,6 +5156,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [upcResult, setUpcResult] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editField, setEditField] = useState('all');
+  // Show the Today's-inventory columns (On hand / Allocated / After allocation /
+  // Incoming) when the toggle is on OR when editing stock — so it's clear which
+  // number you're changing (you edit On hand).
+  const showTodays = todaysView || (isItems && editMode && (editField === 'stock' || editField === 'all'));
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
@@ -5667,9 +5671,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <th style={officeStyles.th}></th>
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              {todaysView ? (
+              {showTodays ? (
                 <>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand right now">On hand</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand right now (edit this)">On hand</th>
                   <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Boxes allocated to future-delivery orders (not shipped yet)">Allocated</th>
                   <th style={{ ...officeStyles.th, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders = what's left to sell">After allocation</th>
                   <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Stock incoming on open purchase orders (not yet received)">Incoming</th>
@@ -5781,10 +5785,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                       {countSaved[item.id] && <span style={{ color: '#2B7A4B', fontSize: 13 }} title="Saved">✓</span>}
                     </span>
                   </td>
-                ) : todaysView ? (
+                ) : showTodays ? (
                   <>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>
-                      <span style={(item.onHand != null ? item.onHand : item.stock) <= 5 ? { color: '#B5493B' } : undefined} title="Physical stock on hand right now">{item.onHand != null ? item.onHand : item.stock}</span>
+                      {canEdit('stock') ? (
+                        <StockEditor item={item} pendingValue={pendingStock[item.id]} onPendingChange={v => setPending(item.id, v)} />
+                      ) : (
+                        <span style={(item.onHand != null ? item.onHand : item.stock) <= 5 ? { color: '#B5493B' } : undefined} title="Physical stock on hand right now">{item.onHand != null ? item.onHand : item.stock}</span>
+                      )}
                     </td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.futureBoxes || 0) > 0 ? '#B5793B' : '#B9BDB2', fontWeight: (item.futureBoxes || 0) > 0 ? 700 : 400 }} title="Allocated to future-delivery orders (not shipped yet)">
                       {(item.futureBoxes || 0) > 0 ? `−${item.futureBoxes}` : '0'}
@@ -5837,7 +5845,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               </tr>
               {isOpen && (() => {
                 const hist = orderHistoryFor(item.id, item.stock);
-                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (todaysView ? 3 : 0);
+                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (showTodays ? 3 : 0);
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
                   switch (f) {
