@@ -5003,9 +5003,9 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
-                          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <span style={{ position: 'relative', display: 'inline-block', verticalAlign: 'middle' }}>
                             <button style={officeStyles.smallBtn} onClick={async () => { handleInvoice(o, { savePdf: true }); try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); await onRefresh(); } catch {} }} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>
-                            {o.taiyoDroppedAt && <span style={{ fontSize: 9.5, color: '#2B5D50', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap' }} title="When the Taiyo PDF was last saved">Dropped: {formatDateTime(o.taiyoDroppedAt)}</span>}
+                            {o.taiyoDroppedAt && <span style={{ position: 'absolute', top: '100%', left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#2B5D50', fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} title="When the Taiyo PDF was last saved">Dropped: {formatDateTime(o.taiyoDroppedAt)}</span>}
                           </span>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
                             {iifBusyId === o.id ? '…' : 'TP'}
