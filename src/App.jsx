@@ -6919,6 +6919,25 @@ function ItemSalesReport({ onBack, orders = [], items = [] }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [ran, setRan] = useState(false);
+  const [saved, setSaved] = useState([]);
+  const [saveName, setSaveName] = useState('');
+
+  useEffect(() => { apiGet('/saved-reports?kind=item-sales').then(setSaved).catch(() => setSaved([])); }, []);
+  async function saveReport() {
+    const name = saveName.trim();
+    if (!name) { window.alert('Name this report first.'); return; }
+    if (!picked.length) { window.alert('Pick some items first.'); return; }
+    try {
+      await apiPost('/saved-reports', { name, kind: 'item-sales', config: { itemIds: picked } });
+      setSaveName('');
+      setSaved(await apiGet('/saved-reports?kind=item-sales'));
+    } catch (e) { window.alert('Could not save: ' + (e.message || e)); }
+  }
+  function loadReport(rep) { setPicked((rep.config && rep.config.itemIds) || []); }
+  async function deleteReport(id) {
+    if (!window.confirm('Delete this saved report?')) return;
+    try { await apiDelete(`/saved-reports/${id}`); setSaved(await apiGet('/saved-reports?kind=item-sales')); } catch {}
+  }
 
   const matches = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -6954,8 +6973,15 @@ function ItemSalesReport({ onBack, orders = [], items = [] }) {
         totCases += qty; totEaches += eaches; totAmount += amount;
       }
     }
-    rows.sort((a, b) => (a.delivery || '').localeCompare(b.delivery || '') || a.invoice - b.invoice);
-    return { rows, totCases, totEaches, totAmount };
+    rows.sort((a, b) => (a.item || '').localeCompare(b.item || '') || (a.delivery || '').localeCompare(b.delivery || ''));
+    // Group rows by item, each with its own subtotals.
+    const byItem = {};
+    for (const r of rows) {
+      const g = byItem[r.itemId] || (byItem[r.itemId] = { itemId: r.itemId, item: r.item, rows: [], cases: 0, eaches: 0, amount: 0 });
+      g.rows.push(r); g.cases += r.qty; g.eaches += r.eaches; g.amount += r.amount;
+    }
+    const groups = Object.values(byItem).sort((a, b) => a.item.localeCompare(b.item));
+    return { rows, groups, totCases, totEaches, totAmount };
   }, [picked, from, to, orders]);
 
   function exportCsv() {
@@ -7004,6 +7030,21 @@ function ItemSalesReport({ onBack, orders = [], items = [] }) {
         </div>
       </div>
 
+      {/* Saved reports — memorize a set of items to reuse */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14, padding: '10px 12px', background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#8A8F87' }}>SAVED:</span>
+        {saved.length === 0 && <span style={{ fontSize: 12.5, color: '#B9BDB2' }}>none yet</span>}
+        {saved.map(rep => (
+          <span key={rep.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 16, padding: '3px 4px 3px 10px', fontSize: 12.5 }}>
+            <button style={{ border: 'none', background: 'none', cursor: 'pointer', fontWeight: 600, color: '#2B5D50' }} onClick={() => loadReport(rep)} title={`Load ${(rep.config && rep.config.itemIds || []).length} items`}>{rep.name}</button>
+            <button style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#B5493B' }} onClick={() => deleteReport(rep.id)} title="Delete saved report">×</button>
+          </span>
+        ))}
+        <span style={{ flex: 1 }} />
+        <input style={{ ...fld, width: 160 }} placeholder="Name to save current…" value={saveName} onChange={e => setSaveName(e.target.value)} />
+        <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={saveReport}>Save these items</button>
+      </div>
+
       {result && result.rows.length > 0 && (
         <div style={{ display: 'flex', gap: 18, marginBottom: 10, flexWrap: 'wrap' }}>
           <div style={{ background: '#F2F4EF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 16px' }}><div style={{ fontSize: 20, fontWeight: 800 }}>{result.totCases}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>total cases/boxes</div></div>
@@ -7018,34 +7059,49 @@ function ItemSalesReport({ onBack, orders = [], items = [] }) {
       ) : result.rows.length === 0 ? (
         <div style={{ color: '#8A8F87', padding: 16 }}>No invoices for the selected items{(from || to) ? ' in this date range' : ''}.</div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-          <thead><tr>
-            <th style={repStyles.th}>Invoice</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Delivery</th>
-            <th style={repStyles.th}>Item</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Qty</th><th style={repStyles.th}>Unit</th>
-            <th style={{ ...repStyles.th, textAlign: 'right' }}>Eaches</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th>
-          </tr></thead>
-          <tbody>
-            {result.rows.map((r, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid #EFEDE3' }}>
-                <td style={repStyles.tdItem}>{r.invoice}</td>
-                <td style={repStyles.tdItem}>{r.customer}</td>
-                <td style={repStyles.tdItem}>{r.delivery}</td>
-                <td style={repStyles.tdItem}>{r.item}</td>
-                <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{r.qty}</td>
-                <td style={repStyles.tdItem}>{r.unit}</td>
-                <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{r.eaches}</td>
-                <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(r.amount)}</td>
-              </tr>
-            ))}
-            <tr style={{ borderTop: '2px solid #14181F', fontWeight: 700 }}>
-              <td style={repStyles.tdItem} colSpan={4}>TOTAL</td>
-              <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{result.totCases}</td>
-              <td style={repStyles.tdItem}></td>
-              <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{result.totEaches}</td>
-              <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(result.totAmount)}</td>
-            </tr>
-          </tbody>
-        </table>
+        <>
+          {result.groups.map(g => (
+            <div key={g.itemId} style={{ marginBottom: 18, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: '#F2F4EF', fontWeight: 700, fontSize: 13, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <span>{g.item}</span>
+                <span style={{ color: '#5B6058', fontWeight: 600 }}>{g.cases} cases · {g.eaches} eaches · <span style={{ color: '#2B5D50', fontWeight: 800 }}>{formatMoney(g.amount)}</span></span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>
+                  <th style={repStyles.th}>Invoice</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Delivery</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Qty</th><th style={repStyles.th}>Unit</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Eaches</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th>
+                </tr></thead>
+                <tbody>
+                  {g.rows.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                      <td style={repStyles.tdItem}>{r.invoice}</td>
+                      <td style={repStyles.tdItem}>{r.customer}</td>
+                      <td style={repStyles.tdItem}>{r.delivery}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{r.qty}</td>
+                      <td style={repStyles.tdItem}>{r.unit}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{r.eaches}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(r.amount)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 700, background: '#FBFAF6' }}>
+                    <td style={repStyles.tdItem} colSpan={3}>Subtotal — {g.item}</td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{g.cases}</td>
+                    <td style={repStyles.tdItem}></td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{g.eaches}</td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(g.amount)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ))}
+          <div style={{ borderTop: '2px solid #14181F', paddingTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 24, fontWeight: 800, fontSize: 14 }}>
+            <span>GRAND TOTAL:</span>
+            <span>{result.totCases} cases</span>
+            <span>{result.totEaches} eaches</span>
+            <span style={{ color: '#2B5D50' }}>{formatMoney(result.totAmount)}</span>
+          </div>
+        </>
       )}
     </div>
   );
