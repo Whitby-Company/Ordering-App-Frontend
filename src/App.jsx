@@ -5851,7 +5851,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                       onPendingChange={v => setPending(item.id, v)}
                     />
                   ) : (
-                    <span style={item.stock <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined}>{item.stock}</span>
+                    (() => { const oh = item.onHand != null ? item.onHand : item.stock;
+                      return <span style={oh <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined} title="On hand (physical stock now)">{oh}</span>;
+                    })()
                   )}
                   {item.incoming > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2B5D50' }} title="Incoming from open purchase orders">+{item.incoming}</span>}
                 </td>
