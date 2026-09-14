@@ -6786,6 +6786,7 @@ const REPORT_LIST = [
   { id: 'invoice-numbers', name: 'Invoice numbers', desc: 'Check invoice numbers for gaps or duplicates, and reconcile against a QuickBooks export.' },
   { id: 'invoice-matching', name: 'Match invoices to QuickBooks', desc: 'Upload a QuickBooks export and match each app order to its QB invoice, even when the numbers differ. Edit items/quantities as you go.' },
   { id: 'duplicate-orders', name: 'Find duplicate orders', desc: 'Find orders that look duplicated (same store, delivery date, and items) and remove the extra one.' },
+  { id: 'duplicate-invoices', name: 'Fix duplicate invoice numbers', desc: 'Find invoice numbers used by more than one order and choose which order keeps each number.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -6896,6 +6897,101 @@ function SalesByPersonReport({ onBack }) {
 // and you confirm or pick another, then set the app's invoice # to match QB.
 // Find and remove duplicate orders — orders with the same store, delivery date,
 // and item count are grouped; the newer one(s) can be deleted safely.
+// Fix duplicate INVOICE NUMBERS — a number on more than one order. Pick which
+// order keeps the number; the others are reassigned to the next free number.
+function DuplicateInvoicesReport({ onBack, orders = [], onRefresh = async () => {} }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState({});
+
+  const groups = useMemo(() => {
+    const byInv = {};
+    for (const o of orders) {
+      if (o.status === 'pending') continue;
+      if (o.invoiceNumber == null || o.invoiceNumber === '') continue;
+      (byInv[o.invoiceNumber] = byInv[o.invoiceNumber] || []).push(o);
+    }
+    return Object.entries(byInv)
+      .filter(([, list]) => list.length > 1)
+      .map(([inv, list]) => ({ inv: Number(inv), list: [...list].sort((a, b) => a.id - b.id) }))
+      .sort((a, b) => a.inv - b.inv);
+  }, [orders]);
+
+  const orderTotal = (o) => {
+    const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+    return Math.round(sub * 1.005 * 100) / 100;
+  };
+
+  // Reassign every order in the group EXCEPT keepId to a fresh unique number.
+  async function keepThis(inv, list, keepId) {
+    if (!window.confirm(`Keep invoice ${inv} on order #${keepId} and give the other order(s) new numbers?`)) return;
+    setBusy(true); setErr('');
+    try {
+      // Numbers currently in use (to avoid collisions when picking new ones).
+      const used = new Set(orders.filter(o => o.status !== 'pending' && o.invoiceNumber != null && o.invoiceNumber !== '').map(o => Number(o.invoiceNumber)));
+      let next = Math.max(26000, ...[...used]) + 1;
+      for (const o of list) {
+        if (o.id === keepId) continue;
+        while (used.has(next)) next++;
+        await apiPatch(`/orders/${o.id}/invoice-number`, { invoiceNumber: next });
+        used.add(next); next++;
+      }
+      setDone(d => ({ ...d, [inv]: true }));
+      await onRefresh();
+    } catch (e) { setErr('Could not reassign: ' + (e.message || e)); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Fix duplicate invoice numbers</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 740 }}>
+        These invoice numbers are used by more than one order. For each, click <b>Keep this #</b> on the order that should keep the number — the other order(s) get the next free number. Keep the one that matches QuickBooks; watch the <b>exported</b> flag.
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
+      {groups.length === 0 ? (
+        <div style={{ color: '#2B7A4B', padding: 16, fontWeight: 600 }}>✓ No duplicate invoice numbers.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{groups.length} duplicated invoice number{groups.length === 1 ? '' : 's'}</div>
+          {groups.map(({ inv, list }) => (
+            <div key={inv} style={{ border: '1px solid #E3E1D6', borderRadius: 8, marginBottom: 12, overflow: 'hidden', opacity: done[inv] ? 0.5 : 1 }}>
+              <div style={{ padding: '8px 12px', background: '#FBEEE7', fontWeight: 700, fontSize: 13, color: '#B5493B' }}>
+                Invoice {inv} — used by {list.length} orders {done[inv] ? '· fixed ✓' : ''}
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>
+                  <th style={repStyles.th}>Order #</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Delivery</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Items</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th>
+                  <th style={repStyles.th}>Exported</th><th style={repStyles.th}></th>
+                </tr></thead>
+                <tbody>
+                  {list.map(o => (
+                    <tr key={o.id} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                      <td style={repStyles.tdItem}>#{o.id}</td>
+                      <td style={repStyles.tdItem}>{o.customer}</td>
+                      <td style={repStyles.tdItem}>{o.deliveryDate}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{(o.lines || []).length}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(orderTotal(o))}</td>
+                      <td style={repStyles.tdItem}>{o.exported ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>yes</span> : <span style={{ color: '#B9BDB2' }}>no</span>}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                        {!done[inv] && <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} disabled={busy} onClick={() => keepThis(inv, list, o.id)}>Keep this #</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 function DuplicateOrdersReport({ onBack, orders = [], onRefresh = async () => {} }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -8492,6 +8588,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'invoice-numbers') return <InvoiceAuditReport onBack={() => setActive(null)} />;
   if (active === 'invoice-matching') return <InvoiceMatchReport onBack={() => setActive(null)} items={items} customers={customers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />;
   if (active === 'duplicate-orders') return <DuplicateOrdersReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
+  if (active === 'duplicate-invoices') return <DuplicateInvoicesReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
