@@ -1578,11 +1578,12 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                 }</td>
                 <td style={{ ...qeStyles.td, textAlign: 'right' }}>
                   <input
-                    key={l.id + ':' + (l.price ?? '')}
+                    key={l.id + ':price'}
                     type="text"
                     inputMode="decimal"
                     defaultValue={l.price != null ? String(l.price) : ''}
-                    onBlur={e => { const v = e.target.value.trim().replace(/[^0-9.]/g, ''); if (v !== '' && Number(v) !== Number(l.price)) setPriceOverrides(p => ({ ...p, [l.id]: v })); }}
+                    onChange={e => { const v = e.target.value.trim().replace(/[^0-9.]/g, ''); if (v !== '') setPriceOverrides(p => ({ ...p, [l.id]: v })); }}
+                    onBlur={e => { const v = e.target.value.trim().replace(/[^0-9.]/g, ''); if (v !== '') setPriceOverrides(p => ({ ...p, [l.id]: v })); }}
                     style={{ width: 64, textAlign: 'right', fontSize: 12, borderRadius: 4, padding: '2px 4px', border: '1px solid #D6D3C6', background: '#fff', color: '#14181F' }}
                     title="Price per each — edit to override"
                     tabIndex={-1}
