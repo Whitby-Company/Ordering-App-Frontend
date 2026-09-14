@@ -5284,14 +5284,25 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         processed: o.processed,
       });
     }
-    rows.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-    // Running stock (BOXES) after each order. Current stock = after all submitted
-    // orders consumed. Walk newest→oldest: newest left us at current stock; each
-    // older order had that much + the boxes it consumed.
+    // Sort by DELIVERY date (newest first) so "Stock after" reads as a running
+    // balance in the order stock actually leaves the warehouse — not by when the
+    // order was entered. Ties broken by order id.
+    rows.sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.orderId - a.orderId));
+    // Running stock (BOXES) after each order, walked by delivery date. Current
+    // stock reflects all orders delivered up to today; future-dated orders
+    // haven't shipped yet, so they don't reduce the current on-hand — but this
+    // history view shows the full running balance including future deliveries.
     let after = Number(currentStock) || 0;
+    // First, add back future-delivery orders (not yet shipped) so the top of the
+    // list (furthest-out delivery) starts from the right pre-shipment balance.
+    const today = todayISODate();
+    for (const r of rows) {
+      if (r.status === 'pending') continue;
+      if ((r.deliveryDate || '') > today) after += r.boxesConsumed; // not shipped yet
+    }
     for (const r of rows) {
       if (r.status === 'pending') { r.stockAfter = null; continue; } // pending hasn't consumed
-      r.stockAfter = after;              // stock right after this order
+      r.stockAfter = after;              // stock right after this order (by delivery)
       after = after + r.boxesConsumed;   // before it = after it + boxes consumed
     }
     const submitted = rows.filter(r => r.status !== 'pending');
