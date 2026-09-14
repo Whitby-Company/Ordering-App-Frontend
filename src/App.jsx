@@ -4749,7 +4749,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
         case 'customer': return o.customer.toLowerCase();
         case 'deliveryDate': return o.deliveryDate || '';
         case 'status': return o.status === 'pending' ? 0 : (o.processed ? 2 : 1);
-        case 'items': return o.lines.length;
+        case 'po': return (o.poNumber || '').toLowerCase();
         case 'units': return o.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
         case 'total': return o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
         case 'submittedBy': return (o.submittedBy || '').toLowerCase();
@@ -4843,7 +4843,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
               <SortableTh field="invoiceNumber" label="Invoice #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="deliveryDate" label="Delivery date" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="status" label="Status" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              <SortableTh field="items" label="Items" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="po" label="PO #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="units" label="Units" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="total" label="Order total" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
               <th style={officeStyles.th}></th>
@@ -4889,7 +4889,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                         {o.editedAt ? <span style={statusBadge('#B5793B', '#FDF3E3', '#EAD3A8')} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {new Date(o.editedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> : null}
                       </div>
                     </td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.lines.length}</td>
+                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
