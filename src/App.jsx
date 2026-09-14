@@ -2236,6 +2236,26 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order.length, allCases]);
 
+  // Select a customer for a NEW order. If that store already has a PENDING
+  // order, notify and offer to continue from it (loads its lines into the form).
+  function pickCustomer(cid) {
+    if (!isEdit && cid != null) {
+      const pending = (orders || []).find(o => o.customerId === cid && o.status === 'pending');
+      if (pending) {
+        const cust = findCust(cid);
+        const when = pending.submittedAt ? new Date(pending.submittedAt).toLocaleDateString() : '';
+        if (window.confirm(`${cust ? cust.name : 'This store'} already has a pending order${when ? ` from ${when}` : ''} with ${pending.lines.length} item(s).\n\nContinue from that pending order? (Cancel to start a fresh order.)`)) {
+          setCustomerId(cid);
+          if (pending.deliveryDate) setDeliveryDate(pending.deliveryDate);
+          if (pending.notes) setNotes(pending.notes);
+          setOrder((pending.lines || []).map(l => ({ id: l.item_id, qty: l.qty, unit: l.unit || undefined, checkin: l.qty === 0 })));
+          return;
+        }
+      }
+    }
+    setCustomerId(cid);
+  }
+
   function resetForm() {
     setOrder([]);
     setNotes('');
@@ -2461,7 +2481,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                         if (comboText.trim() && matches.length > 0) {
                           e.preventDefault();
                           const pick = matches[Math.min(comboHi, matches.length - 1)];
-                          setCustomerId(pick.id);
+                          pickCustomer(pick.id);
                           if (!isEdit && pick.deliveryDay != null) { /* leave date to user */ }
                           setComboOpen(false); setComboText('');
                           setTimeout(() => { if (dateInputRef.current) dateInputRef.current.focus(); }, 20);
@@ -2492,7 +2512,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                         ref={ci === Math.min(comboHi, comboMatches.length - 1) ? (el => { if (el) el.scrollIntoView({ block: 'nearest' }); }) : undefined}
                         style={{ ...styles.comboRow, ...(ci === Math.min(comboHi, comboMatches.length - 1) ? styles.comboRowHi : {}) }}
                         onMouseEnter={() => setComboHi(ci)}
-                        onMouseDown={e => { e.preventDefault(); setCustomerId(c.id); setComboOpen(false); setComboText(''); setTimeout(() => { if (dateInputRef.current) dateInputRef.current.focus(); }, 20); }}
+                        onMouseDown={e => { e.preventDefault(); pickCustomer(c.id); setComboOpen(false); setComboText(''); setTimeout(() => { if (dateInputRef.current) dateInputRef.current.focus(); }, 20); }}
                       >
                         {c.name}
                       </button>
@@ -4725,8 +4745,10 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = orders;
-    // The active queue shows only orders needing attention: pending + new.
+    // The active queue shows orders needing attention (pending + new). History
+    // ('all' scope) shows only submitted orders — pending drafts are hidden there.
     if (activeScope) list = list.filter(o => o.status === 'pending' || !o.processed);
+    else list = list.filter(o => o.status !== 'pending');
     if (showUnprocessedOnly) list = list.filter(o => !o.processed);
     if (q) {
       const qDigits = q.replace(/\D/g, '');
