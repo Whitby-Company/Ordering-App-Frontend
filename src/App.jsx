@@ -9095,10 +9095,93 @@ const omStyles = {
 };
 // items it carries with per-customer prices, add/remove items, and apply the
 // QuickBooks-derived catalogs in bulk.
+// Modal to add one or more items to MULTIPLE stores' catalogs at once.
+function BulkCatalogAddModal({ customers = [], items = [], onClose, onSaved }) {
+  const [itemQuery, setItemQuery] = useState('');
+  const [pickedItems, setPickedItems] = useState([]); // item ids
+  const [pickedCusts, setPickedCusts] = useState(new Set());
+  const [custQuery, setCustQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const itemMatches = useMemo(() => {
+    const q = itemQuery.trim().toLowerCase();
+    if (!q) return [];
+    return items.filter(i => i.active && (i.name.toLowerCase().includes(q) || String(i.id).toLowerCase().includes(q))).slice(0, 8);
+  }, [itemQuery, items]);
+  const custList = useMemo(() => {
+    const q = custQuery.trim().toLowerCase();
+    return customers.filter(c => c.active && (!q || c.name.toLowerCase().includes(q))).sort((a, b) => a.name.localeCompare(b.name));
+  }, [customers, custQuery]);
+
+  const toggleCust = id => setPickedCusts(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const addItem = it => { if (!pickedItems.includes(it.id)) setPickedItems(p => [...p, it.id]); setItemQuery(''); };
+  const nameOf = id => { const it = items.find(x => x.id === id); return it ? it.name : id; };
+
+  async function save() {
+    if (!pickedItems.length) { setErr('Pick at least one item.'); return; }
+    if (!pickedCusts.size) { setErr('Pick at least one store.'); return; }
+    setBusy(true); setErr('');
+    try {
+      const r = await apiPost('/customers/catalog/bulk-add', { itemIds: pickedItems, customerIds: [...pickedCusts] });
+      setMsg(`Added ${pickedItems.length} item(s) to ${r.customers} store catalog(s).`);
+      setTimeout(() => onSaved(), 900);
+    } catch (e) { setErr(e.message || 'Could not add.'); setBusy(false); }
+  }
+
+  const fld = { padding: '7px 9px', border: '1px solid #D6D3C6', borderRadius: 6, fontSize: 13, width: '100%', boxSizing: 'border-box' };
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: 20, width: 560, maxWidth: '92vw', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 12 }}>Add item(s) to multiple catalogs</div>
+        {err && <div style={{ color: '#B5493B', marginBottom: 10, fontSize: 13 }}>{err}</div>}
+        {msg && <div style={{ color: '#2B7A4B', marginBottom: 10, fontSize: 13, fontWeight: 600 }}>{msg}</div>}
+
+        <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87' }}>ITEMS TO ADD</label>
+        <div style={{ position: 'relative', marginTop: 4 }}>
+          <input style={fld} placeholder="Search item # or name…" value={itemQuery} onChange={e => setItemQuery(e.target.value)} />
+          {itemMatches.length > 0 && (
+            <div style={{ position: 'absolute', left: 0, right: 0, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.15)', zIndex: 5, maxHeight: 220, overflowY: 'auto' }}>
+              {itemMatches.map(it => <div key={it.id} style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13 }} onMouseDown={e => { e.preventDefault(); addItem(it); }}>{displayCode(it.id)} · {it.name}</div>)}
+            </div>
+          )}
+        </div>
+        {pickedItems.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {pickedItems.map(id => <span key={id} style={{ background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 16, padding: '3px 10px', fontSize: 12 }}>{nameOf(id)} <button style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#B5493B' }} onClick={() => setPickedItems(p => p.filter(x => x !== id))}>×</button></span>)}
+          </div>
+        )}
+
+        <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87', display: 'block', marginTop: 16 }}>STORES ({pickedCusts.size} selected)</label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '4px 0 6px' }}>
+          <input style={{ ...fld, flex: 1 }} placeholder="Filter stores…" value={custQuery} onChange={e => setCustQuery(e.target.value)} />
+          <button style={officeStyles.smallBtn} onClick={() => setPickedCusts(new Set(custList.map(c => c.id)))}>All shown</button>
+          <button style={officeStyles.smallBtn} onClick={() => setPickedCusts(new Set())}>Clear</button>
+        </div>
+        <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, maxHeight: 240, overflowY: 'auto' }}>
+          {custList.map(c => (
+            <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid #F0EEE6', cursor: 'pointer', fontSize: 13 }}>
+              <input type="checkbox" checked={pickedCusts.has(c.id)} onChange={() => toggleCust(c.id)} />
+              {c.name}
+            </label>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button style={officeStyles.smallBtn} onClick={onClose} disabled={busy}>Cancel</button>
+          <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={save} disabled={busy}>{busy ? 'Adding…' : `Add to ${pickedCusts.size} store(s)`}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OfficeCatalogs({ customers, items, onRefresh }) {
   const [selId, setSelId] = useState(null);
   const [custQuery, setCustQuery] = useState('');
   const [catalog, setCatalog] = useState(null); // { catalogOn, includeDefault, itemIds:Set, prices:Map }
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [itemQuery, setItemQuery] = useState('');
   const [brand, setBrand] = useState('All');
@@ -9172,11 +9255,13 @@ function OfficeCatalogs({ customers, items, onRefresh }) {
     <div>
       <div style={officeStyles.sectionHeader}>
         <div style={officeStyles.sectionTitle}>Store catalogs</div>
+        <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={() => setShowBulkAdd(true)} title="Add an item to several stores' catalogs at once">+ Add item to catalogs</button>
         <button style={officeStyles.smallBtn} onClick={handleApplyQB} disabled={applying} title="Rebuild every matched store's catalog & prices from the QuickBooks order-history export">
           {applying ? 'Applying…' : 'Apply QuickBooks catalogs'}
         </button>
         {applyMsg && <span style={{ fontSize: 12.5, color: '#5B6058' }}>{applyMsg}</span>}
       </div>
+      {showBulkAdd && <BulkCatalogAddModal customers={customers} items={items} onClose={() => setShowBulkAdd(false)} onSaved={async () => { setShowBulkAdd(false); if (selId) loadCatalog(selId); }} />}
       <div style={catStyles.wrap}>
         {/* Left: customer list */}
         <div style={catStyles.leftCol}>
