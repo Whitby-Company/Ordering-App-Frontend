@@ -5964,7 +5964,12 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                         : <span style={officeStyles.badgeUnprocessed}>New</span>}
                                   </td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                    <button style={officeStyles.historyLinkBtn} onClick={() => { const o = orderById(r.orderId); if (o) setViewingOrder(o); }}>View</button>
+                                    <button style={officeStyles.historyLinkBtn} onClick={() => {
+                                      const o = orderById(r.orderId);
+                                      if (!o) return;
+                                      const cust = customers.find(c => c.name === o.customer) || customers.find(c => c.id === o.customerId) || null;
+                                      printInvoice(o, cust, printSequence, items, {});
+                                    }}>Invoice</button>
                                     {' '}
                                     <button style={officeStyles.historyLinkBtn} onClick={() => { const o = orderById(r.orderId); if (o) setEditingOrder(o); }}>Edit</button>
                                   </td>
