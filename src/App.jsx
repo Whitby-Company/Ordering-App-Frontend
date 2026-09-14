@@ -684,13 +684,16 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     // placed for future delivery when the item will be back in stock, so a
     // line's real cases/eaches/price must print even if stock is 0 now.)
     const casesShown = cases;
+    // When qty is 0, everything shows 0 (out-of-stock / not ordered). Otherwise
+    // show real values.
+    const zeroQty = cases <= 0;
     // Eaches: box line = cases × pack. Case line = cases × boxes-per-case ×
     // box-pack (eaches per box). Box-pack comes from the item's base pack.
     const it0 = itemById[l.id] || {};
     const csForEach = Number(l.caseSize) > 0 ? Number(l.caseSize) : (Number(it0.caseSize) > 0 ? Number(it0.caseSize) : 1);
     const boxPack = Number(it0.pack) > 0 ? Number(it0.pack) : (isCase ? (Number(l.pack) || 1) / csForEach : (Number(l.pack) || 1));
-    const each = isCase ? Math.round(cases * csForEach * boxPack) : (cases * pack);
-    const priceShown = isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0);
+    const each = zeroQty ? 0 : (isCase ? Math.round(cases * csForEach * boxPack) : (cases * pack));
+    const priceShown = zeroQty ? 0 : (isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0));
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
     // Normal: scannable barcode. "No barcode" mode: the UPC digits as text.
     const upcText = parseUpcList(l.upc).map(esc).join('<br>');
@@ -2133,8 +2136,10 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       const unit = o.unit || unitOf(item);
       const pack = packFor(item, unit);
       // Price: a manual per-line override wins; otherwise the resolved price.
+      // BUT when qty is 0, the per-each price shows 0 too (and total is 0).
       const ov = priceOverrides[o.id];
-      const price = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit);
+      const basePrice = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit);
+      const price = (Number(o.qty) || 0) <= 0 ? 0 : basePrice;
       return { ...item, qty: o.qty, checkin: !!o.checkin, unit, pack, price, priceOverridden: ov !== undefined && ov !== '' };
     }).filter(Boolean);
   }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf, priceOverrides]);
