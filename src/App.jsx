@@ -6940,7 +6940,7 @@ function ItemSalesReport({ onBack, orders = [], items = [] }) {
       if (from && d < from) continue;
       if (to && d > to) continue;
       for (const l of (o.lines || [])) {
-        const iid = l.item_id || l.itemId;
+        const iid = l.id || l.item_id || l.itemId;
         if (!pickedSet.has(iid)) continue;
         const qty = Number(l.qty) || 0;
         const pack = Number(l.pack) || 1;
