@@ -4928,7 +4928,9 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
-                        {o.status === 'pending'
+                        {o.voided
+                          ? <span style={statusBadge('#B5493B', '#FBEEE7', '#E6C6B4')}>VOID</span>
+                          : o.status === 'pending'
                           ? <span style={statusBadge('#5B6058', '#E8E6DC', '#D2CFC0')}>Pending</span>
                           : o.processed
                             ? <span style={statusBadge('#2B5D50', '#E3EFE9', '#C4DDD2')}>Processed</span>
@@ -4970,7 +4972,18 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                             title={o.processed ? 'Mark as not yet processed' : 'Mark as entered into QuickBooks'}
                           >
                             {processingId === o.id ? '…' : (o.processed ? 'Unprocess' : 'Process')}
-                          </button>
+                          </button>{' '}
+                          {!o.voided && (
+                            <button
+                              style={{ ...officeStyles.smallBtn, color: '#B5493B', borderColor: '#E6C6B4' }}
+                              onClick={async () => {
+                                if (!window.confirm(`Void invoice ${invoiceNumberFor(o)} (${o.customer})? This keeps the invoice but forces its total to $0 and releases its stock. It can't easily be undone.`)) return;
+                                try { await apiPost(`/orders/${o.id}/void`, {}); await onRefresh(); }
+                                catch (e) { window.alert('Could not void: ' + (e.message || e)); }
+                              }}
+                              title="Void this invoice — keeps the record + number but zeros the total"
+                            >Void</button>
+                          )}
                         </>
                       )}
                       {!!(o.exported && o.exportedAt) && (
