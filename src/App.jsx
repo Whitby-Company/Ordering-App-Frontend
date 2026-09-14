@@ -2005,11 +2005,24 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const poValue = poEdited ? poNumber : autoPo;
   // Next invoice number = (highest existing order id + 1) + offset. In edit mode
   // it's the order's own number.
+  // Fetch the actual next invoice number from the server so the displayed INV#
+  // matches exactly what will be assigned on submit.
+  const [serverNextInv, setServerNextInv] = useState(null);
+  useEffect(() => {
+    if (isEdit) return;
+    let live = true;
+    apiGet('/orders/next-invoice').then(d => { if (live && d && d.nextInvoice != null) setServerNextInv(d.nextInvoice); }).catch(() => {});
+    return () => { live = false; };
+  }, [isEdit, orders]);
   const autoInv = useMemo(() => {
     if (isEdit) return invoiceNumberFor(editOrder);
-    const maxId = (orders && orders.length) ? Math.max(...orders.map(o => Number(o.id) || 0)) : 0;
-    return (maxId + 1) + (INVOICE_OFFSET || 0);
-  }, [orders, isEdit, editOrder]);
+    if (serverNextInv != null) return serverNextInv;
+    // Fallback until the server responds: highest known invoice + 1.
+    const maxInv = (orders && orders.length)
+      ? Math.max(...orders.filter(o => o.status !== 'pending').map(o => Number(invoiceNumberFor(o)) || 0))
+      : 0;
+    return Math.max(maxInv + 1, 26000);
+  }, [orders, isEdit, editOrder, serverNextInv]);
   const invValue = invEdited ? invNumber : String(autoInv);
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
