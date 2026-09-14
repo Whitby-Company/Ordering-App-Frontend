@@ -1931,6 +1931,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [nameDraft, setNameDraft] = useState('');
   // When set, submit the order automatically right after the name is saved.
   const submitAfterSignIn = useRef(false);
+  const submitLockRef = useRef(false); // synchronous double-submit guard
   const [gridSize, setGridSize] = useState(() => {
     let v; try { v = localStorage.getItem('orderGridSize'); } catch { v = null; }
     return GRID_SIZES.some(s => s.id === v) ? v : 'medium';
@@ -2344,6 +2345,10 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
 
   async function submitOrder(pending = false) {
     if (!customerId || !deliveryDate || orderLines.length === 0) return;
+    // Synchronous guard against double-submit: state updates are async, so a
+    // fast double-click can fire twice before `submitting` flips. This ref blocks
+    // re-entry immediately.
+    if (submitLockRef.current) return;
     // First submit on this device asks who's submitting (a pending draft can
     // be saved without a name).
     if (!pending && !submitterName) {
@@ -2352,6 +2357,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       setSignInOpen(true);
       return;
     }
+    submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError('');
     try {
@@ -2391,7 +2397,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     } catch (err) {
       setSubmitError(err.message || `Something went wrong ${pending ? 'saving' : 'submitting'} this order.`);
     } finally {
-      setSubmitting(false);
+      setSubmitting(false); submitLockRef.current = false;
     }
   }
 
