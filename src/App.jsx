@@ -684,7 +684,12 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     // placed for future delivery when the item will be back in stock, so a
     // line's real cases/eaches/price must print even if stock is 0 now.)
     const casesShown = cases;
-    const each = isCase ? '' : cases * pack;
+    // Eaches: box line = cases × pack. Case line = cases × boxes-per-case ×
+    // box-pack (eaches per box). Box-pack comes from the item's base pack.
+    const it0 = itemById[l.id] || {};
+    const csForEach = Number(l.caseSize) > 0 ? Number(l.caseSize) : (Number(it0.caseSize) > 0 ? Number(it0.caseSize) : 1);
+    const boxPack = Number(it0.pack) > 0 ? Number(it0.pack) : (isCase ? (Number(l.pack) || 1) / csForEach : (Number(l.pack) || 1));
+    const each = isCase ? Math.round(cases * csForEach * boxPack) : (cases * pack);
     const priceShown = isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0);
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
     // Normal: scannable barcode. "No barcode" mode: the UPC digits as text.
