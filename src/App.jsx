@@ -5290,25 +5290,28 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       });
     }
     // Sort by DELIVERY date (newest first) so "Stock after" reads as a running
-    // balance in the order stock actually leaves the warehouse — not by when the
-    // order was entered. Ties broken by order id.
+    // balance in the order stock actually leaves the warehouse.
     rows.sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.orderId - a.orderId));
-    // Running stock (BOXES) after each order, walked by delivery date. Current
-    // stock reflects all orders delivered up to today; future-dated orders
-    // haven't shipped yet, so they don't reduce the current on-hand — but this
-    // history view shows the full running balance including future deliveries.
-    let after = Number(currentStock) || 0;
-    // First, add back future-delivery orders (not yet shipped) so the top of the
-    // list (furthest-out delivery) starts from the right pre-shipment balance.
     const today = todayISODate();
+    // currentStock = on-hand now = after every PAST delivery (<= today) has
+    // shipped; future orders have NOT reduced it yet.
+    // Past orders (newest first): the most recent past delivery leaves on-hand at
+    // currentStock; each older order had that much + what it consumed.
+    let afterPast = Number(currentStock) || 0;
     for (const r of rows) {
-      if (r.status === 'pending') continue;
-      if ((r.deliveryDate || '') > today) after += r.boxesConsumed; // not shipped yet
+      if (r.status === 'pending') { r.stockAfter = null; continue; }
+      if ((r.deliveryDate || '') > today) continue; // handle future separately
+      r.stockAfter = afterPast;
+      afterPast = afterPast + r.boxesConsumed;
     }
-    for (const r of rows) {
-      if (r.status === 'pending') { r.stockAfter = null; continue; } // pending hasn't consumed
-      r.stockAfter = after;              // stock right after this order (by delivery)
-      after = after + r.boxesConsumed;   // before it = after it + boxes consumed
+    // Future orders (oldest-future first): each future delivery draws on-hand
+    // down from currentStock as it ships.
+    const futures = rows.filter(r => r.status !== 'pending' && (r.deliveryDate || '') > today)
+      .sort((a, b) => (a.deliveryDate || '').localeCompare(b.deliveryDate || '') || (a.orderId - b.orderId));
+    let futAfter = Number(currentStock) || 0;
+    for (const r of futures) {
+      futAfter = futAfter - r.boxesConsumed; // stock after this future order ships
+      r.stockAfter = futAfter;
     }
     const submitted = rows.filter(r => r.status !== 'pending');
     const consumedBoxes = submitted.reduce((s, r) => s + r.boxesConsumed, 0);
