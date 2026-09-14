@@ -2349,6 +2349,22 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     // fast double-click can fire twice before `submitting` flips. This ref blocks
     // re-entry immediately.
     if (submitLockRef.current) return;
+    // Warn about a likely DUPLICATE: an existing submitted order for the same
+    // store + same delivery date with the same item count. Catches re-entering an
+    // order that was already placed earlier (even hours apart). Not for edits.
+    if (!isEdit && !pending) {
+      const dup = (orders || []).find(o =>
+        o.status === 'submitted' && o.customerId === customerId &&
+        o.deliveryDate === deliveryDate && (o.lines ? o.lines.length : 0) === orderLines.length
+      );
+      if (dup) {
+        const cust = findCust(customerId);
+        const when = dup.submittedAt ? new Date(dup.submittedAt).toLocaleString() : '';
+        if (!window.confirm(`Heads up — ${cust ? cust.name : 'this store'} already has a submitted order for ${deliveryDate} with ${orderLines.length} item(s)${when ? `, placed ${when}` : ''} (invoice ${invoiceNumberFor(dup)}).\n\nThis may be a duplicate. Submit anyway?`)) {
+          return; // user cancelled — don't create a duplicate
+        }
+      }
+    }
     // First submit on this device asks who's submitting (a pending draft can
     // be saved without a name).
     if (!pending && !submitterName) {
