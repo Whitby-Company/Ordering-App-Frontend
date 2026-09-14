@@ -568,6 +568,7 @@ function printOrder(order, printSequence, options = {}) {
       tfoot td { font-weight: 700; border-top: 2px solid #14181F; border-bottom: none; padding-top: ${withUpc ? '3px' : '8px'}; }
       tfoot tr.subtotal td { border-top: 1px solid #E3E1D6; }
       .printBtn { display: inline-block; margin-bottom: 16px; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+      .closeBtn { display: inline-block; margin: 0 8px 16px 0; background: #EDEBE3; color: #14181F; border: 1px solid #D6D3C6; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
       .itemCell, .codeCell { white-space: nowrap; }
       /* Keep Item # and Cases narrow so they sit right next to each other,
          letting the Item (name) column absorb the leftover width. */
@@ -583,6 +584,7 @@ function printOrder(order, printSequence, options = {}) {
         .barcode svg { image-rendering: pixelated; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       }
     </style></head><body>
+    <button class="closeBtn no-print" onclick="window.close()">← Close</button>
     <button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>
     <h1>${poNumber ? `PO# ${poNumber}` : `Order #${order.id}`} — ${order.customer}</h1>
     <div class="meta">${poNumber ? `Order #${order.id} &nbsp;·&nbsp; ` : ''}Delivery ${formatDate(order.deliveryDate)} &nbsp;·&nbsp; Submitted ${formatDateTime(order.submittedAt)}${order.submittedBy ? ` &nbsp;·&nbsp; by ${String(order.submittedBy).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}` : ''}</div>
@@ -780,6 +782,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     'html, body { margin: 0; padding: 0; }' +
     "body { font-family: 'Times New Roman', Times, serif; color: #000; font-size: 12px; background: #e9e9e9; }" +
     '.printBtn { position: fixed; top: 10px; left: 10px; z-index: 20; background: #2B5D50; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }' +
+    '.closeBtn { position: fixed; top: 10px; left: 170px; z-index: 20; background: #EDEBE3; color: #14181F; border: 1px solid #D6D3C6; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: Arial, sans-serif; }' +
     '.page { position: relative; width: 8.5in; height: 11in; padding: 0.35in 0.4in; background: #fff; margin: 12px auto; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.25); }' +
     'table.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }' +
     '.hdr-top { width: 100%; border-collapse: collapse; }' +
@@ -905,7 +908,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       'window.addEventListener("load",fit);window.addEventListener("resize",fit);setTimeout(fit,200);setTimeout(fit,600);setTimeout(fit,1200);})();<\/script>'
     : '';
   const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style>' + previewZoom + '</head><body>' +
-    (savePdf ? '' : '<button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
+    (savePdf ? '' : '<button class="closeBtn no-print" onclick="window.close()">← Close</button><button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
     '<div id="pages"></div>' +
     '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
     '<script>' + script + '<\/script>' +
