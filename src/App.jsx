@@ -6796,6 +6796,7 @@ const REPORT_LIST = [
   { id: 'duplicate-orders', name: 'Find duplicate orders', desc: 'Find orders that look duplicated (same store, delivery date, and items) and remove the extra one.' },
   { id: 'duplicate-invoices', name: 'Fix duplicate invoice numbers', desc: 'Find invoice numbers used by more than one order and choose which order keeps each number.' },
   { id: 'matching-totals', name: 'Invoices with matching totals', desc: 'Find invoices that share the same total — a quick way to spot potential duplicates.' },
+  { id: 'item-sales', name: 'Item sales by date range', desc: 'Pick items and a date range to list every invoice for those items with cases, totals, and a grand total.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -6910,6 +6911,146 @@ function SalesByPersonReport({ onBack }) {
 // order keeps the number; the others are reassigned to the next free number.
 // Invoices that share the same total (tax-inclusive) — a quick way to spot
 // potential duplicates or coincidental matches.
+// Pick items + a date range → list every invoice line for those items with
+// cases, eaches, and line totals, plus a grand total for the period.
+function ItemSalesReport({ onBack, orders = [], items = [] }) {
+  const [picked, setPicked] = useState([]); // item ids
+  const [q, setQ] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [ran, setRan] = useState(false);
+
+  const matches = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return [];
+    return items.filter(i => i.name.toLowerCase().includes(s) || String(i.id).toLowerCase().includes(s)).slice(0, 8);
+  }, [q, items]);
+  const nameOf = id => { const it = items.find(x => x.id === id); return it ? it.name : id; };
+  const packOf = id => { const it = items.find(x => x.id === id); return it ? it : {}; };
+
+  // Rows: one per (invoice line) for a picked item within the date range.
+  const result = useMemo(() => {
+    if (!picked.length) return null;
+    const pickedSet = new Set(picked);
+    const rows = [];
+    let totCases = 0, totEaches = 0, totAmount = 0;
+    for (const o of orders) {
+      if (o.status === 'pending' || o.voided) continue;
+      const d = o.deliveryDate || '';
+      if (from && d < from) continue;
+      if (to && d > to) continue;
+      for (const l of (o.lines || [])) {
+        const iid = l.item_id || l.itemId;
+        if (!pickedSet.has(iid)) continue;
+        const qty = Number(l.qty) || 0;
+        const pack = Number(l.pack) || 1;
+        const cs = Number(packOf(iid).caseSize) || 0;
+        const eaches = (l.unit === 'case') ? qty * pack * (cs || 1) : qty * pack;
+        const amount = (Number(l.price) || 0) * qty * pack;
+        rows.push({
+          invoice: invoiceNumberFor(o), orderId: o.id, customer: o.customer,
+          delivery: d, item: nameOf(iid), itemId: iid, qty, unit: l.unit || 'box', eaches, amount,
+        });
+        totCases += qty; totEaches += eaches; totAmount += amount;
+      }
+    }
+    rows.sort((a, b) => (a.delivery || '').localeCompare(b.delivery || '') || a.invoice - b.invoice);
+    return { rows, totCases, totEaches, totAmount };
+  }, [picked, from, to, orders]);
+
+  function exportCsv() {
+    if (!result) return;
+    const head = ['Invoice', 'Order', 'Customer', 'Delivery', 'Item', 'Qty', 'Unit', 'Eaches', 'Total'];
+    const lines = [head.join(',')];
+    for (const r of result.rows) lines.push([r.invoice, r.orderId, csvEscape(r.customer), r.delivery, csvEscape(r.item), r.qty, r.unit, r.eaches, r.amount.toFixed(2)].join(','));
+    lines.push(['', '', '', '', 'TOTAL', result.totCases, '', result.totEaches, result.totAmount.toFixed(2)].join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `item-sales_${from || 'start'}_${to || 'end'}.csv`; a.click();
+  }
+
+  const fld = { padding: '7px 9px', border: '1px solid #D6D3C6', borderRadius: 6, fontSize: 13 };
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Item sales by date range</div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start', marginBottom: 14 }}>
+        <div style={{ minWidth: 280 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87' }}>ITEMS</label>
+          <div style={{ position: 'relative', marginTop: 4 }}>
+            <input style={{ ...fld, width: 260 }} placeholder="Search item # or name…" value={q} onChange={e => setQ(e.target.value)} />
+            {matches.length > 0 && (
+              <div style={{ position: 'absolute', left: 0, right: 0, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.15)', zIndex: 5, maxHeight: 220, overflowY: 'auto' }}>
+                {matches.map(it => <div key={it.id} style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13 }} onMouseDown={e => { e.preventDefault(); if (!picked.includes(it.id)) setPicked(p => [...p, it.id]); setQ(''); }}>{displayCode(it.id)} · {it.name}</div>)}
+              </div>
+            )}
+          </div>
+          {picked.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {picked.map(id => <span key={id} style={{ background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 16, padding: '3px 10px', fontSize: 12 }}>{nameOf(id)} <button style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#B5493B' }} onClick={() => setPicked(p => p.filter(x => x !== id))}>×</button></span>)}
+            </div>
+          )}
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87', display: 'block' }}>DATE RANGE (delivery)</label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
+            <input type="date" style={fld} value={from} onChange={e => setFrom(e.target.value)} />
+            <span style={{ color: '#8A8F87' }}>to</span>
+            <input type="date" style={fld} value={to} onChange={e => setTo(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {result && result.rows.length > 0 && (
+        <div style={{ display: 'flex', gap: 18, marginBottom: 10, flexWrap: 'wrap' }}>
+          <div style={{ background: '#F2F4EF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 16px' }}><div style={{ fontSize: 20, fontWeight: 800 }}>{result.totCases}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>total cases/boxes</div></div>
+          <div style={{ background: '#F2F4EF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '10px 16px' }}><div style={{ fontSize: 20, fontWeight: 800 }}>{result.totEaches}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>total eaches</div></div>
+          <div style={{ background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 8, padding: '10px 16px' }}><div style={{ fontSize: 20, fontWeight: 800, color: '#2B5D50' }}>{formatMoney(result.totAmount)}</div><div style={{ fontSize: 11, color: '#8A8F87' }}>total sales</div></div>
+          <button style={{ ...officeStyles.smallBtn, alignSelf: 'center' }} onClick={exportCsv}>↓ Export CSV</button>
+        </div>
+      )}
+
+      {!picked.length ? (
+        <div style={{ color: '#8A8F87', padding: 16 }}>Pick one or more items to see their sales.</div>
+      ) : result.rows.length === 0 ? (
+        <div style={{ color: '#8A8F87', padding: 16 }}>No invoices for the selected items{(from || to) ? ' in this date range' : ''}.</div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead><tr>
+            <th style={repStyles.th}>Invoice</th><th style={repStyles.th}>Customer</th><th style={repStyles.th}>Delivery</th>
+            <th style={repStyles.th}>Item</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Qty</th><th style={repStyles.th}>Unit</th>
+            <th style={{ ...repStyles.th, textAlign: 'right' }}>Eaches</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th>
+          </tr></thead>
+          <tbody>
+            {result.rows.map((r, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                <td style={repStyles.tdItem}>{r.invoice}</td>
+                <td style={repStyles.tdItem}>{r.customer}</td>
+                <td style={repStyles.tdItem}>{r.delivery}</td>
+                <td style={repStyles.tdItem}>{r.item}</td>
+                <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{r.qty}</td>
+                <td style={repStyles.tdItem}>{r.unit}</td>
+                <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{r.eaches}</td>
+                <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(r.amount)}</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: '2px solid #14181F', fontWeight: 700 }}>
+              <td style={repStyles.tdItem} colSpan={4}>TOTAL</td>
+              <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{result.totCases}</td>
+              <td style={repStyles.tdItem}></td>
+              <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{result.totEaches}</td>
+              <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(result.totAmount)}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function MatchingTotalsReport({ onBack, orders = [] }) {
   const orderTotal = (o) => {
     const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
@@ -8668,6 +8809,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'duplicate-orders') return <DuplicateOrdersReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
   if (active === 'duplicate-invoices') return <DuplicateInvoicesReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
   if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
+  if (active === 'item-sales') return <ItemSalesReport onBack={() => setActive(null)} orders={orders} items={items} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
