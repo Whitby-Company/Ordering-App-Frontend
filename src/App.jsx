@@ -5189,6 +5189,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
+  const [receiptsById, setReceiptsById] = useState({}); // itemId -> [received PO lines] for the history ledger
+  useEffect(() => {
+    if (!openItemId || receiptsById[openItemId]) return;
+    apiGet(`/items/${encodeURIComponent(openItemId)}/stock-log`).then(d => {
+      const recs = (d.purchaseOrders || []).filter(p => Number(p.qtyReceived) > 0 && p.receivedDate);
+      setReceiptsById(prev => ({ ...prev, [openItemId]: recs }));
+    }).catch(() => setReceiptsById(prev => ({ ...prev, [openItemId]: [] })));
+  }, [openItemId]);
   const [histSort, setHistSort] = useState({ field: 'delivery', dir: 'desc' }); // sort for the expanded item's order history
   const [editingOrder, setEditingOrder] = useState(null); // order opened for editing from history
   const [viewingOrder, setViewingOrder] = useState(null); // order opened read-only from history
@@ -5269,7 +5277,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // Build the list of orders that include a given item, newest first, with the
   // quantity (cases + eaches) and status for each — used by the expandable
   // per-item order history on the Inventory page to help confirm stock.
-  function orderHistoryFor(itemId, currentStock = 0) {
+  function orderHistoryFor(itemId, currentStock = 0, receipts = []) {
     // The item's case size (boxes per case). Stock is in BOXES.
     const it = items.find(i => i.id === itemId);
     const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
@@ -5280,50 +5288,53 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       const qty = Number(line.qty) || 0;
       const unit = line.unit || 'box';
       const pack = Number(line.pack) || 1;
-      // Boxes consumed = exactly what the app subtracts from stock:
-      //   case line → qty × case_size ; box line → qty.
       const boxesConsumed = qty * (unit === 'case' ? caseSize : 1);
       rows.push({
-        orderId: o.id,
-        customer: o.customer,
-        deliveryDate: o.deliveryDate,
-        submittedAt: o.submittedAt,
-        qty,
-        unit,
-        eaches: qty * pack,   // informational only
-        boxesConsumed,
-        status: o.status,
-        processed: o.processed,
+        kind: 'order',
+        orderId: o.id, customer: o.customer, deliveryDate: o.deliveryDate,
+        submittedAt: o.submittedAt, qty, unit, eaches: qty * pack,
+        boxesConsumed, delta: -boxesConsumed, // stock change (negative = out)
+        date: o.deliveryDate, status: o.status, processed: o.processed,
       });
     }
-    // Sort by DELIVERY date (newest first) so "Stock after" reads as a running
-    // balance in the order stock actually leaves the warehouse.
-    rows.sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.orderId - a.orderId));
+    // PO receipts as POSITIVE entries on their received date (stock coming in).
+    for (const rc of (receipts || [])) {
+      const boxes = Number(rc.qtyReceived) || 0;
+      if (boxes <= 0 || !rc.receivedDate) continue;
+      rows.push({
+        kind: 'po',
+        poRef: rc.reference || rc.supplier || 'PO',
+        supplier: rc.supplier || '', deliveryDate: rc.receivedDate, date: rc.receivedDate,
+        qty: boxes, unit: 'box', boxesConsumed: -boxes, delta: boxes, // positive = in
+        status: 'submitted',
+      });
+    }
+    // Sort by date (newest first) so "Stock after" reads as a running balance.
+    rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || ((b.orderId || 0) - (a.orderId || 0)));
     const today = todayISODate();
-    // currentStock = on-hand now = after every PAST delivery (<= today) has
-    // shipped; future orders have NOT reduced it yet.
-    // Past orders (newest first): the most recent past delivery leaves on-hand at
-    // currentStock; each older order had that much + what it consumed.
+    // Split at today: entries dated <= today have already happened (affect current
+    // on-hand); entries dated > today are future (haven't happened yet).
+    // Past (newest first): the most recent past entry leaves on-hand at
+    // currentStock; each older entry = current − its delta (reverse the change).
     let afterPast = Number(currentStock) || 0;
     for (const r of rows) {
       if (r.status === 'pending') { r.stockAfter = null; continue; }
-      if ((r.deliveryDate || '') > today) continue; // handle future separately
+      if ((r.date || '') > today) continue;
       r.stockAfter = afterPast;
-      afterPast = afterPast + r.boxesConsumed;
+      afterPast = afterPast - r.delta; // before this entry = after − its change
     }
-    // Future orders (oldest-future first): each future delivery draws on-hand
-    // down from currentStock as it ships.
-    const futures = rows.filter(r => r.status !== 'pending' && (r.deliveryDate || '') > today)
-      .sort((a, b) => (a.deliveryDate || '').localeCompare(b.deliveryDate || '') || (a.orderId - b.orderId));
+    // Future (oldest-future first): each future entry moves on-hand from current.
+    const futures = rows.filter(r => r.status !== 'pending' && (r.date || '') > today)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.orderId || 0) - (b.orderId || 0)));
     let futAfter = Number(currentStock) || 0;
     for (const r of futures) {
-      futAfter = futAfter - r.boxesConsumed; // stock after this future order ships
+      futAfter = futAfter + r.delta; // stock after this future entry happens
       r.stockAfter = futAfter;
     }
-    const submitted = rows.filter(r => r.status !== 'pending');
-    const consumedBoxes = submitted.reduce((s, r) => s + r.boxesConsumed, 0);
-    const consumedEaches = submitted.reduce((s, r) => s + r.eaches, 0);
-    const pendingBoxes = rows.filter(r => r.status === 'pending').reduce((s, r) => s + r.boxesConsumed, 0);
+    const orderRows = rows.filter(r => r.kind === 'order' && r.status !== 'pending');
+    const consumedBoxes = orderRows.reduce((s, r) => s + r.boxesConsumed, 0);
+    const consumedEaches = orderRows.reduce((s, r) => s + (r.eaches || 0), 0);
+    const pendingBoxes = rows.filter(r => r.kind === 'order' && r.status === 'pending').reduce((s, r) => s + r.boxesConsumed, 0);
     return { rows, consumedBoxes, consumedEaches, pendingBoxes, caseSize };
   }
   // Active items only, for the edit modal's brand grid / item cards.
@@ -5886,7 +5897,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 )}
               </tr>
               {isOpen && (() => {
-                const hist = orderHistoryFor(item.id, item.stock);
+                const hist = orderHistoryFor(item.id, item.stock, receiptsById[item.id] || []);
                 const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (showTodays ? 3 : 0);
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
@@ -5947,7 +5958,19 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                               </tr>
                             </thead>
                             <tbody>
-                              {sortedRows.map(r => (
+                              {sortedRows.map((r, ri) => r.kind === 'po' ? (
+                                <tr key={'po'+ri} style={{ background: '#F0F7F3' }}>
+                                  <td style={officeStyles.itemHistoryTd}>{r.poRef}</td>
+                                  <td style={officeStyles.itemHistoryTd}>{formatDate(r.deliveryDate)}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, color: '#2B5D50', fontWeight: 600 }}>PO received{r.supplier ? ' · ' + r.supplier : ''}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.qty}</td>
+                                  <td style={officeStyles.itemHistoryTd}>box</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700, color: '#2B7A4B' }}>+{r.qty}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter != null ? r.stockAfter : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                                  <td style={officeStyles.itemHistoryTd}><span style={{ fontSize: 10, fontWeight: 700, color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 12, padding: '1px 7px' }}>Received</span></td>
+                                  <td style={officeStyles.itemHistoryTd}></td>
+                                </tr>
+                              ) : (
                                 <tr key={r.orderId}>
                                   <td style={officeStyles.itemHistoryTd}>#{r.orderId}</td>
                                   <td style={officeStyles.itemHistoryTd}>{formatDate(r.deliveryDate)}</td>
