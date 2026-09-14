@@ -6756,6 +6756,7 @@ const REPORT_LIST = [
   { id: 'stock-changes', name: 'Stock changes', desc: 'Full audit trail of inventory changes — who changed what, when, and by how much.' },
   { id: 'invoice-numbers', name: 'Invoice numbers', desc: 'Check invoice numbers for gaps or duplicates, and reconcile against a QuickBooks export.' },
   { id: 'invoice-matching', name: 'Match invoices to QuickBooks', desc: 'Upload a QuickBooks export and match each app order to its QB invoice, even when the numbers differ. Edit items/quantities as you go.' },
+  { id: 'duplicate-orders', name: 'Find duplicate orders', desc: 'Find orders that look duplicated (same store, delivery date, and items) and remove the extra one.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -6864,6 +6865,93 @@ function SalesByPersonReport({ onBack }) {
 // Match app orders to QuickBooks invoices (numbers often differ). Upload a QB
 // export; we suggest the best QB match per app order by customer + items + date,
 // and you confirm or pick another, then set the app's invoice # to match QB.
+// Find and remove duplicate orders — orders with the same store, delivery date,
+// and item count are grouped; the newer one(s) can be deleted safely.
+function DuplicateOrdersReport({ onBack, orders = [], onRefresh = async () => {} }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [deleted, setDeleted] = useState({});
+
+  const groups = useMemo(() => {
+    const byKey = {};
+    for (const o of orders) {
+      if (o.status === 'pending') continue; // only submitted orders
+      const key = o.customerId + '|' + o.deliveryDate + '|' + (o.lines ? o.lines.length : 0);
+      (byKey[key] = byKey[key] || []).push(o);
+    }
+    return Object.values(byKey)
+      .filter(list => list.length > 1)
+      .map(list => [...list].sort((a, b) => String(a.submittedAt || '').localeCompare(String(b.submittedAt || ''))))
+      .sort((a, b) => String(b[0].submittedAt || '').localeCompare(String(a[0].submittedAt || '')));
+  }, [orders]);
+
+  async function del(id) {
+    if (!window.confirm(`Delete order #${id}? This removes it permanently and returns its stock. (Keep the copy you want; delete the duplicate.)`)) return;
+    setBusy(true); setErr('');
+    try {
+      await apiDelete(`/orders/${id}`);
+      setDeleted(d => ({ ...d, [id]: true }));
+      await onRefresh();
+    } catch (e) { setErr('Could not delete order #' + id + ': ' + (e.message || e)); }
+    finally { setBusy(false); }
+  }
+
+  const orderTotal = (o) => {
+    const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+    return Math.round(sub * 1.005 * 100) / 100;
+  };
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Find duplicate orders</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
+        Orders grouped by the same <b>store + delivery date + item count</b> — likely duplicates. Review each group and delete the extra order(s). Keep the one that was exported to QuickBooks if only one was.
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
+      {groups.length === 0 ? (
+        <div style={{ color: '#2B7A4B', padding: 16, fontWeight: 600 }}>✓ No duplicate orders found.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{groups.length} possible duplicate group{groups.length === 1 ? '' : 's'}</div>
+          {groups.map((list, gi) => (
+            <div key={gi} style={{ border: '1px solid #E3E1D6', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: '#FBF3E4', fontWeight: 700, fontSize: 13 }}>
+                {list[0].customer} · delivery {list[0].deliveryDate} · {list[0].lines ? list[0].lines.length : 0} items
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>
+                  <th style={repStyles.th}>Order #</th><th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Submitted</th>
+                  <th style={repStyles.th}>By</th><th style={{ ...repStyles.th, textAlign: 'right' }}>Total</th>
+                  <th style={repStyles.th}>Exported</th><th style={repStyles.th}></th>
+                </tr></thead>
+                <tbody>
+                  {list.map((o, i) => (
+                    <tr key={o.id} style={{ borderBottom: '1px solid #EFEDE3', background: deleted[o.id] ? '#F3F4F0' : (i === 0 ? '#EAF3EE' : undefined) }}>
+                      <td style={repStyles.tdItem}>#{o.id}{i === 0 && <span style={{ fontSize: 10, color: '#2B7A4B', marginLeft: 5 }}>(earliest)</span>}</td>
+                      <td style={repStyles.tdItem}>{invoiceNumberFor(o)}</td>
+                      <td style={repStyles.tdItem}>{(o.submittedAt || '').slice(0, 16).replace('T', ' ')}</td>
+                      <td style={repStyles.tdItem}>{o.submittedBy || '—'}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(orderTotal(o))}</td>
+                      <td style={repStyles.tdItem}>{o.exported ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>yes</span> : <span style={{ color: '#B9BDB2' }}>no</span>}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                        {deleted[o.id] ? <span style={{ color: '#8A8F87' }}>deleted</span> :
+                          <button style={{ ...officeStyles.smallBtn, background: '#B5493B', color: '#fff' }} disabled={busy} onClick={() => del(o.id)}>Delete</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrders = [], printSequence = [], onRefresh = async () => {} }) {
   const [editingOrder, setEditingOrder] = useState(null);
   const [orders, setOrders] = useState(null);   // app orders (from reconcile-export)
@@ -8374,6 +8462,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'stock-changes') return <StockChangesReport onBack={() => setActive(null)} />;
   if (active === 'invoice-numbers') return <InvoiceAuditReport onBack={() => setActive(null)} />;
   if (active === 'invoice-matching') return <InvoiceMatchReport onBack={() => setActive(null)} items={items} customers={customers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />;
+  if (active === 'duplicate-orders') return <DuplicateOrdersReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
