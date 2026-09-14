@@ -624,13 +624,16 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const moneyD = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const ordered = sortLinesForPrint(order.lines, printSequence, opts.forcePrintOrder || getPrintInvOrder() || !!(c && c.usePrintOrder));
-  const positive = ordered.filter(l => (Number(l.qty) || 0) > 0);
+  // A line is "shown as out of stock" when it has no price (displays as 0/0/$0)
+  // OR zero quantity — both should sink to the bottom for most customers.
+  const isOosLine = l => (Number(l.qty) || 0) === 0 || (Number(l.price) || 0) === 0;
+  const positive = ordered.filter(l => !isOosLine(l));
   // Food Pantry and 7-Eleven keep every line in its exact input order (0-qty
-  // out-of-stock items stay in place). All other customers push 0-qty lines to
+  // out-of-stock items stay in place). All other customers push OOS lines to
   // the bottom.
   const custName = String(c.name || '').toLowerCase();
   const keepInputOrder = custName.includes('food pantry') || (custName.includes('seven') && custName.includes('eleven')) || custName.includes('7-eleven') || custName.includes('7 eleven');
-  const lines = keepInputOrder ? ordered : [...positive, ...ordered.filter(l => (Number(l.qty) || 0) === 0)];
+  const lines = keepInputOrder ? ordered : [...positive, ...ordered.filter(isOosLine)];
 
   const totalCases = positive.reduce((s, l) => s + (Number(l.qty) || 0), 0);
   // Total Each counts only box-unit lines; case lines don't break into eaches.
