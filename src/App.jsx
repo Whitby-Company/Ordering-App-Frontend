@@ -6787,6 +6787,7 @@ const REPORT_LIST = [
   { id: 'invoice-matching', name: 'Match invoices to QuickBooks', desc: 'Upload a QuickBooks export and match each app order to its QB invoice, even when the numbers differ. Edit items/quantities as you go.' },
   { id: 'duplicate-orders', name: 'Find duplicate orders', desc: 'Find orders that look duplicated (same store, delivery date, and items) and remove the extra one.' },
   { id: 'duplicate-invoices', name: 'Fix duplicate invoice numbers', desc: 'Find invoice numbers used by more than one order and choose which order keeps each number.' },
+  { id: 'matching-totals', name: 'Invoices with matching totals', desc: 'Find invoices that share the same total — a quick way to spot potential duplicates.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -6899,6 +6900,75 @@ function SalesByPersonReport({ onBack }) {
 // and item count are grouped; the newer one(s) can be deleted safely.
 // Fix duplicate INVOICE NUMBERS — a number on more than one order. Pick which
 // order keeps the number; the others are reassigned to the next free number.
+// Invoices that share the same total (tax-inclusive) — a quick way to spot
+// potential duplicates or coincidental matches.
+function MatchingTotalsReport({ onBack, orders = [] }) {
+  const orderTotal = (o) => {
+    const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+    return Math.round(sub * 1.005 * 100) / 100;
+  };
+  const groups = useMemo(() => {
+    const byTotal = {};
+    for (const o of orders) {
+      if (o.status === 'pending' || o.voided) continue;
+      const t = orderTotal(o);
+      if (t <= 0) continue; // skip $0 / voided
+      (byTotal[t] = byTotal[t] || []).push(o);
+    }
+    return Object.entries(byTotal)
+      .filter(([, list]) => list.length > 1)
+      .map(([total, list]) => ({ total: Number(total), list: [...list].sort((a, b) => (a.submittedAt || '').localeCompare(b.submittedAt || '')) }))
+      .sort((a, b) => b.list.length - a.list.length || b.total - a.total);
+  }, [orders]);
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Invoices with matching totals</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 740 }}>
+        Invoices grouped by the same total (incl. tax). Same total for the <b>same store</b> often means a duplicate; same total for <b>different stores</b> is usually just coincidence. Voided and $0 invoices are excluded.
+      </div>
+      {groups.length === 0 ? (
+        <div style={{ color: '#8A8F87', padding: 16 }}>No invoices share a total.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{groups.length} total{groups.length === 1 ? '' : 's'} shared by 2+ invoices</div>
+          {groups.map(({ total, list }) => {
+            const sameStore = new Set(list.map(o => o.customerId)).size === 1;
+            return (
+              <div key={total} style={{ border: '1px solid #E3E1D6', borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                <div style={{ padding: '8px 12px', background: sameStore ? '#FBEEE7' : '#F3F4F0', fontWeight: 700, fontSize: 13, color: sameStore ? '#B5493B' : '#14181F' }}>
+                  {formatMoney(total)} — {list.length} invoices {sameStore ? '· same store (likely duplicate)' : '· different stores'}
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead><tr>
+                    <th style={repStyles.th}>Invoice #</th><th style={repStyles.th}>Order #</th><th style={repStyles.th}>Customer</th>
+                    <th style={repStyles.th}>Delivery</th><th style={repStyles.th}>Submitted</th><th style={repStyles.th}>Exported</th>
+                  </tr></thead>
+                  <tbody>
+                    {list.map(o => (
+                      <tr key={o.id} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                        <td style={repStyles.tdItem}>{invoiceNumberFor(o)}</td>
+                        <td style={repStyles.tdItem}>#{o.id}</td>
+                        <td style={repStyles.tdItem}>{o.customer}</td>
+                        <td style={repStyles.tdItem}>{o.deliveryDate}</td>
+                        <td style={repStyles.tdItem}>{(o.submittedAt || '').slice(0, 16).replace('T', ' ')}</td>
+                        <td style={repStyles.tdItem}>{o.exported ? <span style={{ color: '#2B7A4B', fontWeight: 700 }}>yes</span> : <span style={{ color: '#B9BDB2' }}>no</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
 function DuplicateInvoicesReport({ onBack, orders = [], onRefresh = async () => {} }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -8589,6 +8659,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'invoice-matching') return <InvoiceMatchReport onBack={() => setActive(null)} items={items} customers={customers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />;
   if (active === 'duplicate-orders') return <DuplicateOrdersReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
   if (active === 'duplicate-invoices') return <DuplicateInvoicesReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
+  if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
