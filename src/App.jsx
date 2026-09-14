@@ -2376,17 +2376,33 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError('');
+    const doPost = (force) => apiPost('/orders', {
+      customerId,
+      deliveryDate,
+      notes: notes.trim() || undefined,
+      submittedBy: submitterName || undefined,
+      status: pending ? 'pending' : 'submitted',
+      lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit, price: l.price })),
+      poNumber: poEdited ? (poNumber || null) : null,
+      invoiceNumber: invEdited ? (invNumber || null) : null,
+      force,
+    });
     try {
-      const result = await apiPost('/orders', {
-        customerId,
-        deliveryDate,
-        notes: notes.trim() || undefined,
-        submittedBy: submitterName || undefined,
-        status: pending ? 'pending' : 'submitted',
-        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit, price: l.price })),
-        poNumber: poEdited ? (poNumber || null) : null,
-        invoiceNumber: invEdited ? (invNumber || null) : null,
-      });
+      let result;
+      try {
+        result = await doPost(false);
+      } catch (e) {
+        // Server rejected as a likely duplicate — confirm and force if intended.
+        if ((e.message || '').toLowerCase().includes('duplicate')) {
+          if (window.confirm('This looks like a duplicate of an order that already exists for this store and delivery date. Create it anyway?')) {
+            result = await doPost(true);
+          } else {
+            return; // user chose not to create the duplicate
+          }
+        } else {
+          throw e;
+        }
+      }
       if (pending) {
         // Pending drafts just go to the Orders list; no confirmation screen.
         resetForm();
