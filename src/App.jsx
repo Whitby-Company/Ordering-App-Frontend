@@ -624,9 +624,10 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const moneyD = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const ordered = sortLinesForPrint(order.lines, printSequence, opts.forcePrintOrder || getPrintInvOrder() || !!(c && c.usePrintOrder));
-  // A line is "shown as out of stock" when it has no price (displays as 0/0/$0)
-  // OR zero quantity — both should sink to the bottom for most customers.
-  const isOosLine = l => (Number(l.qty) || 0) === 0 || (Number(l.price) || 0) === 0;
+  // A line only sinks to the bottom / drops from totals when nothing is ordered
+  // (qty 0). Price 0 no longer means "out of stock" — future orders keep real
+  // prices even when current stock is 0.
+  const isOosLine = l => (Number(l.qty) || 0) === 0;
   const positive = ordered.filter(l => !isOosLine(l));
   // Food Pantry and 7-Eleven keep every line in its exact input order (0-qty
   // out-of-stock items stay in place). All other customers push OOS lines to
@@ -679,14 +680,11 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       const cs = Number(it.caseSize) || 1;
       pack = isCase ? ip * cs : ip;
     }
-    // Out-of-stock lines (price 0) show 0 eaches — the cases are ordered but no
-    // stock is being fulfilled/charged.
-    const isOos = (Number(l.price) || 0) === 0;
-    // Out-of-stock lines (price 0) show 0 cases and 0 eaches — nothing is being
-    // fulfilled/charged (the item is on the invoice but at zero).
-    const casesShown = isOos ? 0 : cases;
-    // For case lines: show the case price (per-each × pack) and leave EACH blank.
-    const each = isCase ? '' : (isOos ? 0 : cases * pack);
+    // Show exactly what's on the order line — no forcing to 0. (Orders are often
+    // placed for future delivery when the item will be back in stock, so a
+    // line's real cases/eaches/price must print even if stock is 0 now.)
+    const casesShown = cases;
+    const each = isCase ? '' : cases * pack;
     const priceShown = isCase ? (Number(l.price) || 0) * pack : (Number(l.price) || 0);
     const desc = esc(l.name) + (l.packLabel ? ' ' + esc(l.packLabel) : '');
     // Normal: scannable barcode. "No barcode" mode: the UPC digits as text.
