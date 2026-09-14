@@ -6797,6 +6797,7 @@ const REPORT_LIST = [
   { id: 'duplicate-invoices', name: 'Fix duplicate invoice numbers', desc: 'Find invoice numbers used by more than one order and choose which order keeps each number.' },
   { id: 'matching-totals', name: 'Invoices with matching totals', desc: 'Find invoices that share the same total — a quick way to spot potential duplicates.' },
   { id: 'item-sales', name: 'Item sales by date range', desc: 'Pick items and a date range to list every invoice for those items with cases, totals, and a grand total.' },
+  { id: 'taiyo', name: 'Taiyo owed (warehouse partner)', desc: 'Weekly report of Taiyo-owned items sold, with cases and amount owed at Taiyo pricing.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -6913,6 +6914,108 @@ function SalesByPersonReport({ onBack }) {
 // potential duplicates or coincidental matches.
 // Pick items + a date range → list every invoice line for those items with
 // cases, eaches, and line totals, plus a grand total for the period.
+// Taiyo owed report — Taiyo-owned items sold in a date range (by delivery date),
+// cases × Taiyo cost = amount owed. Defaults to the current Mon–Sun week.
+function TaiyoReport({ onBack }) {
+  function weekBounds() {
+    const now = new Date();
+    const day = (now.getDay() + 6) % 7; // 0 = Monday
+    const mon = new Date(now); mon.setDate(now.getDate() - day);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const iso = d => d.toISOString().slice(0, 10);
+    return { from: iso(mon), to: iso(sun) };
+  }
+  const wb = weekBounds();
+  const [from, setFrom] = useState(wb.from);
+  const [to, setTo] = useState(wb.to);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run() {
+    setBusy(true); setErr('');
+    try { setData(await apiGet(`/orders/taiyo-report?from=${from}&to=${to}`)); }
+    catch (e) { setErr(e.message || 'Could not run the report.'); }
+    finally { setBusy(false); }
+  }
+  useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
+
+  function exportCsv() {
+    if (!data) return;
+    const head = ['Brand', 'Item', 'Cases sold', 'Taiyo cost/case', 'Owed'];
+    const lines = [head.join(',')];
+    for (const it of data.items) lines.push([csvEscape(it.brand), csvEscape(it.name), it.cases, it.taiyoCost.toFixed(2), it.owed.toFixed(2)].join(','));
+    lines.push(['', 'GRAND TOTAL', data.grandCases, '', data.grandOwed.toFixed(2)].join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `taiyo-owed_${from}_${to}.csv`; a.click();
+  }
+
+  const fld = { padding: '7px 9px', border: '1px solid #D6D3C6', borderRadius: 6, fontSize: 13 };
+  // group items by brand for display
+  const byBrand = {};
+  if (data) for (const it of data.items) (byBrand[it.brand] = byBrand[it.brand] || []).push(it);
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Taiyo owed</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
+        Taiyo-owned items sold in the period (by delivery date). Amount owed = <b>cases sold × Taiyo cost per case</b>. Set an item's Taiyo cost in the Items tab (Edit → Taiyo cost) to include it here.
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87' }}>WEEK (delivery)</label>
+        <input type="date" style={fld} value={from} onChange={e => setFrom(e.target.value)} />
+        <span style={{ color: '#8A8F87' }}>to</span>
+        <input type="date" style={fld} value={to} onChange={e => setTo(e.target.value)} />
+        <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={run} disabled={busy}>{busy ? 'Running…' : 'Run'}</button>
+        <button style={officeStyles.smallBtn} onClick={() => { setFrom(wb.from); setTo(wb.to); }}>This week</button>
+        {data && <button style={officeStyles.smallBtn} onClick={exportCsv}>↓ Export CSV</button>}
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
+
+      {data && (
+        <>
+          <div style={{ background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 8, padding: '12px 18px', display: 'inline-block', marginBottom: 14 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, color: '#2B5D50' }}>{formatMoney(data.grandOwed)}</div>
+            <div style={{ fontSize: 12, color: '#5B6058' }}>owed to Taiyo · {data.grandCases} cases · {from} to {to}</div>
+          </div>
+          {Object.entries(byBrand).map(([brand, list]) => (
+            <div key={brand} style={{ marginBottom: 16, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: '#F2F4EF', fontWeight: 700, fontSize: 13 }}>{brand}</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr>
+                  <th style={repStyles.th}>Item</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Cases sold</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Taiyo cost/case</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Owed</th>
+                </tr></thead>
+                <tbody>
+                  {list.map(it => (
+                    <tr key={it.itemId} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                      <td style={repStyles.tdItem}>{it.name}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700 }}>{it.cases}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(it.taiyoCost)}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: '#2B5D50' }}>{formatMoney(it.owed)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          <div style={{ borderTop: '2px solid #14181F', paddingTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 24, fontWeight: 800, fontSize: 15 }}>
+            <span>GRAND TOTAL OWED:</span>
+            <span style={{ color: '#2B5D50' }}>{formatMoney(data.grandOwed)}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ItemSalesReport({ onBack, orders = [], items = [] }) {
   const [picked, setPicked] = useState([]); // item ids
   const [q, setQ] = useState('');
@@ -8866,6 +8969,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'duplicate-invoices') return <DuplicateInvoicesReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
   if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
   if (active === 'item-sales') return <ItemSalesReport onBack={() => setActive(null)} orders={orders} items={items} />;
+  if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
