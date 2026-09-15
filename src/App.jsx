@@ -1271,11 +1271,12 @@ function WarehousePage() {
                 <th style={S.th}>PO#</th>
                 <th style={{ ...S.th, textAlign: 'right' }}>Total</th>
                 <th style={S.th}></th>
+                <th style={S.th}>Notes</th>
               </tr>
             </thead>
             <tbody>
               {list.length === 0 && (
-                <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={6}>{tab === 'storage' ? 'Storage is empty.' : 'No invoices found.'}</td></tr>
+                <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={7}>{tab === 'storage' ? 'Storage is empty.' : 'No invoices found.'}</td></tr>
               )}
               {list.map(o => (
                 <tr key={o.id} style={S.row}>
@@ -1290,6 +1291,7 @@ function WarehousePage() {
                       ? <button style={S.moveBtn} onClick={() => setStored(o, false)} title="Move back to Current">↩ Current</button>
                       : <button style={S.moveBtn} onClick={() => setStored(o, true)} title="Move to Taiyo Storage">Store</button>}
                   </td>
+                  <td style={{ ...S.td, color: '#5B6058', maxWidth: 260, whiteSpace: 'normal' }}>{o.notes || ''}</td>
                 </tr>
               ))}
             </tbody>
