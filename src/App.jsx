@@ -5018,7 +5018,10 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                         </>
                       ) : (
                         <>
-                          <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>{' '}
+                          <span style={{ position: 'relative', display: 'inline-block', verticalAlign: 'middle' }}>
+                            <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>
+                            {o.editedAt && <span style={{ position: 'absolute', top: '100%', left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#B5793B', fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} title={`Edited ${formatDateTime(o.editedAt)}`}>Edited: {formatDateTime(o.editedAt)}</span>}
+                          </span>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           <span style={{ position: 'relative', display: 'inline-block', verticalAlign: 'middle' }}>
