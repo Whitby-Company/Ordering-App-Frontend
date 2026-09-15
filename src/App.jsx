@@ -1245,7 +1245,7 @@ function WarehousePage() {
 
 export default function App() {
   // Route to the standalone warehouse invoices page, or the main app.
-  const isWarehouse = typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '').toLowerCase().endsWith('/warehouse');
+  const isWarehouse = typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '').toLowerCase().endsWith('/taiyo');
   return isWarehouse ? <WarehousePage /> : <MainApp />;
 }
 
