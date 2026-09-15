@@ -748,8 +748,8 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '<tr class="boxrow"><td class="lbl">INVOICE #</td><td class="val">' + invoiceNumberFor(order) + '</td></tr>' +
     '<tr class="termsrow"><td class="lbl">TERMS:</td><td class="val">' + esc((c.terms && String(c.terms).trim()) || '1% 10 Net 11') + '</td></tr></table></td></tr></table>' +
     '<table class="addrs"><tr>' +
-    '<td><div class="addr-wrap"><div class="addr-vlbl">BILL TO</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></div></td>' +
-    '<td class="shipcol"><div class="addr-wrap"><div class="addr-vlbl">SHIP TO</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></div></td></tr></table>' +
+    '<td><div class="addr-wrap"><div class="addr-vlbl">SHIP TO</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></div></td>' +
+    '<td class="shipcol"><div class="addr-wrap"><div class="addr-vlbl">BILL TO</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></div></td></tr></table>' +
     '<div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">' + (esc(poNumber) || '&nbsp;') + '</td></tr></table></div>';
 
   const TOT =
@@ -905,6 +905,12 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       'next();}catch(e){fail("PDF error: "+e.message);}}' +
       'setTimeout(go,500);})();'
     : '';
+  // autoPrint: render the EXACT invoice (no html2canvas) and pop the browser's
+  // print / Save-as-PDF dialog automatically. Used by the Taiyo button so the
+  // saved file is an exact copy of the invoice.
+  const autoPrintScript = opts.autoPrint
+    ? '(function(){function go(){var p=document.querySelector(".page");if(!p){return setTimeout(go,150);}setTimeout(function(){window.print();},400);}window.addEventListener("load",go);setTimeout(go,300);})();'
+    : '';
 
   // For the inline preview, auto-scale the page so its WIDTH exactly fills the
   // preview window (doesn't affect the real print/pop-up). A tiny script runs on
@@ -917,11 +923,12 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       'window.addEventListener("load",fit);window.addEventListener("resize",fit);setTimeout(fit,200);setTimeout(fit,600);setTimeout(fit,1200);})();<\/script>'
     : '';
   const fullHtml = '<!doctype html><html><head><meta charset="utf-8" /><title>' + esc(printTitle0) + '</title>' + pdfLibs + '<style>' + style + '</style>' + previewZoom + '</head><body>' +
-    (savePdf ? '' : '<button class="closeBtn no-print" onclick="window.close()">← Close</button><button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
+    ((savePdf || opts.autoPrint) ? '' : '<button class="closeBtn no-print" onclick="window.close()">← Close</button><button class="printBtn no-print" onclick="window.print()">Print / Save as PDF</button>') +
     '<div id="pages"></div>' +
     '<template id="rowsrc"><table><tbody>' + rows + '</tbody></table></template>' +
     '<script>' + script + '<\/script>' +
-    (savePdf ? '<script>' + pdfScript + '<\/script>' : '') + '</body></html>';
+    (savePdf ? '<script>' + pdfScript + '<\/script>' : '') +
+    (opts.autoPrint ? '<script>' + autoPrintScript + '<\/script>' : '') + '</body></html>';
 
   // Inline mode: return the HTML so it can be shown in an iframe next to the
   // order ticket (no pop-up window).
@@ -5004,7 +5011,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           <span style={{ position: 'relative', display: 'inline-block', verticalAlign: 'middle' }}>
-                            <button style={officeStyles.smallBtn} onClick={async () => { handleInvoice(o, { savePdf: true }); try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); await onRefresh(); } catch {} }} title="Save the invoice as a PDF named by delivery date, short name, and PO# (for Dropbox)">Taiyo</button>
+                            <button style={officeStyles.smallBtn} onClick={async () => { handleInvoice(o, { autoPrint: true }); try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); await onRefresh(); } catch {} }} title="Open the invoice and prompt to save/print it as a PDF (for Dropbox)">Taiyo</button>
                             {o.taiyoDroppedAt && <span style={{ position: 'absolute', top: '100%', left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#2B5D50', fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} title="When the Taiyo PDF was last saved">Dropped: {formatDateTime(o.taiyoDroppedAt)}</span>}
                           </span>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
