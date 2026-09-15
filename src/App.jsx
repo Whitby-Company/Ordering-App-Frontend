@@ -808,9 +808,9 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '.addrs { width: 100%; margin: 18px 0 0; }' +
     '.addrs td { vertical-align: top; width: 50%; padding: 0; }' +
     '.addrs td.shipcol { padding-left: 48px; }' +
-    '.addr-wrap { display: flex; align-items: stretch; gap: 10px; flex-direction: row-reverse; }' +
-    '.addr-vlbl { writing-mode: vertical-rl; text-align: center; font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; letter-spacing: 1px; border: 1px solid #000; padding: 4px 2px; white-space: nowrap; }' +
-    '.addr-body { font-size: 15px; line-height: 1.4; padding-top: 1px; text-align: right; flex: 1; }' +
+    '.addr-wrap { display: flex; align-items: stretch; gap: 10px; }' +
+    '.addr-vlbl { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: bold; font-size: 12px; font-family: Arial, sans-serif; letter-spacing: 1px; border: 1px solid #000; padding: 4px 2px; white-space: nowrap; }' +
+    '.addr-body { font-size: 15px; line-height: 1.4; padding-top: 1px; }' +
     '.pobox { margin: 20px 0 6px; }' +
     '.pobox table { border-collapse: collapse; }' +
     '.pobox td.lbl { border: 1px solid #000; font-weight: bold; padding: 8px 18px; font-size: 15px; text-align: center; }' +
