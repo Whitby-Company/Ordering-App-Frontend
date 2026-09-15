@@ -4954,7 +4954,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
               <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="invoiceNumber" label="Invoice #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="deliveryDate" label="Delivery date" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              <SortableTh field="status" label="Status" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="po" label="PO #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="units" label="Units" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="total" label="Order total" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
@@ -5000,19 +4999,6 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
-                        {o.voided
-                          ? <span style={statusBadge('#B5493B', '#FBEEE7', '#E6C6B4')}>VOID</span>
-                          : o.status === 'pending'
-                          ? <span style={statusBadge('#5B6058', '#E8E6DC', '#D2CFC0')}>Pending</span>
-                          : o.processed
-                            ? <span style={statusBadge('#2B5D50', '#E3EFE9', '#C4DDD2')}>Processed</span>
-                            : <span style={statusBadge('#9A6B12', '#FBE7C2', '#F0D28F')}>New</span>}
-                        {o.exported ? <span style={statusBadge('#2B5D50', '#EAF1EE', '#C4DDD2')} title={o.exportedAt ? `Exported to QuickBooks ${formatDateTime(o.exportedAt)}` : 'Exported to QuickBooks'}>QB</span> : null}
-                        {o.editedAt ? <span style={statusBadge('#B5793B', '#FDF3E3', '#EAD3A8')} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {new Date(o.editedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> : null}
-                      </div>
-                    </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
@@ -5065,7 +5051,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                   {o.notes && !isOpen && (
                     <tr onClick={() => setOpenId(o.id)} style={{ cursor: 'pointer' }}>
                       <td colSpan={3} style={{ borderBottom: '1px solid #EFEDE3' }}></td>
-                      <td colSpan={8} style={{ padding: '0 8px 8px', borderBottom: '1px solid #EFEDE3' }}>
+                      <td colSpan={7} style={{ padding: '0 8px 8px', borderBottom: '1px solid #EFEDE3' }}>
                         <div style={{ fontSize: 12.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '6px 12px' }}>
                           <span style={{ fontWeight: 700 }}>📝</span> {o.notes}
                         </div>
@@ -5075,7 +5061,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                   )}
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={12}>
+                      <td style={officeStyles.detailCell} colSpan={11}>
                         {o.notes && (
                           <div style={officeStyles.orderNotes}>
                             <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
