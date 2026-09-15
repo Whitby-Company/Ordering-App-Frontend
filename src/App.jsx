@@ -4891,6 +4891,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
   const [notExportedOnly, setNotExportedOnly] = useState(false);
+  const [openHistMonths, setOpenHistMonths] = useState({}); // month key -> expanded (History scope)
   const [readyBusyId, setReadyBusyId] = useState(null);
 
   // Toggle the shared "ready for import" flag on an order (saved server-side so
@@ -5093,6 +5094,31 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
     });
   }, [orders, query, showUnprocessedOnly, notExportedOnly, sortField, sortDir, activeScope]);
 
+  // For the History scope (not the active queue): show orders from the past 30
+  // days loose, and 30+ day-old orders grouped into collapsible month folders.
+  // Produces a flat render list of { type:'order'|'month', ... }. Only applies
+  // when not filtering/searching and sorted by date (so folders make sense).
+  const displayRows = useMemo(() => {
+    const byMonth = !activeScope && !query && sortField === 'submittedAt';
+    if (!byMonth) return filtered.map(o => ({ type: 'order', o }));
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffISO = cutoff.toISOString().slice(0, 10);
+    const recent = [], olderByMonth = {};
+    for (const o of filtered) {
+      const d = (o.submittedAt || '').slice(0, 10);
+      if (d >= cutoffISO) recent.push(o);
+      else { const k = d.slice(0, 7); (olderByMonth[k] = olderByMonth[k] || []).push(o); }
+    }
+    const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const rows = recent.map(o => ({ type: 'order', o }));
+    for (const k of Object.keys(olderByMonth).sort().reverse()) {
+      const [y, m] = k.split('-');
+      rows.push({ type: 'month', key: k, label: `${names[Number(m) - 1] || m} ${y}`, count: olderByMonth[k].length });
+      if (openHistMonths[k]) for (const o of olderByMonth[k]) rows.push({ type: 'order', o });
+    }
+    return rows;
+  }, [filtered, activeScope, query, sortField, openHistMonths]);
+
   function orderTotal(o) {
     const sub = o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
     // Include 0.5% sales tax, matching the invoice grand total.
@@ -5190,7 +5216,17 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
             {filtered.length === 0 && (
               <tr><td style={officeStyles.emptyCell} colSpan={11}>No orders match "{query}"</td></tr>
             )}
-            {filtered.map(o => {
+            {displayRows.map(row => {
+              if (row.type === 'month') {
+                return (
+                  <tr key={'m-' + row.key} style={{ background: '#EDEBE3', cursor: 'pointer' }} onClick={() => setOpenHistMonths(m => ({ ...m, [row.key]: !m[row.key] }))}>
+                    <td style={{ ...officeStyles.td, fontWeight: 800 }} colSpan={11}>
+                      {openHistMonths[row.key] ? '▾' : '▸'} 📁 {row.label} ({row.count})
+                    </td>
+                  </tr>
+                );
+              }
+              const o = row.o;
               const isOpen = openId === o.id;
               const totalUnits = o.lines.reduce((s, l) => s + l.qty, 0);
               return (
