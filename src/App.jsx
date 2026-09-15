@@ -1202,17 +1202,22 @@ function WarehousePage() {
     printInvoice(o, cust, printSequence, items, {});
   }
 
+  const orderTotal = (o) => {
+    const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+    return Math.round(sub * 1.005 * 100) / 100;
+  };
+
   const S = {
     page: { minHeight: '100vh', width: '100vw', maxWidth: '100%', boxSizing: 'border-box', background: '#F2F4EF', fontFamily: "'Inter', system-ui, sans-serif", color: '#14181F' },
     header: { background: '#14181F', color: '#fff', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 },
     title: { fontSize: 20, fontWeight: 800, letterSpacing: '0.01em' },
     body: { maxWidth: '100%', margin: '0 auto', padding: '20px 24px 60px' },
     search: { width: '100%', boxSizing: 'border-box', padding: '14px 16px', fontSize: 16, border: '1px solid #D6D3C6', borderRadius: 10, marginBottom: 18, outline: 'none' },
-    card: { background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, padding: '16px 18px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' },
-    cust: { fontSize: 17, fontWeight: 800 },
-    meta: { fontSize: 13.5, color: '#5B6058', marginTop: 3 },
-    inv: { fontSize: 13, color: '#2B5D50', fontWeight: 700 },
-    viewBtn: { background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 22px', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+    table: { width: '100%', borderCollapse: 'collapse', background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, overflow: 'hidden' },
+    th: { textAlign: 'left', fontSize: 12, fontWeight: 800, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '12px 16px', borderBottom: '2px solid #E3E1D6', background: '#FBFAF6', whiteSpace: 'nowrap' },
+    td: { fontSize: 15, padding: '14px 16px', borderBottom: '1px solid #EFEDE3' },
+    row: { cursor: 'pointer' },
+    viewBtn: { background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   };
 
   return (
@@ -1220,24 +1225,44 @@ function WarehousePage() {
       <style>{fontImport}</style>
       <style>{'html,body,#root{margin:0;padding:0;width:100%;max-width:100%;}'}</style>
       <div style={S.header}>
-        <span style={S.title}>Warehouse — Invoices</span>
+        <span style={S.title}>Taiyo</span>
         <span style={{ fontSize: 13, color: '#C7CBC1' }}>{status === 'ready' ? `${list.length} invoice${list.length === 1 ? '' : 's'}` : ''}</span>
       </div>
       <div style={S.body}>
         <input style={S.search} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
         {status === 'loading' && <div style={{ color: '#8A8F87', padding: 20, textAlign: 'center' }}>Loading invoices…</div>}
         {status === 'error' && <div style={{ color: '#B5493B', padding: 20, textAlign: 'center' }}>Couldn't load invoices. Refresh to try again.</div>}
-        {status === 'ready' && list.length === 0 && <div style={{ color: '#8A8F87', padding: 20, textAlign: 'center' }}>No invoices found.</div>}
-        {status === 'ready' && list.map(o => (
-          <div key={o.id} style={S.card}>
-            <div>
-              <div style={S.cust}>{o.customer}</div>
-              <div style={S.meta}>Delivery {formatDate(o.deliveryDate)}{o.poNumber ? ` · PO ${o.poNumber}` : ''}</div>
-              <div style={S.inv}>Invoice {invoiceNumberFor(o)}</div>
-            </div>
-            <button style={S.viewBtn} onClick={() => openInvoice(o)}>View invoice</button>
-          </div>
-        ))}
+        {status === 'ready' && (
+          <table style={S.table}>
+            <thead>
+              <tr>
+                <th style={S.th}>Delivery Date</th>
+                <th style={S.th}>Customer</th>
+                <th style={S.th}>INV#</th>
+                <th style={S.th}>PO#</th>
+                <th style={{ ...S.th, textAlign: 'right' }}>Total</th>
+                <th style={S.th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.length === 0 && (
+                <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={6}>No invoices found.</td></tr>
+              )}
+              {list.map(o => (
+                <tr key={o.id} style={S.row} onClick={() => openInvoice(o)}>
+                  <td style={S.td}>{formatDate(o.deliveryDate)}</td>
+                  <td style={{ ...S.td, fontWeight: 700 }}>{o.customer}</td>
+                  <td style={S.td}>{invoiceNumberFor(o)}</td>
+                  <td style={S.td}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                  <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(orderTotal(o))}</td>
+                  <td style={{ ...S.td, textAlign: 'right' }}>
+                    <button style={S.viewBtn} onClick={e => { e.stopPropagation(); openInvoice(o); }}>View</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
