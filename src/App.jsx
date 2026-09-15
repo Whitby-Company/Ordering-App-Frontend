@@ -5872,8 +5872,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                       onPendingChange={v => setPending(item.id, v)}
                     />
                   ) : (
-                    (() => { const oh = item.onHand != null ? item.onHand : item.stock;
-                      return <span style={oh <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined} title="On hand (physical stock now)">{oh}</span>;
+                    (() => { const avail = item.stock;
+                      return <span style={avail <= 5 ? { color: '#B5493B', fontWeight: 700 } : undefined} title="Available to sell (after allocation)">{avail}</span>;
                     })()
                   )}
                   {item.incoming > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#2B5D50' }} title="Incoming from open purchase orders">+{item.incoming}</span>}
@@ -6750,13 +6750,16 @@ function StockEditor({ item, pendingValue, onPendingChange }) {
   // In edit mode the value is held in the parent's pending map and only saved
   // when the user confirms on "Done editing" — so nothing changes by accident.
   const [focused, setFocused] = useState(false);
-  const value = pendingValue !== undefined ? pendingValue : String(item.stock);
-  const dirty = value !== '' && Number(value) !== item.stock;
+  // Editing sets ON HAND (the physical count), not available. item.stock is now
+  // the available number, so use item.onHand as the editable base.
+  const baseOnHand = item.onHand != null ? item.onHand : item.stock;
+  const value = pendingValue !== undefined ? pendingValue : String(baseOnHand);
+  const dirty = value !== '' && Number(value) !== baseOnHand;
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <input
-        style={{ ...officeStyles.stockInput, ...(item.stock <= 5 ? officeStyles.stockInputLow : {}), ...(dirty ? officeStyles.stockInputDirty : {}) }}
+        style={{ ...officeStyles.stockInput, ...(baseOnHand <= 5 ? officeStyles.stockInputLow : {}), ...(dirty ? officeStyles.stockInputDirty : {}) }}
         value={value}
         onChange={e => onPendingChange(e.target.value)}
         onFocus={() => setFocused(true)}
