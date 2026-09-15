@@ -1234,7 +1234,7 @@ function WarehousePage() {
     title: { fontSize: 20, fontWeight: 800, letterSpacing: '0.01em' },
     body: { maxWidth: '100%', margin: '0 auto', padding: '20px 24px 60px' },
     search: { width: '100%', boxSizing: 'border-box', padding: '14px 16px', fontSize: 16, border: '1px solid #D6D3C6', borderRadius: 10, marginBottom: 18, outline: 'none' },
-    table: { width: '100%', borderCollapse: 'collapse', background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, overflow: 'hidden' },
+    table: { width: 'auto', minWidth: 520, borderCollapse: 'collapse', background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, overflow: 'hidden' },
     th: { textAlign: 'left', fontSize: 11, fontWeight: 800, color: '#5B6058', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '7px 14px', borderBottom: '2px solid #E3E1D6', background: '#FBFAF6', whiteSpace: 'nowrap' },
     td: { fontSize: 14, padding: '6px 14px', borderBottom: '1px solid #EFEDE3' },
     row: { cursor: 'pointer' },
