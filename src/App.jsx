@@ -1164,7 +1164,91 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// Standalone warehouse page (at /warehouse): a clean, uncomplicated list of
+// invoices with a big "View invoice" button. No nav, no editing — view only.
+function WarehousePage() {
+  const [orders, setOrders] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [items, setItems] = useState([]);
+  const [printSequence, setPrintSequence] = useState([]);
+  const [status, setStatus] = useState('loading');
+  const [q, setQ] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      apiGet('/orders'),
+      apiGet('/customers'),
+      apiGet('/items'),
+      apiGet('/print-order').catch(() => []),
+    ]).then(([o, c, it, ps]) => {
+      setOrders(o || []); setCustomers(c || []); setItems(it || []);
+      setPrintSequence(Array.isArray(ps) ? ps : (ps && ps.sequence) || []);
+      setStatus('ready');
+    }).catch(() => setStatus('error'));
+  }, []);
+
+  const list = useMemo(() => {
+    const submitted = (orders || []).filter(o => o.status !== 'pending' && !o.voided);
+    const query = q.trim().toLowerCase();
+    const filtered = query ? submitted.filter(o => {
+      const inv = String(invoiceNumberFor(o) || '');
+      return (o.customer || '').toLowerCase().includes(query) || inv.includes(query.replace(/\D/g, '')) || (o.poNumber || '').toLowerCase().includes(query) || (o.deliveryDate || '').includes(query);
+    }) : submitted;
+    return [...filtered].sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.id - a.id));
+  }, [orders, q]);
+
+  function openInvoice(o) {
+    const cust = customers.find(c => c.name === o.customer) || customers.find(c => c.id === o.customerId) || null;
+    printInvoice(o, cust, printSequence, items, {});
+  }
+
+  const S = {
+    page: { minHeight: '100vh', background: '#F2F4EF', fontFamily: "'Inter', system-ui, sans-serif", color: '#14181F' },
+    header: { background: '#14181F', color: '#fff', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 },
+    title: { fontSize: 20, fontWeight: 800, letterSpacing: '0.01em' },
+    body: { maxWidth: 900, margin: '0 auto', padding: '20px 16px 60px' },
+    search: { width: '100%', boxSizing: 'border-box', padding: '14px 16px', fontSize: 16, border: '1px solid #D6D3C6', borderRadius: 10, marginBottom: 18, outline: 'none' },
+    card: { background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, padding: '16px 18px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' },
+    cust: { fontSize: 17, fontWeight: 800 },
+    meta: { fontSize: 13.5, color: '#5B6058', marginTop: 3 },
+    inv: { fontSize: 13, color: '#2B5D50', fontWeight: 700 },
+    viewBtn: { background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 22px', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+  };
+
+  return (
+    <div style={S.page}>
+      <style>{fontImport}</style>
+      <div style={S.header}>
+        <span style={S.title}>Warehouse — Invoices</span>
+        <span style={{ fontSize: 13, color: '#C7CBC1' }}>{status === 'ready' ? `${list.length} invoice${list.length === 1 ? '' : 's'}` : ''}</span>
+      </div>
+      <div style={S.body}>
+        <input style={S.search} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
+        {status === 'loading' && <div style={{ color: '#8A8F87', padding: 20, textAlign: 'center' }}>Loading invoices…</div>}
+        {status === 'error' && <div style={{ color: '#B5493B', padding: 20, textAlign: 'center' }}>Couldn't load invoices. Refresh to try again.</div>}
+        {status === 'ready' && list.length === 0 && <div style={{ color: '#8A8F87', padding: 20, textAlign: 'center' }}>No invoices found.</div>}
+        {status === 'ready' && list.map(o => (
+          <div key={o.id} style={S.card}>
+            <div>
+              <div style={S.cust}>{o.customer}</div>
+              <div style={S.meta}>Delivery {formatDate(o.deliveryDate)}{o.poNumber ? ` · PO ${o.poNumber}` : ''}</div>
+              <div style={S.inv}>Invoice {invoiceNumberFor(o)}</div>
+            </div>
+            <button style={S.viewBtn} onClick={() => openInvoice(o)}>View invoice</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  // Route to the standalone warehouse invoices page, or the main app.
+  const isWarehouse = typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '').toLowerCase().endsWith('/warehouse');
+  return isWarehouse ? <WarehousePage /> : <MainApp />;
+}
+
+function MainApp() {
   const [items, setItems] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [itemsAll, setItemsAll] = useState([]);
