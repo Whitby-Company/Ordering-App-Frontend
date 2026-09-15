@@ -909,7 +909,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   // print / Save-as-PDF dialog automatically. Used by the Taiyo button so the
   // saved file is an exact copy of the invoice.
   const autoPrintScript = opts.autoPrint
-    ? '(function(){function go(){var p=document.querySelector(".page");if(!p){return setTimeout(go,150);}setTimeout(function(){window.print();},400);}window.addEventListener("load",go);setTimeout(go,300);})();'
+    ? '(function(){var done=false;function go(){if(done)return;var p=document.querySelector(".page");if(!p){return setTimeout(go,150);}done=true;setTimeout(function(){window.print();},400);}window.addEventListener("load",go);setTimeout(go,300);})();'
     : '';
 
   // For the inline preview, auto-scale the page so its WIDTH exactly fills the
