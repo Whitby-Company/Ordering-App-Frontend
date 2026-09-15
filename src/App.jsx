@@ -1203,7 +1203,7 @@ function WarehousePage() {
   }
 
   const S = {
-    page: { minHeight: '100vh', background: '#F2F4EF', fontFamily: "'Inter', system-ui, sans-serif", color: '#14181F' },
+    page: { minHeight: '100vh', width: '100vw', maxWidth: '100%', boxSizing: 'border-box', background: '#F2F4EF', fontFamily: "'Inter', system-ui, sans-serif", color: '#14181F' },
     header: { background: '#14181F', color: '#fff', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 },
     title: { fontSize: 20, fontWeight: 800, letterSpacing: '0.01em' },
     body: { maxWidth: '100%', margin: '0 auto', padding: '20px 24px 60px' },
@@ -1218,6 +1218,7 @@ function WarehousePage() {
   return (
     <div style={S.page}>
       <style>{fontImport}</style>
+      <style>{'html,body,#root{margin:0;padding:0;width:100%;max-width:100%;}'}</style>
       <div style={S.header}>
         <span style={S.title}>Warehouse — Invoices</span>
         <span style={{ fontSize: 13, color: '#C7CBC1' }}>{status === 'ready' ? `${list.length} invoice${list.length === 1 ? '' : 's'}` : ''}</span>
