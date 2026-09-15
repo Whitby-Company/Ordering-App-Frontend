@@ -1968,16 +1968,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     return Number(item.pack) || 1;
   }, []);
   // Effective per-each price for an item at a given unit for the selected customer.
+  const [allCases, setAllCases] = useState(false);
   const priceOf = React.useCallback((item, unit) => {
-    // Orders can be placed for future delivery when an out-of-stock item will be
-    // back in stock, so we DON'T force $0 for out-of-stock items — use the real
-    // catalog/base price.
-    const u = unit || unitOf(item);
-    // The store's catalog price is per-each, so it applies to either unit.
+    // Prices are per-EACH by default (even for case-unit lines). Only when the
+    // whole order is in "All cases" mode do we use the case price. Out-of-stock
+    // items keep their real price (future-dated orders).
     if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
-    if (u === 'case') return Number(item.casePrice != null ? item.casePrice : item.price) || 0;
+    if (allCases && (unit || unitOf(item)) === 'case') return Number(item.casePrice != null ? item.casePrice : item.price) || 0;
     return Number(item.price) || 0;
-  }, [catalog, unitOf]);
+  }, [catalog, unitOf, allCases]);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   // Desktop keyboard flow: type-to-filter customer, Tab to accept + go to date.
@@ -2332,7 +2331,6 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   }
   // Flip the whole order to cases (or back to boxes). Only items that have a case
   // size can become cases; others stay boxes so nothing is priced/counted wrong.
-  const [allCases, setAllCases] = useState(false);
   function toggleAllCases() {
     const next = !allCases;
     setAllCases(next);
