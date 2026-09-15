@@ -4664,6 +4664,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
+  const [notExportedOnly, setNotExportedOnly] = useState(false);
   const [readyBusyId, setReadyBusyId] = useState(null);
 
   // Toggle the shared "ready for import" flag on an order (saved server-side so
@@ -4812,6 +4813,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   }
 
   const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
+  const notExportedCount = useMemo(() => orders.filter(o => o.status !== "pending" && !o.exported && !o.voided).length, [orders]);
 
   const readyOrders = useMemo(() => orders.filter(o => o.readyForImport && !o.exported), [orders]);
   const filtered = useMemo(() => {
@@ -4822,6 +4824,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
     if (activeScope) list = list.filter(o => o.status === 'pending' || !o.processed);
     else list = list.filter(o => o.status !== 'pending');
     if (showUnprocessedOnly) list = list.filter(o => !o.processed);
+    if (notExportedOnly) list = list.filter(o => !o.exported && !o.voided);
     if (q) {
       const qDigits = q.replace(/\D/g, '');
       const matchOrder = (o) => {
@@ -4862,7 +4865,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
       if (va > vb) return 1 * dir;
       return (a.id - b.id) * dir; // stable tiebreak
     });
-  }, [orders, query, showUnprocessedOnly, sortField, sortDir, activeScope]);
+  }, [orders, query, showUnprocessedOnly, notExportedOnly, sortField, sortDir, activeScope]);
 
   function orderTotal(o) {
     const sub = o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -4902,6 +4905,16 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
           >
             {showUnprocessedOnly ? 'Showing unprocessed' : 'Show unprocessed'}
             {unprocessedCount > 0 && ` (${unprocessedCount})`}
+          </button>
+        )}
+        {!activeScope && (
+          <button
+            style={{ ...officeStyles.smallBtn, ...(notExportedOnly ? officeStyles.editModeBtnActive : {}) }}
+            onClick={() => setNotExportedOnly(v => !v)}
+            title="Show only invoices that haven't been exported to QuickBooks yet"
+          >
+            {notExportedOnly ? 'Showing ready for QB' : 'Ready for QB'}
+            {notExportedCount > 0 && ` (${notExportedCount})`}
           </button>
         )}
         <div style={officeStyles.countPill}>{filtered.length} order{filtered.length === 1 ? '' : 's'}</div>
