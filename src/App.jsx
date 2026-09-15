@@ -4752,7 +4752,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
   }
 
   // Export every submitted-unprocessed order (skipping pending) as one TP file,
-  // then mark them all processed so they drop off the queue.
+  // then mark them all exported (unchecks Ready) + processed so they drop off.
   async function handleBatchTP() {
     const batch = orders.filter(o => o.status !== 'pending' && !o.processed);
     if (batch.length === 0) return;
@@ -4760,6 +4760,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
     setIifError('');
     try {
       await downloadOrdersTP(batch.map(o => o.id));
+      await apiPost('/orders/mark-exported', { ids: batch.map(o => o.id) }); // unchecks Ready on all
       for (const o of batch) {
         await apiPatch(`/orders/${o.id}/processed`, { processed: true });
       }
@@ -4934,6 +4935,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
           <thead>
             <tr>
               <th style={{ ...officeStyles.th, width: 44, textAlign: 'center' }} title="Ready for QuickBooks import (shared)">Ready</th>
+              <th style={{ ...officeStyles.th, width: 60, textAlign: 'center' }} title="Transaction Pro export">TP</th>
               <th style={officeStyles.th}></th>
               <SortableTh field="submittedAt" label="Submitted" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
@@ -4964,6 +4966,16 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                         disabled={o.status === 'pending' || readyBusyId === o.id}
                         title={o.status === 'pending' ? 'Pending orders can\u2019t be marked ready' : 'Mark ready for QuickBooks import (saved for everyone)'}
                       />
+                    </td>
+                    <td style={{ ...officeStyles.td, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {o.status !== 'pending' && (
+                        <span style={{ position: 'relative', display: 'inline-block' }}>
+                          <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
+                            {iifBusyId === o.id ? '…' : 'TP'}
+                          </button>
+                          {o.taiyoDroppedAt && <span style={{ position: 'absolute', top: '100%', left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#2B5D50', fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} title="When the Taiyo PDF was last saved">Dropped: {formatDateTime(o.taiyoDroppedAt)}</span>}
+                        </span>
+                      )}
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
@@ -5010,13 +5022,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
-                          <span style={{ position: 'relative', display: 'inline-block', verticalAlign: 'middle' }}>
-                            <button style={officeStyles.smallBtn} onClick={async () => { handleInvoice(o, { autoPrint: true }); try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); await onRefresh(); } catch {} }} title="Open the invoice and prompt to save/print it as a PDF (for Dropbox)">Taiyo</button>
-                            {o.taiyoDroppedAt && <span style={{ position: 'absolute', top: '100%', left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#2B5D50', fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} title="When the Taiyo PDF was last saved">Dropped: {formatDateTime(o.taiyoDroppedAt)}</span>}
-                          </span>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => handleDownloadTP(o.id)} disabled={iifBusyId === o.id} title="Download a Transaction Pro Importer file (.CSV) for QuickBooks Desktop">
-                            {iifBusyId === o.id ? '…' : 'TP'}
-                          </button>{' '}
+                          <button style={officeStyles.smallBtn} onClick={async () => { handleInvoice(o, { autoPrint: true }); try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); await onRefresh(); } catch {} }} title="Open the invoice and prompt to save/print it as a PDF (for Dropbox)">Taiyo</button>{' '}
                           <button
                             style={{ ...officeStyles.smallBtn, ...(o.processed ? {} : officeStyles.markDoneBtn) }}
                             onClick={() => setProcessed(o.id, !o.processed)}
@@ -5047,7 +5053,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                   </tr>
                   {o.notes && !isOpen && (
                     <tr onClick={() => setOpenId(o.id)} style={{ cursor: 'pointer' }}>
-                      <td colSpan={2} style={{ borderBottom: '1px solid #EFEDE3' }}></td>
+                      <td colSpan={3} style={{ borderBottom: '1px solid #EFEDE3' }}></td>
                       <td colSpan={8} style={{ padding: '0 8px 8px', borderBottom: '1px solid #EFEDE3' }}>
                         <div style={{ fontSize: 12.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '6px 12px' }}>
                           <span style={{ fontWeight: 700 }}>📝</span> {o.notes}
@@ -5058,7 +5064,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                   )}
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={11}>
+                      <td style={officeStyles.detailCell} colSpan={12}>
                         {o.notes && (
                           <div style={officeStyles.orderNotes}>
                             <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
