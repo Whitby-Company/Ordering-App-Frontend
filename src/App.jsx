@@ -1175,6 +1175,7 @@ function WarehousePage() {
   const [q, setQ] = useState('');
   const [tab, setTab] = useState('current'); // 'current' | 'storage'
   const [undo, setUndo] = useState(null); // { order } shown briefly after moving to storage
+  const [openMonths, setOpenMonths] = useState({}); // month key -> expanded in storage
 
   async function reload() {
     try { setOrders(await apiGet('/orders')); } catch { /* keep */ }
@@ -1202,6 +1203,29 @@ function WarehousePage() {
     }) : byTab;
     return [...filtered].sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.id - a.id));
   }, [orders, q, tab]);
+
+  // For the Storage tab: split into recent (past 30 days, loose) and older
+  // (grouped into folders by month, newest month first). Uses delivery date.
+  const storageGroups = useMemo(() => {
+    if (tab !== 'storage') return null;
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffISO = cutoff.toISOString().slice(0, 10);
+    const recent = [];
+    const olderByMonth = {};
+    for (const o of list) {
+      const d = o.deliveryDate || '';
+      if (d >= cutoffISO) { recent.push(o); continue; }
+      const key = d.slice(0, 7); // YYYY-MM
+      (olderByMonth[key] = olderByMonth[key] || []).push(o);
+    }
+    const monthKeys = Object.keys(olderByMonth).sort().reverse();
+    const monthLabel = (k) => {
+      const [y, m] = k.split('-');
+      const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      return `${names[Number(m) - 1] || m} ${y}`;
+    };
+    return { recent, months: monthKeys.map(k => ({ key: k, label: monthLabel(k), orders: olderByMonth[k] })) };
+  }, [list, tab]);
 
   const storageCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && o.taiyoStored).length, [orders]);
   const currentCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && !o.taiyoStored).length, [orders]);
@@ -1244,6 +1268,23 @@ function WarehousePage() {
     tabActive: { background: '#14181F', color: '#fff', borderColor: '#14181F' },
   };
 
+  const InvoiceRow = ({ o }) => (
+    <tr style={S.row}>
+      <td style={S.td}>{o.deliveryDate ? formatDateMMDDYY(o.deliveryDate).replace(/\//g, '.') : ''}</td>
+      <td style={{ ...S.td, fontWeight: 700 }}>{o.customer}</td>
+      <td style={S.td}>{invoiceNumberFor(o)}</td>
+      <td style={S.td}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+      <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(orderTotal(o))}</td>
+      <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+        <button style={S.viewBtn} onClick={() => openInvoice(o)}>View</button>{' '}
+        {tab === 'storage'
+          ? <button style={S.moveBtn} onClick={() => setStored(o, false)} title="Move back to Current">↩ Current</button>
+          : <button style={S.moveBtn} onClick={() => setStored(o, true)} title="Move to Taiyo Storage">Store</button>}
+      </td>
+      <td style={{ ...S.td, color: '#5B6058', maxWidth: 260, whiteSpace: 'normal' }}>{o.notes || ''}</td>
+    </tr>
+  );
+
   return (
     <div style={S.page}>
       <style>{fontImport}</style>
@@ -1275,25 +1316,27 @@ function WarehousePage() {
               </tr>
             </thead>
             <tbody>
-              {list.length === 0 && (
+              {(tab === 'storage' ? storageGroups.recent.length + storageGroups.months.length : list.length) === 0 && (
                 <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={7}>{tab === 'storage' ? 'Storage is empty.' : 'No invoices found.'}</td></tr>
               )}
-              {list.map(o => (
-                <tr key={o.id} style={S.row}>
-                  <td style={S.td}>{o.deliveryDate ? formatDateMMDDYY(o.deliveryDate).replace(/\//g, '.') : ''}</td>
-                  <td style={{ ...S.td, fontWeight: 700 }}>{o.customer}</td>
-                  <td style={S.td}>{invoiceNumberFor(o)}</td>
-                  <td style={S.td}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
-                  <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(orderTotal(o))}</td>
-                  <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button style={S.viewBtn} onClick={() => openInvoice(o)}>View</button>{' '}
-                    {tab === 'storage'
-                      ? <button style={S.moveBtn} onClick={() => setStored(o, false)} title="Move back to Current">↩ Current</button>
-                      : <button style={S.moveBtn} onClick={() => setStored(o, true)} title="Move to Taiyo Storage">Store</button>}
-                  </td>
-                  <td style={{ ...S.td, color: '#5B6058', maxWidth: 260, whiteSpace: 'normal' }}>{o.notes || ''}</td>
-                </tr>
-              ))}
+              {/* Storage tab: recent (past 30 days) loose, then month folders */}
+              {tab === 'storage' ? (
+                <>
+                  {storageGroups.recent.map(o => <InvoiceRow key={o.id} o={o} />)}
+                  {storageGroups.months.map(mo => (
+                    <React.Fragment key={mo.key}>
+                      <tr style={{ background: '#EDEBE3', cursor: 'pointer' }} onClick={() => setOpenMonths(m => ({ ...m, [mo.key]: !m[mo.key] }))}>
+                        <td style={{ ...S.td, fontWeight: 800 }} colSpan={7}>
+                          {openMonths[mo.key] ? '▾' : '▸'} 📁 {mo.label} ({mo.orders.length})
+                        </td>
+                      </tr>
+                      {openMonths[mo.key] && mo.orders.map(o => <InvoiceRow key={o.id} o={o} />)}
+                    </React.Fragment>
+                  ))}
+                </>
+              ) : (
+                list.map(o => <InvoiceRow key={o.id} o={o} />)
+              )}
             </tbody>
           </table>
         )}
