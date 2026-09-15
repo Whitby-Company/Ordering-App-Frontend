@@ -4982,7 +4982,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     </td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       {formatDateTime(o.submittedAt)}
-                      {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {o.submittedBy}</div>}
+                      {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {String(o.submittedBy).split(/\s*,\s*|\s+per\s+/i)[0].trim()}</div>}
                     </td>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
