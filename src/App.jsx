@@ -1206,7 +1206,7 @@ function WarehousePage() {
     page: { minHeight: '100vh', background: '#F2F4EF', fontFamily: "'Inter', system-ui, sans-serif", color: '#14181F' },
     header: { background: '#14181F', color: '#fff', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 },
     title: { fontSize: 20, fontWeight: 800, letterSpacing: '0.01em' },
-    body: { maxWidth: 900, margin: '0 auto', padding: '20px 16px 60px' },
+    body: { maxWidth: '100%', margin: '0 auto', padding: '20px 24px 60px' },
     search: { width: '100%', boxSizing: 'border-box', padding: '14px 16px', fontSize: 16, border: '1px solid #D6D3C6', borderRadius: 10, marginBottom: 18, outline: 'none' },
     card: { background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, padding: '16px 18px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' },
     cust: { fontSize: 17, fontWeight: 800 },
