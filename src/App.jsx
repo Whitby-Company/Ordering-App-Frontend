@@ -5009,7 +5009,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                           : o.processed
                             ? <span style={statusBadge('#2B5D50', '#E3EFE9', '#C4DDD2')}>Processed</span>
                             : <span style={statusBadge('#9A6B12', '#FBE7C2', '#F0D28F')}>New</span>}
-                        {o.exported ? <span style={statusBadge('#2B5D50', '#EAF1EE', '#C4DDD2')} title={o.exportedAt ? `Exported ${formatDateTime(o.exportedAt)}` : 'Exported'}>exported</span> : null}
+                        {o.exported ? <span style={statusBadge('#2B5D50', '#EAF1EE', '#C4DDD2')} title={o.exportedAt ? `Exported to QuickBooks ${formatDateTime(o.exportedAt)}` : 'Exported to QuickBooks'}>QB</span> : null}
                         {o.editedAt ? <span style={statusBadge('#B5793B', '#FDF3E3', '#EAD3A8')} title={`Edited ${formatDateTime(o.editedAt)}`}>edited {new Date(o.editedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> : null}
                       </div>
                     </td>
