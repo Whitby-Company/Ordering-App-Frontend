@@ -4143,6 +4143,23 @@ function parseWhitbyPO(text) {
       price: parseFloat(price.replace(/,/g, '')),
     });
   }
+  // Looser fallback for PO lines whose item code has a SPACE (e.g. "TT DISPLAY")
+  // and/or a simple pack like "48ct": QTY  CODE(with spaces)  PACK  DESC  PRICE  AMOUNT.
+  if (rows.length === 0) {
+    const looseRe = /(?:^|\s)(\d{1,4})\s+([A-Za-z][A-Za-z0-9 .\-\/]*?)\s+(\d+\s?(?:ct|pk|pc|oz|\/[\d.]+[a-z]*)\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/gi;
+    let lm;
+    while ((lm = looseRe.exec(flat)) !== null) {
+      const [, qty, code, pack, desc, price] = lm;
+      if (/total|weight|cube/i.test(desc) || /total|weight|cube/i.test(code)) continue;
+      rows.push({
+        qty: parseInt(qty, 10),
+        code: code.trim().replace(/\*+$/, ''),
+        pack: pack.trim(),
+        desc: desc.trim().replace(/\s*\([0-9]+\)\*?\s*$/, ''),
+        price: parseFloat(price.replace(/,/g, '')),
+      });
+    }
+  }
   // Fallback: the Hawken/Whitby invoice-style PO (ITEM# CS EACH DESC UPC PRICE TOTAL).
   if (rows.length === 0) return parseHawkenPO(text);
   return { reference: refM ? refM[1] : '', orderDate: dateM ? dateM[1] : '', supplier: supM ? supM[1].trim() : '', rows };
