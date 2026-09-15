@@ -2420,6 +2420,17 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
 
   // Select a customer for a NEW order. If that store already has a PENDING
   // order, notify and offer to continue from it (loads its lines into the form).
+  // Next occurrence of a weekday (0=Sun..6=Sat) strictly AFTER today. If today
+  // IS that weekday, returns the same weekday one week out (never today).
+  function nextWeekdayISO(weekday) {
+    const now = new Date();
+    let delta = (Number(weekday) - now.getDay() + 7) % 7;
+    if (delta === 0) delta = 7; // today counts as the day → go to next week
+    const d = new Date(now);
+    d.setDate(now.getDate() + delta);
+    return d.toISOString().slice(0, 10);
+  }
+
   function pickCustomer(cid) {
     if (!isEdit && cid != null) {
       const pending = (orders || []).find(o => o.customerId === cid && o.status === 'pending');
@@ -2436,6 +2447,13 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       }
     }
     setCustomerId(cid);
+    // Auto-fill the delivery date to this store's next delivery weekday (future).
+    if (!isEdit && cid != null) {
+      const cust = findCust(cid);
+      if (cust && cust.deliveryDay !== null && cust.deliveryDay !== undefined) {
+        setDeliveryDate(nextWeekdayISO(cust.deliveryDay));
+      }
+    }
   }
 
   function resetForm() {
@@ -3335,10 +3353,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                   key={c.id}
                   style={{ ...styles.customerRow, ...(c.id === customerId ? styles.customerRowActive : {}) }}
                   onClick={() => {
-                    setCustomerId(c.id);
+                    pickCustomer(c.id);
                     setCustomerOpen(false);
-                    // Auto-date on customer select is turned off — leave the
-                    // delivery date as-is; the user picks it themselves.
                     if (deliveryDate) setPickersExpanded(false);
                   }}
                 >
