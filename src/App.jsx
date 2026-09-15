@@ -1279,7 +1279,7 @@ function WarehousePage() {
               )}
               {list.map(o => (
                 <tr key={o.id} style={S.row}>
-                  <td style={S.td}>{formatDate(o.deliveryDate)}</td>
+                  <td style={S.td}>{o.deliveryDate ? formatDateMMDDYY(o.deliveryDate).replace(/\//g, '.') : ''}</td>
                   <td style={{ ...S.td, fontWeight: 700 }}>{o.customer}</td>
                   <td style={S.td}>{invoiceNumberFor(o)}</td>
                   <td style={S.td}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
