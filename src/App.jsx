@@ -1173,7 +1173,12 @@ function WarehousePage() {
   const [printSequence, setPrintSequence] = useState([]);
   const [status, setStatus] = useState('loading');
   const [q, setQ] = useState('');
+  const [tab, setTab] = useState('current'); // 'current' | 'storage'
+  const [undo, setUndo] = useState(null); // { order } shown briefly after moving to storage
 
+  async function reload() {
+    try { setOrders(await apiGet('/orders')); } catch { /* keep */ }
+  }
   useEffect(() => {
     Promise.all([
       apiGet('/orders'),
@@ -1189,17 +1194,33 @@ function WarehousePage() {
 
   const list = useMemo(() => {
     const submitted = (orders || []).filter(o => o.status !== 'pending' && !o.voided);
+    const byTab = submitted.filter(o => tab === 'storage' ? o.taiyoStored : !o.taiyoStored);
     const query = q.trim().toLowerCase();
-    const filtered = query ? submitted.filter(o => {
+    const filtered = query ? byTab.filter(o => {
       const inv = String(invoiceNumberFor(o) || '');
       return (o.customer || '').toLowerCase().includes(query) || inv.includes(query.replace(/\D/g, '')) || (o.poNumber || '').toLowerCase().includes(query) || (o.deliveryDate || '').includes(query);
-    }) : submitted;
+    }) : byTab;
     return [...filtered].sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.id - a.id));
-  }, [orders, q]);
+  }, [orders, q, tab]);
+
+  const storageCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && o.taiyoStored).length, [orders]);
+  const currentCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && !o.taiyoStored).length, [orders]);
+
+  async function setStored(o, stored) {
+    // optimistic
+    setOrders(prev => prev.map(x => x.id === o.id ? { ...x, taiyoStored: stored } : x));
+    try { await apiPost(`/orders/${o.id}/taiyo-stored`, { stored }); } catch { reload(); }
+  }
 
   function openInvoice(o) {
     const cust = customers.find(c => c.name === o.customer) || customers.find(c => c.id === o.customerId) || null;
     printInvoice(o, cust, printSequence, items, {});
+    // After printing from the Current tab, auto-move to storage with an undo option.
+    if (!o.taiyoStored) {
+      setStored(o, true);
+      setUndo({ order: o });
+      setTimeout(() => setUndo(u => (u && u.order.id === o.id ? null : u)), 8000);
+    }
   }
 
   const orderTotal = (o) => {
@@ -1218,6 +1239,9 @@ function WarehousePage() {
     td: { fontSize: 15, padding: '14px 16px', borderBottom: '1px solid #EFEDE3' },
     row: { cursor: 'pointer' },
     viewBtn: { background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+    moveBtn: { background: '#EDEBE3', color: '#14181F', border: '1px solid #D6D3C6', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+    tab: { background: '#fff', color: '#5B6058', border: '1px solid #D6D3C6', borderRadius: 8, padding: '9px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+    tabActive: { background: '#14181F', color: '#fff', borderColor: '#14181F' },
   };
 
   return (
@@ -1229,6 +1253,11 @@ function WarehousePage() {
         <span style={{ fontSize: 13, color: '#C7CBC1' }}>{status === 'ready' ? `${list.length} invoice${list.length === 1 ? '' : 's'}` : ''}</span>
       </div>
       <div style={S.body}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button onClick={() => setTab('current')} style={{ ...S.tab, ...(tab === 'current' ? S.tabActive : {}) }}>Current ({currentCount})</button>
+          <button onClick={() => setTab('storage')} style={{ ...S.tab, ...(tab === 'storage' ? S.tabActive : {}) }}>Taiyo Storage ({storageCount})</button>
+        </div>
         <input style={S.search} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
         {status === 'loading' && <div style={{ color: '#8A8F87', padding: 20, textAlign: 'center' }}>Loading invoices…</div>}
         {status === 'error' && <div style={{ color: '#B5493B', padding: 20, textAlign: 'center' }}>Couldn't load invoices. Refresh to try again.</div>}
@@ -1246,17 +1275,20 @@ function WarehousePage() {
             </thead>
             <tbody>
               {list.length === 0 && (
-                <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={6}>No invoices found.</td></tr>
+                <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={6}>{tab === 'storage' ? 'Storage is empty.' : 'No invoices found.'}</td></tr>
               )}
               {list.map(o => (
-                <tr key={o.id} style={S.row} onClick={() => openInvoice(o)}>
+                <tr key={o.id} style={S.row}>
                   <td style={S.td}>{formatDate(o.deliveryDate)}</td>
                   <td style={{ ...S.td, fontWeight: 700 }}>{o.customer}</td>
                   <td style={S.td}>{invoiceNumberFor(o)}</td>
                   <td style={S.td}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                   <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(orderTotal(o))}</td>
-                  <td style={{ ...S.td, textAlign: 'right' }}>
-                    <button style={S.viewBtn} onClick={e => { e.stopPropagation(); openInvoice(o); }}>View</button>
+                  <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button style={S.viewBtn} onClick={() => openInvoice(o)}>View</button>{' '}
+                    {tab === 'storage'
+                      ? <button style={S.moveBtn} onClick={() => setStored(o, false)} title="Move back to Current">↩ Current</button>
+                      : <button style={S.moveBtn} onClick={() => setStored(o, true)} title="Move to Taiyo Storage">Store</button>}
                   </td>
                 </tr>
               ))}
@@ -1264,6 +1296,14 @@ function WarehousePage() {
           </table>
         )}
       </div>
+      {/* Undo popup after auto-move on print */}
+      {undo && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#14181F', color: '#fff', borderRadius: 10, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 16, boxShadow: '0 8px 30px rgba(0,0,0,0.35)', zIndex: 1000 }}>
+          <span style={{ fontSize: 14 }}>Moved <b>{undo.order.customer}</b> (INV {invoiceNumberFor(undo.order)}) to Taiyo Storage.</span>
+          <button style={{ background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => { setStored(undo.order, false); setUndo(null); if (tab !== 'current') setTab('current'); }}>Undo</button>
+          <button style={{ background: 'transparent', color: '#C7CBC1', border: 'none', fontSize: 18, cursor: 'pointer' }} onClick={() => setUndo(null)}>×</button>
+        </div>
+      )}
     </div>
   );
 }
