@@ -5593,12 +5593,26 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [sortDir, setSortDir] = useState('asc');
   const [openItemId, setOpenItemId] = useState(null); // item whose order history is expanded
   const [receiptsById, setReceiptsById] = useState({}); // itemId -> [received PO lines] for the history ledger
+  const [manualLogById, setManualLogById] = useState({}); // itemId -> [manual stock-log entries] for the history ledger
   useEffect(() => {
     if (!openItemId || receiptsById[openItemId]) return;
     apiGet(`/items/${encodeURIComponent(openItemId)}/stock-log`).then(d => {
       const recs = (d.purchaseOrders || []).filter(p => Number(p.qtyReceived) > 0 && p.receivedDate);
       setReceiptsById(prev => ({ ...prev, [openItemId]: recs }));
-    }).catch(() => setReceiptsById(prev => ({ ...prev, [openItemId]: [] })));
+      // Manual stock changes (physical counts, direct edits, inventory redo) —
+      // "Received PO..." entries are excluded since those are already covered
+      // by `receipts` above, and 0-delta entries are a logging artifact of the
+      // dated-stock sync, not a real change.
+      const manual = (d.log || []).filter(e =>
+        !/^Received PO/i.test(e.reason || '') &&
+        Number.isFinite(Number(e.oldStock)) && Number.isFinite(Number(e.newStock)) &&
+        Number(e.oldStock) !== Number(e.newStock)
+      );
+      setManualLogById(prev => ({ ...prev, [openItemId]: manual }));
+    }).catch(() => {
+      setReceiptsById(prev => ({ ...prev, [openItemId]: [] }));
+      setManualLogById(prev => ({ ...prev, [openItemId]: [] }));
+    });
   }, [openItemId]);
   const [histSort, setHistSort] = useState({ field: 'delivery', dir: 'desc' }); // sort for the expanded item's order history
   const [editingOrder, setEditingOrder] = useState(null); // order opened for editing from history
@@ -5680,7 +5694,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // Build the list of orders that include a given item, newest first, with the
   // quantity (cases + eaches) and status for each — used by the expandable
   // per-item order history on the Inventory page to help confirm stock.
-  function orderHistoryFor(itemId, currentStock = 0, receipts = []) {
+  function orderHistoryFor(itemId, currentStock = 0, receipts = [], manualLog = []) {
     // The item's case size (boxes per case). Stock is in BOXES.
     const it = items.find(i => i.id === itemId);
     const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
@@ -5712,19 +5726,47 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         status: 'submitted',
       });
     }
-    // Sort by date (newest first) so "Stock after" reads as a running balance.
-    rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || ((b.orderId || 0) - (a.orderId || 0)));
+    // Manual stock changes (physical counts, direct edits, inventory redo) —
+    // these are AUTHORITATIVE: the recorded oldStock/newStock is a known-true
+    // snapshot, so the running total resets to it instead of being reversed
+    // through like an order/PO delta would be.
+    for (const m of (manualLog || [])) {
+      if (!m.changedAt) continue;
+      rows.push({
+        kind: 'manual',
+        date: String(m.changedAt).slice(0, 10), changedAt: m.changedAt,
+        oldStock: Number(m.oldStock), newStock: Number(m.newStock),
+        delta: Number(m.newStock) - Number(m.oldStock),
+        changedBy: m.changedBy, reason: m.reason || 'Stock edit',
+        status: 'submitted',
+      });
+    }
+    // Sort by date (newest first); same-day entries break ties by whichever
+    // timestamp is available (manual edits and orders have one; PO receipts
+    // only have a business date, so they sort just after a same-day manual
+    // edit — consistent with the backend now counting a same-day receipt as
+    // happening at/after a same-day baseline).
+    const sortKey = r => r.changedAt || r.submittedAt || (r.date ? `${r.date}T12:00:00` : '');
+    rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || sortKey(b).localeCompare(sortKey(a)) || ((b.orderId || 0) - (a.orderId || 0)));
     const today = todayISODate();
     // Split at today: entries dated <= today have already happened (affect current
     // on-hand); entries dated > today are future (haven't happened yet).
     // Past (newest first): the most recent past entry leaves on-hand at
-    // currentStock; each older entry = current − its delta (reverse the change).
+    // currentStock; each older entry = current − its delta (reverse the change) —
+    // EXCEPT a manual entry, which is a known-true snapshot: it shows its own
+    // recorded newStock, and everything older than it continues from its
+    // recorded oldStock instead of an accumulated reversal.
     let afterPast = Number(currentStock) || 0;
     for (const r of rows) {
       if (r.status === 'pending') { r.stockAfter = null; continue; }
       if ((r.date || '') > today) continue;
-      r.stockAfter = afterPast;
-      afterPast = afterPast - r.delta; // before this entry = after − its change
+      if (r.kind === 'manual') {
+        r.stockAfter = r.newStock;
+        afterPast = r.oldStock;
+      } else {
+        r.stockAfter = afterPast;
+        afterPast = afterPast - r.delta; // before this entry = after − its change
+      }
     }
     // Future (oldest-future first): each future entry moves on-hand from current.
     const futures = rows.filter(r => r.status !== 'pending' && (r.date || '') > today)
@@ -6300,7 +6342,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 )}
               </tr>
               {isOpen && (() => {
-                const hist = orderHistoryFor(item.id, item.stock, receiptsById[item.id] || []);
+                const hist = orderHistoryFor(item.id, item.stock, receiptsById[item.id] || [], manualLogById[item.id] || []);
                 const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (showTodays ? 3 : 0);
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
@@ -6371,6 +6413,18 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700, color: '#2B7A4B' }}>+{r.qty}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter != null ? r.stockAfter : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}><span style={{ fontSize: 10, fontWeight: 700, color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 12, padding: '1px 7px' }}>Received</span></td>
+                                  <td style={officeStyles.itemHistoryTd}></td>
+                                </tr>
+                              ) : r.kind === 'manual' ? (
+                                <tr key={'m'+ri} style={{ background: '#F5F1E6' }}>
+                                  <td style={officeStyles.itemHistoryTd}>—</td>
+                                  <td style={officeStyles.itemHistoryTd}>{formatDate(r.date)}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, color: '#8A6D1B', fontWeight: 600 }}>{r.reason}{r.changedBy ? ' · ' + r.changedBy : ''}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.oldStock} → {r.newStock}</td>
+                                  <td style={officeStyles.itemHistoryTd}>box</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700, color: r.delta >= 0 ? '#2B7A4B' : '#B5493B' }}>{r.delta >= 0 ? '+' : ''}{r.delta}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter}</td>
+                                  <td style={officeStyles.itemHistoryTd}><span style={{ fontSize: 10, fontWeight: 700, color: '#8A6D1B', background: '#F5E9C6', border: '1px solid #E2CE8E', borderRadius: 12, padding: '1px 7px' }}>Set by hand</span></td>
                                   <td style={officeStyles.itemHistoryTd}></td>
                                 </tr>
                               ) : (
@@ -6502,8 +6556,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   );
 }
 
-// Shows an item's stock EVENTS — physical counts/edits (from the stock log) and
-// purchase orders (incoming/received) — above its order history in the dropdown.
+// Shows an item's open/outstanding purchase orders above its order history in
+// the dropdown. Manual stock changes and received POs are now shown inline in
+// the main ledger (with a running "stock after" total) instead of here.
 function ItemStockEvents({ itemId }) {
   const [data, setData] = useState(null);
   useEffect(() => {
@@ -6512,32 +6567,12 @@ function ItemStockEvents({ itemId }) {
     return () => { live = false; };
   }, [itemId]);
   if (!data) return null;
-  const log = data.log || [];
   const pos = (data.purchaseOrders || []).filter(p => Number(p.qtyOrdered) > 0 || Number(p.qtyReceived) > 0);
-  if (log.length === 0 && pos.length === 0) return null;
+  if (pos.length === 0) return null;
   const th = { textAlign: 'left', fontSize: 11, color: '#8A8F87', fontWeight: 700, padding: '3px 8px', borderBottom: '1px solid #E3E1D6' };
   const td = { fontSize: 12.5, padding: '3px 8px', borderBottom: '1px solid #EFEDE3' };
   return (
     <div>
-      {log.length > 0 && (
-        <div style={{ marginBottom: pos.length ? 10 : 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 12, color: '#2B5D50', marginBottom: 4 }}>Stock changes (counts / receipts / edits)</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 640 }}>
-            <thead><tr><th style={th}>When</th><th style={th}>Reason</th><th style={{ ...th, textAlign: 'right' }}>Change</th><th style={{ ...th, textAlign: 'right' }}>Stock after</th><th style={th}>By</th></tr></thead>
-            <tbody>
-              {log.slice(0, 20).map(e => (
-                <tr key={e.id}>
-                  <td style={td}>{(e.changedAt || '').slice(0, 10)}</td>
-                  <td style={td}>{e.reason || '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: e.delta >= 0 ? '#2B7A4B' : '#B5493B' }}>{e.delta >= 0 ? '+' : ''}{e.delta}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{e.newStock}</td>
-                  <td style={{ ...td, color: '#8A8F87' }}>{e.changedBy || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
       {pos.length > 0 && (
         <div>
           <div style={{ fontWeight: 700, fontSize: 12, color: '#8A6D1B', marginBottom: 4 }}>Purchase orders</div>
