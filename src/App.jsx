@@ -1748,18 +1748,19 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
             const warn = !inCatalog(l.id);
             const oos = (Number(l.stock) || 0) <= 0;
             const pack = Number(l.pack) || 1;
+            const backordered = l.requestedQty != null && l.requestedQty !== l.qty;
             // Stock is tracked in BOXES. A box line consumes qty boxes; a case
             // line consumes qty × caseSize boxes. Compare in boxes (not eaches).
             const boxesOrdered = (Number(l.qty) || 0) * (l.unit === 'case' && l.caseSize ? Number(l.caseSize) : 1);
             const stockBoxes = Number(l.stock) || 0;
-            const overStock = !oos && boxesOrdered > stockBoxes;
+            const overStock = !oos && !backordered && boxesOrdered > stockBoxes;
             const stockLeft = stockBoxes - boxesOrdered; // negative = short
             return (
               <tr key={l.id}
                 onDragOver={e => { e.preventDefault(); if (dragOverIdx !== i) setDragOverIdx(i); }}
                 onDrop={e => { e.preventDefault(); if (dragId != null) moveLineTo(dragId, i); setDragId(null); setDragOverIdx(null); }}
                 style={{
-                  ...(oos ? qeStyles.oosRow : (overStock ? qeStyles.warnRow : (warn ? qeStyles.warnRow : undefined))),
+                  ...(oos ? qeStyles.oosRow : (overStock || backordered ? qeStyles.warnRow : (warn ? qeStyles.warnRow : undefined))),
                   ...(dragId === l.id ? { opacity: 0.4 } : {}),
                   ...(dragOverIdx === i && dragId !== l.id ? { borderTop: '2px solid #2B5D50' } : {}),
                 }}>
@@ -1774,7 +1775,7 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                   <input
                     ref={el => { qtyRefs.current[l.id] = el; }}
                     style={qeStyles.qtyInput}
-                    value={l.qty}
+                    value={backordered ? l.requestedQty : l.qty}
                     inputMode="numeric"
                     onFocus={e => e.target.select()}
                     onChange={e => {
@@ -1804,9 +1805,15 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                 <td style={qeStyles.td}>
                   {l.name}
                   {(Number(l.stock) || 0) > 0 && <span style={{ fontSize: 11, color: '#5B6058', fontWeight: 700, marginLeft: 6 }}>{l.stock} in stock</span>}
-                  {oos && <span style={qeStyles.oosTag} title="Out of stock — added at 0 as a backorder placeholder">out of stock</span>}
+                  {oos && <span style={qeStyles.oosTag} title="Out of stock">out of stock</span>}
                   {oos && l.incoming > 0 && <span style={qeStyles.incomingTag} title="Incoming from a purchase order">+{l.incoming} incoming</span>}
                   {warn && !oos && <span style={qeStyles.warnTag} title="Not in this store's catalog">not in catalog</span>}
+                  {backordered && (
+                    <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#B5493B', background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 8px' }}
+                      title={`${l.requestedQty} requested, only ${l.qty} available to ship now`}>
+                      shipping {l.qty} of {l.requestedQty}
+                    </span>
+                  )}
                   {overStock && (
                     <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#B5493B', background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 8px' }}
                       title={`Only ${stockBoxes} box(es) in stock — this order needs ${boxesOrdered} box(es), ${Math.abs(stockLeft)} over. Stock will go to ${stockLeft}.`}>
@@ -2074,7 +2081,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     if (isEdit) return {};
     try { return JSON.parse(localStorage.getItem('orderDraft') || '{}'); } catch { return {}; }
   })();
-  const editInitLines = isEdit ? editOrder.lines.map(l => ({ id: l.id, qty: l.qty, unit: l.unit || undefined, checkin: l.qty === 0 })) : [];
+  const editInitLines = isEdit ? editOrder.lines.map(l => ({ id: l.id, qty: l.qty, requestedQty: l.requestedQty ?? undefined, unit: l.unit || undefined })) : [];
   const origQtyById = useMemo(() => {
     const map = {};
     if (isEdit) for (const l of editOrder.lines) map[l.id] = l.qty;
@@ -2407,14 +2414,20 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       const ov = priceOverrides[o.id];
       const basePrice = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit);
       const price = (Number(o.qty) || 0) <= 0 ? 0 : basePrice;
-      return { ...item, qty: o.qty, checkin: !!o.checkin, unit, pack, price, priceOverridden: ov !== undefined && ov !== '' };
+      return { ...item, qty: o.qty, requestedQty: o.requestedQty, unit, pack, price, priceOverridden: ov !== undefined && ov !== '' };
     }).filter(Boolean);
   }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf, priceOverrides]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
   const totalPrice = orderLines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
 
-  function qtyFor(id) { return order.find(o => o.id === id)?.qty || 0; }
+  function qtyFor(id) {
+    const o = order.find(o => o.id === id);
+    if (!o) return 0;
+    // Show what was actually asked for, not the (possibly capped) shippable
+    // amount — that's the number the rep is actively controlling.
+    return (o.requestedQty != null ? o.requestedQty : o.qty) || 0;
+  }
   function isOnOrder(id) { return order.some(o => o.id === id); }
 
   // Item lookup: active items plus a fallback snapshot for any line whose item
@@ -2426,53 +2439,68 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     return map;
   }, [items, isEdit, editOrder]);
 
+  // On mobile, ordering more than what's actually available right now doesn't
+  // silently cap (losing track of what was really wanted) or go through
+  // unlimited (as if it will definitely ship) — it splits into what will
+  // actually ship (qty, capped to what's available) and what was requested
+  // (requestedQty, the full ask), so nothing is lost and it's visible on the
+  // order. Desktop keeps ordering ahead of today's availability exactly as
+  // before (no cap, no split) since that's normal there — a future-dated
+  // order against stock that hasn't arrived yet isn't a shortfall.
+  function splitQty(id, requested) {
+    const item = itemById[id];
+    const maxQty = Math.max(0, (item && item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0));
+    const shippable = Math.min(requested, maxQty);
+    return { qty: shippable, requestedQty: shippable === requested ? undefined : requested };
+  }
+
   function setQty(id, qty) {
     const item = itemById[id];
     if (!item) return;
-    // In edit mode the item's current qty was already reserved, so it can go up
-    // to current stock + whatever this order originally held. On desktop we allow
-    // ordering beyond stock (stock can go negative — orders placed before restock).
-    // Out-of-stock items can also be ordered freely (they go on at $0).
-    const oos = (Number(item.stock) || 0) <= 0;
-    const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
-    const clamped = (desktop || oos) ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
+    const requested = Math.max(0, qty);
+    if (requested === 0) {
+      setOrder(prev => prev.filter(o => o.id !== id));
+      return;
+    }
+    if (desktop) {
+      setOrder(prev => {
+        const exists = prev.find(o => o.id === id);
+        if (exists) return prev.map(o => (o.id === id ? { ...o, qty: requested, requestedQty: undefined } : o));
+        return [...prev, { id, qty: requested }];
+      });
+      return;
+    }
+    const split = splitQty(id, requested);
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
-      // Going to 0 removes a normal line, but a "check-in" line (added on
-      // purpose to print its UPC) stays on the order at 0.
-      if (clamped === 0) {
-        if (exists && exists.checkin) return prev.map(o => (o.id === id ? { ...o, qty: 0 } : o));
-        return prev.filter(o => o.id !== id);
-      }
-      if (exists) return prev.map(o => (o.id === id ? { ...o, qty: clamped, checkin: false } : o));
-      return [...prev, { id, qty: clamped }];
+      if (exists) return prev.map(o => (o.id === id ? { ...o, ...split } : o));
+      return [...prev, { id, ...split }];
     });
   }
 
-  // Like setQty, but going to 0 keeps the line on the order at qty 0 (a $0
-  // placeholder) instead of removing it — used by the Quick entry grid.
+  // Like setQty, but going to 0 keeps the line on the order (a $0 placeholder)
+  // instead of removing it — used by the Quick entry grid, where a blank/0
+  // row is how you start typing a new line rather than a deliberate removal.
   function setQtyKeepZero(id, qty) {
     const item = itemById[id];
     if (!item) return;
-    const oos = (Number(item.stock) || 0) <= 0;
-    const maxQty = (item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0);
-    const clamped = (desktop || oos) ? Math.max(0, qty) : Math.max(0, Math.min(qty, maxQty));
+    const requested = Math.max(0, qty);
+    if (desktop) {
+      setOrder(prev => {
+        const exists = prev.find(o => o.id === id);
+        if (!exists) return [...prev, { id, qty: requested }];
+        return prev.map(o => (o.id === id ? { ...o, qty: requested, requestedQty: undefined } : o));
+      });
+      return;
+    }
+    const split = splitQty(id, requested);
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
-      if (!exists) return [...prev, { id, qty: clamped, checkin: clamped === 0 }];
-      return prev.map(o => (o.id === id ? { ...o, qty: clamped, checkin: clamped === 0 ? true : false } : o));
+      if (!exists) return [...prev, { id, ...split }];
+      return prev.map(o => (o.id === id ? { ...o, ...split } : o));
     });
   }
 
-  // Add an item to the order at qty 0 so its UPC/barcode prints for check-in.
-  function addCheckin(id) {
-    const item = items.find(i => i.id === id);
-    if (!item) return;
-    setOrder(prev => {
-      if (prev.find(o => o.id === id)) return prev; // already on the order
-      return [...prev, { id, qty: 0, checkin: true }];
-    });
-  }
 
   function removeLine(id) {
     setOrder(prev => prev.filter(o => o.id !== id));
@@ -2552,7 +2580,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           setCustomerId(cid);
           if (pending.deliveryDate) setDeliveryDate(pending.deliveryDate);
           if (pending.notes) setNotes(pending.notes);
-          setOrder((pending.lines || []).map(l => ({ id: l.item_id, qty: l.qty, unit: l.unit || undefined, checkin: l.qty === 0 })));
+          setOrder((pending.lines || []).map(l => ({ id: l.id, qty: l.qty, requestedQty: l.requestedQty, unit: l.unit || undefined })));
           return;
         }
       }
@@ -2595,7 +2623,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
         customerId,
         deliveryDate,
         notes: notes.trim() || undefined,
-        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit, price: l.price })),
+        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, requestedQty: l.requestedQty, unit: l.unit, price: l.price })),
         poNumber: poEdited ? (poNumber || null) : null,
         invoiceNumber: invEdited ? (invNumber || null) : null,
       });
@@ -2692,7 +2720,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       notes: notes.trim() || undefined,
       submittedBy: submitterName || undefined,
       status: pending ? 'pending' : 'submitted',
-      lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit, price: l.price })),
+      lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, requestedQty: l.requestedQty, unit: l.unit, price: l.price })),
       poNumber: poEdited ? (poNumber || null) : null,
       invoiceNumber: invEdited ? (invNumber || null) : null,
       force,
@@ -3116,6 +3144,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
           {filteredItems.map(item => {
             const qty = qtyFor(item.id);
             const low = item.stock <= 5;
+            const line = order.find(o => o.id === item.id);
+            const backordered = line && line.requestedQty != null && line.requestedQty !== line.qty;
             return (
               <div key={item.id} style={itemRowStyle}>
                 {item.imageUrl && (
@@ -3142,14 +3172,12 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                       </span>
                     </div>
                   )}
-                  {desktop && item.stock <= 0 && !isOnOrder(item.id) && (
-                    <button
-                      style={styles.backorderBtnDesktop}
-                      onClick={() => addCheckin(item.id)}
-                      title="Out of stock — add to the order at 0 qty (backorder); it shows as a $0 line at the bottom of the invoice"
-                    >
-                      + Add (out of stock)
-                    </button>
+                  {backordered && (
+                    <div style={styles.itemMeta}>
+                      <span style={styles.backorderTag} title={`${line.requestedQty} requested, only ${line.qty} available to ship now`}>
+                        shipping {line.qty} of {line.requestedQty}
+                      </span>
+                    </div>
                   )}
                 </div>
                 <div style={styles.stepper}>
@@ -3157,8 +3185,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                     <Minus size={14} color={qty === 0 ? '#C7CBC1' : '#14181F'} />
                   </button>
                   <span style={styles.stepQty}>{qty}</span>
-                  <button style={styles.stepBtn} onClick={() => setQty(item.id, qty + 1)} disabled={item.stock > 0 && qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0)}>
-                    <Plus size={14} color={item.stock > 0 && qty >= item.stock + (isEdit ? (origQtyById[item.id] || 0) : 0) ? '#C7CBC1' : '#14181F'} />
+                  <button style={styles.stepBtn} onClick={() => setQty(item.id, qty + 1)}>
+                    <Plus size={14} color="#14181F" />
                   </button>
                 </div>
               </div>
@@ -3234,10 +3262,11 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
               {orderLines.map(l => {
                 const eaches = (Number(l.qty) || 0) * (l.unit === 'case' ? ((Number(l.pack) || 1) * (Number(l.caseSize) || 1)) : (Number(l.pack) || 1));
                 const packLbl = (l.unit === 'case' && Number(l.caseSize) > 0) ? (fullPackLabel(l) || String((Number(l.pack) || 1) * Number(l.caseSize))) : (l.packLabel || (l.pack ? String(l.pack) : ''));
+                const backordered = l.requestedQty != null && l.requestedQty !== l.qty;
                 return (
                 <div key={l.id} style={{ ...styles.sheetLine, alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 34, display: 'flex', justifyContent: 'center' }}>
-                    <TicketQtyInput qty={l.qty} onSet={v => setQty(l.id, v)} disabled={submitting} />
+                    <TicketQtyInput qty={backordered ? l.requestedQty : l.qty} onSet={v => setQty(l.id, v)} disabled={submitting} />
                   </div>
                   <span style={{ width: 40, textAlign: 'center', color: '#5B6058', fontSize: 12.5 }}>{eaches}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -3245,7 +3274,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                       <span style={styles.sheetLineCode}>{displayCode(l.id)}</span>
                       {l.name}
                     </div>
-                    {l.checkin && l.qty === 0 && <span style={styles.checkinTag}>check-in</span>}
+                    {backordered && <span style={styles.backorderTag} title={`${l.requestedQty} requested, only ${l.qty} available to ship now`}>shipping {l.qty} of {l.requestedQty}</span>}
                   </div>
                   <span style={{ width: 64, textAlign: 'center', fontSize: 11.5, color: '#5B6058' }}>{packLbl}</span>
                   <span style={{ width: 62, textAlign: 'right', fontSize: 12.5 }}>{l.price > 0 ? formatMoney(l.price) : '—'}</span>
@@ -3999,7 +4028,12 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                         <div style={styles.sheetLineName}>{l.name}</div>
                         <div style={styles.sheetLineSku}>{displayCode(l.id)}</div>
                       </div>
-                      <div style={styles.sheetLineQty}>×{l.qty}</div>
+                      <div style={styles.sheetLineQty}>
+                        ×{l.qty}
+                        {l.requestedQty != null && l.requestedQty !== l.qty && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#B5493B' }}>({l.requestedQty} req.)</div>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {o.notes && (
@@ -4173,7 +4207,6 @@ const editStyles = {
   searchDropdown: { position: 'absolute', left: 20, right: 20, top: '100%', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, boxShadow: '0 4px 12px rgba(20,24,31,0.12)', zIndex: 30, maxHeight: 220, overflowY: 'auto' },
   searchResultRow: { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%', borderBottom: '1px solid #EAE8DD', padding: '5px 8px 5px 12px' },
   searchResultMain: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, flex: 1, textAlign: 'left', background: 'none', border: 'none', padding: '4px 0', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 },
-  checkinAddBtn: { flexShrink: 0, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '6px 10px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
   deleteLink: { display: 'block', margin: '10px auto 4px', background: 'none', border: 'none', color: '#B5493B', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' },
   confirmDeleteRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, margin: '10px 20px 4px', fontSize: 12.5, color: '#7A2E22', flexWrap: 'wrap' },
   confirmDeleteBtn: { background: '#B5493B', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
@@ -5478,7 +5511,14 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                                 <td style={officeStyles.subTd}>{l.name}</td>
                                 <td style={officeStyles.subTd}>{l.brand}</td>
                                 <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{l.pack || 1}</td>
-                                <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{l.qty}</td>
+                                <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>
+                                  {l.qty}
+                                  {l.requestedQty != null && l.requestedQty !== l.qty && (
+                                    <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#B5493B' }} title={`${l.requestedQty} requested, only ${l.qty} shipped`}>
+                                      ({l.requestedQty} requested)
+                                    </span>
+                                  )}
+                                </td>
                                 <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{formatMoney(l.price)}</td>
                                 <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>{formatMoney(lineTotal(l, l.qty))}</td>
                               </tr>
@@ -10665,11 +10705,7 @@ const styles = {
   ticketQtyInput: { width: 46, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color: '#14181F', background: '#F7F8F4', border: '1px solid #D6D3C6', borderRadius: 7, padding: '4px 4px', outline: 'none' },
   sheetLineSku: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#8A8F87', marginTop: 2 },
   sheetLineQty: { fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700, color: '#14181F' },
-  checkinBtn: { marginRight: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '4px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-  checkinBtnDesktop: { marginTop: 6, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-  backorderBtn: { marginRight: 6, background: '#FBEEE7', border: '1px solid #E6C6B4', color: '#B5493B', borderRadius: 7, padding: '4px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-  backorderBtnDesktop: { marginTop: 6, background: '#FBEEE7', border: '1px solid #E6C6B4', color: '#B5493B', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-  checkinTag: { fontSize: 10, fontWeight: 800, color: '#2B5D50', background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 20, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  backorderTag: { fontSize: 10, fontWeight: 800, color: '#B5493B', background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 20, padding: '2px 8px' },
   removeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 4 },
   sheetTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 10px', fontSize: 13, fontWeight: 600, color: '#5B6058' },
   sheetTotalNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: '#14181F' },
