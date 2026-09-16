@@ -6240,7 +6240,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
             <option value="caseSize">Edit: Boxes per case</option>
             <option value="price">Edit: Price</option>
             <option value="cost">Edit: Cost</option>
-            <option value="netCost">Edit: Taiyo net cost</option>
+            <option value="netCost">Edit: Taiyo net cost (box)</option>
             <option value="stock">Edit: Stock</option>
             <option value="active">Edit: Active</option>
             <option value="upc">Edit: UPC</option>
@@ -6299,7 +6299,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              {isItems && <SortableTh field="netCost" label="Taiyo net/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
+              {isItems && <SortableTh field="netCost" label="Taiyo net/bx" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <th style={officeStyles.th}></th>
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {showTodays ? (
@@ -7775,7 +7775,7 @@ function TaiyoFeeReport({ onBack }) {
         <div style={officeStyles.sectionTitle}>Taiyo handling fee</div>
       </div>
       <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
-        6% of the net cost of everything sold in the period (by delivery date), totaled per invoice. Set an item's net cost in the Items tab (Edit → Taiyo net cost) to include it here — for now this applies to every item; a way to exclude specific items can be added later.
+        6% of the net cost of everything sold in the period (by delivery date), totaled per invoice. Net cost is entered PER BOX. Set an item's net cost in the Items tab (Edit → Taiyo net cost (box)) to include it here — for now this applies to every item; a way to exclude specific items can be added later.
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
