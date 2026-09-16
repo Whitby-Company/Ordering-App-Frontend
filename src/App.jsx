@@ -4822,6 +4822,48 @@ function PdfRowItemPicker({ items, value, onChange }) {
 const pickRow = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '7px 6px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 
 // Editable invoice number for an order (click to fix it, e.g. to match QuickBooks).
+function PoNumberCell({ order, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(order.poNumber || '');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const trimmed = value.trim();
+    if (trimmed === (order.poNumber || '')) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await apiPatch(`/orders/${order.id}/po-number`, { poNumber: trimmed || null });
+      await onSaved();
+    } catch (e) {
+      window.alert(e.message || 'Could not update the PO number.');
+      setValue(order.poNumber || '');
+    } finally { setSaving(false); setEditing(false); }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #D6D3C6', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: order.poNumber ? '#14181F' : '#B9BDB2' }}
+        title="Click to change this PO number"
+        onClick={() => { setValue(order.poNumber || ''); setEditing(true); }}
+      >
+        {order.poNumber || '—'} <span style={{ fontSize: 10, color: '#8A8F87' }}>✎</span>
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={value}
+      disabled={saving}
+      onChange={e => setValue(e.target.value)}
+      onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setValue(order.poNumber || ''); setEditing(false); } }}
+      onBlur={save}
+      style={{ width: 90, fontSize: 13, padding: '2px 6px', border: '1px solid #2B5D50', borderRadius: 6, fontFamily: 'inherit' }}
+    />
+  );
+}
+
 function InvoiceNumberCell({ order, onSaved }) {
   const [editing, setEditing] = useState(false);
   const current = invoiceNumberFor(order);
@@ -5261,7 +5303,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
-                    <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                    <td style={officeStyles.td}>{o.status === 'pending' ? (o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>) : <PoNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
