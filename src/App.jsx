@@ -5732,9 +5732,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     // through like an order/PO delta would be.
     for (const m of (manualLog || [])) {
       if (!m.changedAt) continue;
+      const d = String(m.changedAt).slice(0, 10);
       rows.push({
         kind: 'manual',
-        date: String(m.changedAt).slice(0, 10), changedAt: m.changedAt,
+        date: d, deliveryDate: d, changedAt: m.changedAt,
         oldStock: Number(m.oldStock), newStock: Number(m.newStock),
         delta: Number(m.newStock) - Number(m.oldStock),
         changedBy: m.changedBy, reason: m.reason || 'Stock edit',
