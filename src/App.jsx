@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
+import taiyoLogo from './assets/taiyo-logo.png';
 import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal, fullPackLabel } from './utils.js';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
@@ -1290,7 +1291,10 @@ function WarehousePage() {
       <style>{fontImport}</style>
       <style>{'html,body,#root{margin:0;padding:0;width:100%;max-width:100%;}'}</style>
       <div style={S.header}>
-        <span style={S.title}>Taiyo</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <img src={taiyoLogo} alt="Taiyo" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+          <span style={S.title}>Taiyo</span>
+        </div>
         <span style={{ fontSize: 13, color: '#C7CBC1' }}>{status === 'ready' ? `${list.length} invoice${list.length === 1 ? '' : 's'}` : ''}</span>
       </div>
       <div style={S.body}>
