@@ -5546,7 +5546,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [countSaved, setCountSaved] = useState({}); // itemId -> true after saved
   async function applyCount(item) {
     const v = counts[item.id];
-    if (v === undefined || v === '' || Number(v) === item.stock) return;
+    const baseOnHand = item.onHand != null ? item.onHand : item.stock;
+    if (v === undefined || v === '' || Number(v) === baseOnHand) return;
     setCountBusy(true);
     try {
       await apiPatch(`/items/${encodeURIComponent(item.id)}`, { stock: Number(v), reason: 'Physical count', changedBy: getSubmitterName() || undefined });
@@ -6271,7 +6272,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 {countMode ? (
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-                      <span style={{ color: '#8A8F87', fontSize: 12 }} title="Current app stock">app: {item.stock}</span>
+                      <span style={{ color: '#8A8F87', fontSize: 12 }} title="Current physical on-hand in the app">app: {item.onHand != null ? item.onHand : item.stock}</span>
                       <input
                         type="text" inputMode="numeric" placeholder="count"
                         value={counts[item.id] ?? ''}
@@ -6345,7 +6346,11 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 )}
               </tr>
               {isOpen && (() => {
-                const hist = orderHistoryFor(item.id, item.stock, receiptsById[item.id] || [], manualLogById[item.id] || []);
+                // Anchor on the same number the on-hand column actually shows
+                // (computed onHand when available) — not the raw cached
+                // item.stock, which can drift out of sync with it.
+                const anchorStock = item.onHand != null ? item.onHand : item.stock;
+                const hist = orderHistoryFor(item.id, anchorStock, receiptsById[item.id] || [], manualLogById[item.id] || []);
                 const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (showTodays ? 3 : 0);
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
@@ -6389,7 +6394,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                           <div style={officeStyles.itemHistorySummary}>
                             <span><strong>{hist.consumedBoxes}</strong> boxes out on submitted orders</span>
                             {hist.pendingBoxes > 0 && <span style={{ color: '#8A6D1B' }}>· {hist.pendingBoxes} boxes pending</span>}
-                            <span style={{ color: '#8A8F87' }}>· in stock now: {item.stock}{hist.caseSize > 1 ? ` · case = ${hist.caseSize} boxes` : ''}</span>
+                            <span style={{ color: '#8A8F87' }}>· in stock now: {anchorStock}{hist.caseSize > 1 ? ` · case = ${hist.caseSize} boxes` : ''}</span>
                           </div>
                           <table style={officeStyles.itemHistoryTable}>
                             <thead>
