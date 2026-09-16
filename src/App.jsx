@@ -1505,6 +1505,7 @@ function MainApp() {
     return (
       <div style={styles.appDesktop}>
         <style>{fontImport}</style>
+        <ErrorBoundary>
         <OfficeView
           items={itemsAll}
           customers={customersAll}
@@ -1522,6 +1523,7 @@ function MainApp() {
           isManualOverride={!!viewOverride}
           onResetToAuto={() => setOverride(null)}
         />
+        </ErrorBoundary>
         <UpdateNotice />
       </div>
     );
@@ -7104,7 +7106,7 @@ function StockHistoryModal({ item, onClose, onChanged }) {
   const [log, setLog] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState('');
-  function load() { apiGet(`/items/${encodeURIComponent(item.id)}/stock-log`).then(setLog).catch(() => setLog([])); }
+  function load() { apiGet(`/items/${encodeURIComponent(item.id)}/stock-log`).then(d => setLog(d.log || [])).catch(() => setLog([])); }
   useEffect(() => { load(); }, [item.id]);
 
   async function deleteEntry(r, isLatest) {
