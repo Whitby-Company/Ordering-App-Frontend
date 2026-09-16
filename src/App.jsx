@@ -2127,14 +2127,16 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   }, []);
   // Effective per-each price for an item at a given unit for the selected customer.
   const [allCases, setAllCases] = useState(false);
-  const priceOf = React.useCallback((item, unit) => {
-    // Prices are per-EACH by default (even for case-unit lines). Only when the
-    // whole order is in "All cases" mode do we use the case price. Out-of-stock
-    // items keep their real price (future-dated orders).
+  const priceOf = React.useCallback((item, unit, orderAllCases) => {
+    // Prices are per-EACH by default (even for case-unit lines). Only when
+    // the WHOLE order (every line actually being shipped) is in case units
+    // does a case-unit line get the case price — mixing in even one
+    // each/box line drops everyone back to each pricing. Out-of-stock items
+    // keep their real price (future-dated orders).
     if (catalog && catalog.prices.has(item.id)) return catalog.prices.get(item.id);
-    if (allCases && (unit || unitOf(item)) === 'case') return Number(item.casePrice != null ? item.casePrice : item.price) || 0;
+    if (orderAllCases && (unit || unitOf(item)) === 'case') return Number(item.casePrice != null ? item.casePrice : item.price) || 0;
     return Number(item.price) || 0;
-  }, [catalog, unitOf, allCases]);
+  }, [catalog, unitOf]);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
   // Desktop keyboard flow: type-to-filter customer, Tab to accept + go to date.
@@ -2403,19 +2405,26 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const orderLines = useMemo(() => {
     const snap = {};
     if (isEdit) for (const l of editOrder.lines) snap[l.id] = l;
-    return order.map(o => {
-      let item = catalogItems.find(i => i.id === o.id) || items.find(i => i.id === o.id) || (isEdit ? snap[o.id] : null);
+    // Resolve each line's item + unit first, so we know the order's REAL
+    // composition before pricing anything — case pricing only applies when
+    // every line actually being shipped is in case units.
+    const resolved = order.map(o => {
+      const item = catalogItems.find(i => i.id === o.id) || items.find(i => i.id === o.id) || (isEdit ? snap[o.id] : null);
       if (!item) return null;
-      // Ordering unit for this line: chosen on the line, else the store's default.
       const unit = o.unit || unitOf(item);
+      return { o, item, unit };
+    }).filter(Boolean);
+    const shipping = resolved.filter(r => (Number(r.o.qty) || 0) > 0);
+    const orderAllCases = shipping.length > 0 && shipping.every(r => r.unit === 'case');
+    return resolved.map(({ o, item, unit }) => {
       const pack = packFor(item, unit);
       // Price: a manual per-line override wins; otherwise the resolved price.
       // BUT when qty is 0, the per-each price shows 0 too (and total is 0).
       const ov = priceOverrides[o.id];
-      const basePrice = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit);
+      const basePrice = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit, orderAllCases);
       const price = (Number(o.qty) || 0) <= 0 ? 0 : basePrice;
       return { ...item, qty: o.qty, requestedQty: o.requestedQty, unit, pack, price, priceOverridden: ov !== undefined && ov !== '' };
-    }).filter(Boolean);
+    });
   }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf, priceOverrides]);
 
   const totalUnits = orderLines.reduce((s, l) => s + l.qty, 0);
@@ -2534,8 +2543,12 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   function setUnit(id, unit) {
     setOrder(prev => prev.map(o => (o.id === id ? { ...o, unit } : o)));
   }
-  // Flip the whole order to cases (or back to boxes). Only items that have a case
-  // size can become cases; others stay boxes so nothing is priced/counted wrong.
+  // Convenience: flip every line to cases (or back to boxes) in one click.
+  // Only items that have a case size can become cases; others stay boxes.
+  // This no longer decides pricing by itself — case pricing is now driven by
+  // the order's actual composition (every shipping line in case units),
+  // recomputed live, so it stays correct even if a line gets changed
+  // individually afterward.
   function toggleAllCases() {
     const next = !allCases;
     setAllCases(next);
@@ -6196,6 +6209,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         {isItems && editMode && (
           <select style={officeStyles.select} value={editField} onChange={e => setEditField(e.target.value)}>
             <option value="all">Edit: All fields</option>
+            <option value="itemNumber">Edit: Item #</option>
             <option value="name">Edit: Item name</option>
             <option value="brand">Edit: Brand</option>
             <option value="pack">Edit: Pack</option>
@@ -6294,10 +6308,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                     ? <img src={item.imageUrl} alt="" style={officeStyles.invThumb} loading="lazy" />
                     : <div style={officeStyles.invThumbPlaceholder}><ImageIcon size={16} color="#C7CBC1" /></div>}
                 </td>
-                <td style={{ ...officeStyles.td, cursor: 'pointer' }} onClick={toggleHistory}>
+                <td style={{ ...officeStyles.td, cursor: (isItems && canEdit('itemNumber')) ? 'default' : 'pointer' }} onClick={(isItems && canEdit('itemNumber')) ? undefined : toggleHistory}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <ChevronRight size={13} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
-                    {displayCode(item.id)}
+                    <ChevronRight size={13} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} onClick={(isItems && canEdit('itemNumber')) ? toggleHistory : undefined} />
+                    {(isItems && canEdit('itemNumber')) ? <ItemNumberEditor item={item} onSaved={onRefresh} /> : displayCode(item.id)}
                   </span>
                 </td>
                 <td style={{ ...officeStyles.td, cursor: (isItems && canEdit('name')) ? 'default' : 'pointer' }} onClick={(isItems && canEdit('name')) ? undefined : toggleHistory}>
@@ -6941,6 +6955,60 @@ function BrandSelectEditor({ item, brands, onSaved }) {
       {options.map(b => <option key={b} value={b}>{b}</option>)}
       <option value="__new__">+ New brand…</option>
     </select>
+  );
+}
+
+// Editable item number (SKU code) — the part after the brand prefix, e.g.
+// "NIBB4OZ" in "ACL:NIBB4OZ". Renames the item everywhere it's referenced
+// (orders, POs, stock history, catalogs) via PATCH /items/:id/rename.
+function ItemNumberEditor({ item, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const original = displayCode(item.id);
+  const [value, setValue] = useState(original);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === original) { setValue(original); setEditing(false); return; }
+    setSaving(true);
+    setError('');
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}/rename`, { code: trimmed });
+      await onSaved();
+      setEditing(false);
+    } catch (err) {
+      setError(err.message || 'Could not rename this item.');
+      setValue(original);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        style={officeStyles.packLabelEditBtn}
+        onClick={() => { setValue(original); setError(''); setEditing(true); }}
+        title="Click to change this item's number"
+      >
+        {original}
+      </button>
+    );
+  }
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+      <input
+        autoFocus
+        value={value}
+        disabled={saving}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setValue(original); setError(''); setEditing(false); } }}
+        onBlur={save}
+        style={{ width: 100, fontSize: 13, padding: '2px 6px', border: '1px solid #2B5D50', borderRadius: 6, fontFamily: 'inherit' }}
+      />
+      {error && <span style={{ fontSize: 10.5, color: '#B5493B', maxWidth: 160, whiteSpace: 'normal' }}>{error}</span>}
+    </span>
   );
 }
 
