@@ -5602,6 +5602,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     apiGet(`/items/${encodeURIComponent(openItemId)}/stock-log`).then(d => {
       const recs = (d.purchaseOrders || []).filter(p => Number(p.qtyReceived) > 0 && p.receivedDate);
       setReceiptsById(prev => ({ ...prev, [openItemId]: recs }));
+      // A real baseline (date + count) exists whenever someone did an actual
+      // physical count / direct stock edit — that's what the backend's
+      // on-hand calculation actually resets from. Some tools (bulk
+      // "Inventory redo") only write a stock_log entry with no matching
+      // baseline, so they look like a reset here but aren't a real one to
+      // the backend — treating those as a hard reset would show a jump that
+      // doesn't match how on-hand is actually calculated.
+      const baselineKeys = new Set((d.baselines || []).map(b => `${b.asOfDate}|${b.count}`));
       // Manual stock changes (physical counts, direct edits, inventory redo) —
       // "Received PO..." entries are excluded since those are already covered
       // by `receipts` above, and 0-delta entries are a logging artifact of the
@@ -5610,7 +5618,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         !/^Received PO/i.test(e.reason || '') &&
         Number.isFinite(Number(e.oldStock)) && Number.isFinite(Number(e.newStock)) &&
         Number(e.oldStock) !== Number(e.newStock)
-      );
+      ).map(e => ({
+        ...e,
+        isRealBaseline: baselineKeys.has(`${String(e.changedAt).slice(0, 10)}|${Number(e.newStock)}`),
+      }));
       setManualLogById(prev => ({ ...prev, [openItemId]: manual }));
     }).catch(() => {
       setReceiptsById(prev => ({ ...prev, [openItemId]: [] }));
@@ -5738,6 +5749,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       const d = String(m.changedAt).slice(0, 10);
       rows.push({
         kind: 'manual',
+        isRealBaseline: !!m.isRealBaseline,
         date: d, deliveryDate: d, changedAt: m.changedAt,
         oldStock: Number(m.oldStock), newStock: Number(m.newStock),
         delta: Number(m.newStock) - Number(m.oldStock),
@@ -5757,14 +5769,20 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     // on-hand); entries dated > today are future (haven't happened yet).
     // Past (newest first): the most recent past entry leaves on-hand at
     // currentStock; each older entry = current − its delta (reverse the change) —
-    // EXCEPT a manual entry, which is a known-true snapshot: it shows its own
+    // EXCEPT a manual entry backed by a REAL baseline (a genuine physical count
+    // or direct stock edit), which is a known-true snapshot: it shows its own
     // recorded newStock, and everything older than it continues from its
-    // recorded oldStock instead of an accumulated reversal.
+    // recorded oldStock instead of an accumulated reversal. A manual log entry
+    // with no matching baseline (e.g. the bulk "Inventory redo" tool, which
+    // logs a change but doesn't reset the backend's actual calculation) is NOT
+    // a real reset point — treating it as one would show a jump that doesn't
+    // match how on-hand is actually computed, so it's reversed like any other
+    // delta instead.
     let afterPast = Number(currentStock) || 0;
     for (const r of rows) {
       if (r.status === 'pending') { r.stockAfter = null; continue; }
       if ((r.date || '') > today) continue;
-      if (r.kind === 'manual') {
+      if (r.kind === 'manual' && r.isRealBaseline) {
         r.stockAfter = r.newStock;
         afterPast = r.oldStock;
       } else {
@@ -6432,7 +6450,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                   <td style={officeStyles.itemHistoryTd}>box</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700, color: r.delta >= 0 ? '#2B7A4B' : '#B5493B' }}>{r.delta >= 0 ? '+' : ''}{r.delta}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter}</td>
-                                  <td style={officeStyles.itemHistoryTd}><span style={{ fontSize: 10, fontWeight: 700, color: '#8A6D1B', background: '#F5E9C6', border: '1px solid #E2CE8E', borderRadius: 12, padding: '1px 7px' }}>Set by hand</span></td>
+                                  <td style={officeStyles.itemHistoryTd}>{r.isRealBaseline ? <span style={{ fontSize: 10, fontWeight: 700, color: '#8A6D1B', background: '#F5E9C6', border: '1px solid #E2CE8E', borderRadius: 12, padding: '1px 7px' }}>Set by hand</span> : <span style={{ fontSize: 10, fontWeight: 700, color: '#5B6058', background: '#EFEDE3', border: '1px solid #DAD7C8', borderRadius: 12, padding: '1px 7px' }} title="Logged as a change but not an official reset point — treated like a regular adjustment">Bulk correction</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}></td>
                                 </tr>
                               ) : (
