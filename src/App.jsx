@@ -2021,7 +2021,7 @@ const calStyles = {
   todayBtn: { marginTop: 8, width: '100%', background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '6px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
 };
 
-function OrderTab({ items, customers, customersAll, orders, brandColors, printSequence, onOrderSubmitted, barcodesOff = false, setBarcodesOff = () => {}, desktop = false, editOrder = null, onClose = null }) {
+function OrderTab({ items, customers, customersAll, orders, brandColors, printSequence, onOrderSubmitted, barcodesOff = false, setBarcodesOff = () => {}, desktop = false, editOrder = null, onClose = null, onEditExisting = null }) {
   const isEdit = !!editOrder;
   // Look up a customer by id across the active list and the full list (so desktop
   // quick entry can select inactive customers too).
@@ -2103,6 +2103,16 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // opt into all. Desktop always shows everyone.
   const [showAllCustomers, setShowAllCustomers] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState(isEdit ? editOrder.deliveryDate : (savedDraft.deliveryDate || todayISODate()));
+  // When a NEW order matches an existing submitted order for the same store +
+  // delivery date, offer to jump into editing it.
+  const [existingMatch, setExistingMatch] = useState(null);
+  const [dismissedMatch, setDismissedMatch] = useState(null);
+  useEffect(() => {
+    if (isEdit || customerId == null || !deliveryDate) { setExistingMatch(null); return; }
+    const match = (orders || []).find(o => o.status !== 'pending' && !o.voided && o.customerId === customerId && o.deliveryDate === deliveryDate);
+    const key = match ? `${match.id}` : null;
+    setExistingMatch(match && dismissedMatch !== key ? match : null);
+  }, [customerId, deliveryDate, orders, isEdit, dismissedMatch]);
   // Custom PO# override. Empty string means "use the auto value"; once the user
   // edits it, poEdited flips and we keep their value.
   const [poNumber, setPoNumber] = useState(isEdit ? (editOrder.poNumber || '') : '');
@@ -2977,6 +2987,17 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       )}
       {!isEdit && customerId != null && catalog && catalog.off && !showAllItems && (
         <div style={styles.catalogNote}>This store has no catalog set up yet — set one up on the desktop (Catalogs tab), or tap "All items" to browse everything.</div>
+      )}
+      {existingMatch && (
+        <div style={{ background: '#FBF3E4', border: '1px solid #EAD3A8', borderRadius: 10, padding: '12px 16px', margin: '4px 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13.5, color: '#5B4A1F' }}>
+            📋 <b>{existingMatch.customer}</b> already has an order for {formatDate(existingMatch.deliveryDate)} (invoice {invoiceNumberFor(existingMatch)}, {existingMatch.lines.length} items). Want to edit that one instead?
+          </span>
+          <span style={{ display: 'flex', gap: 8 }}>
+            {onEditExisting && <button style={{ ...styles.pendingBtn, background: '#2B5D50', color: '#fff', borderColor: '#2B5D50' }} onClick={() => onEditExisting(existingMatch)}>Edit that order</button>}
+            <button style={styles.pendingBtn} onClick={() => setDismissedMatch(String(existingMatch.id))}>No, new order</button>
+          </span>
+        </div>
       )}
       {quickEntry && (customerId != null) && (
         <QuickEntryGrid
@@ -4247,6 +4268,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
               editOrder={editingOrder}
               onClose={editingOrder ? (() => { setEditingOrder(null); setSection('orders'); }) : null}
               onOrderSubmitted={async () => { setEditingOrder(null); await onRefresh(); }}
+              onEditExisting={editOrderInNewTab}
               desktop
             />
           </div>
