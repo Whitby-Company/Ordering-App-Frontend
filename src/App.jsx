@@ -5609,7 +5609,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       // baseline, so they look like a reset here but aren't a real one to
       // the backend — treating those as a hard reset would show a jump that
       // doesn't match how on-hand is actually calculated.
-      const baselineKeys = new Set((d.baselines || []).map(b => `${b.asOfDate}|${b.count}`));
+      const baselines = d.baselines || [];
+      const baselineKeys = new Set(baselines.map(b => `${b.asOfDate}|${b.count}`));
       // Manual stock changes (physical counts, direct edits, inventory redo) —
       // "Received PO..." entries are excluded since those are already covered
       // by `receipts` above, and 0-delta entries are a logging artifact of the
@@ -5622,7 +5623,23 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         ...e,
         isRealBaseline: baselineKeys.has(`${String(e.changedAt).slice(0, 10)}|${Number(e.newStock)}`),
       }));
-      setManualLogById(prev => ({ ...prev, [openItemId]: manual }));
+      // Some real baselines have NO matching log entry at all (e.g. set via a
+      // path that only logs when the computed on-hand actually differed from
+      // the cached stock at that moment). Without a synthetic row for these,
+      // the ledger would never hit its true reset point and would keep
+      // reversing indefinitely through older orders/POs as if nothing ever
+      // grounded it — so add one directly from the baseline itself.
+      const loggedKeys = new Set(manual.filter(m => m.isRealBaseline).map(m => `${String(m.changedAt).slice(0, 10)}|${Number(m.newStock)}`));
+      const syntheticBaselines = baselines
+        .filter(b => !loggedKeys.has(`${b.asOfDate}|${b.count}`))
+        .map(b => ({
+          id: `baseline-${b.asOfDate}-${b.count}`,
+          changedAt: b.createdAt || `${b.asOfDate}T12:00:00.000Z`,
+          oldStock: null, newStock: b.count,
+          changedBy: b.createdBy, reason: 'Physical count',
+          isRealBaseline: true, synthetic: true,
+        }));
+      setManualLogById(prev => ({ ...prev, [openItemId]: [...manual, ...syntheticBaselines] }));
     }).catch(() => {
       setReceiptsById(prev => ({ ...prev, [openItemId]: [] }));
       setManualLogById(prev => ({ ...prev, [openItemId]: [] }));
@@ -5747,12 +5764,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     for (const m of (manualLog || [])) {
       if (!m.changedAt) continue;
       const d = String(m.changedAt).slice(0, 10);
+      const hasOld = m.oldStock != null && Number.isFinite(Number(m.oldStock));
       rows.push({
         kind: 'manual',
         isRealBaseline: !!m.isRealBaseline,
+        synthetic: !!m.synthetic,
         date: d, deliveryDate: d, changedAt: m.changedAt,
-        oldStock: Number(m.oldStock), newStock: Number(m.newStock),
-        delta: Number(m.newStock) - Number(m.oldStock),
+        oldStock: hasOld ? Number(m.oldStock) : null, newStock: Number(m.newStock),
+        delta: hasOld ? Number(m.newStock) - Number(m.oldStock) : null,
         changedBy: m.changedBy, reason: m.reason || 'Stock edit',
         status: 'submitted',
       });
@@ -5777,14 +5796,28 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     // logs a change but doesn't reset the backend's actual calculation) is NOT
     // a real reset point — treating it as one would show a jump that doesn't
     // match how on-hand is actually computed, so it's reversed like any other
-    // delta instead.
+    // delta instead. A real baseline with no known "before" value (a
+    // synthetic row, or a baseline whose own before-value wasn't recorded) is
+    // the earliest known-true point — nothing older than it can be reliably
+    // computed, so everything before it shows as unknown rather than a
+    // fabricated number.
     let afterPast = Number(currentStock) || 0;
     for (const r of rows) {
       if (r.status === 'pending') { r.stockAfter = null; continue; }
       if ((r.date || '') > today) continue;
+      // A manual entry that ISN'T a real baseline (bulk "Inventory redo", ad
+      // hoc adjustments) never actually fed into the backend's on-hand
+      // calculation -- computeStock() only ever uses baselines, PO receipts,
+      // and order shipments, so a bulk-correction's own recorded delta has no
+      // real relationship to the running total. Reversing through it as if it
+      // did would corrupt every row older than it. Show it purely as a
+      // historical record (its own logged before/after), without it
+      // participating in the chain at all.
+      if (r.kind === 'manual' && !r.isRealBaseline) { r.stockAfter = null; continue; }
+      if (afterPast == null) { r.stockAfter = null; continue; }
       if (r.kind === 'manual' && r.isRealBaseline) {
         r.stockAfter = r.newStock;
-        afterPast = r.oldStock;
+        afterPast = r.oldStock; // null when unknown — stops the walk here
       } else {
         r.stockAfter = afterPast;
         afterPast = afterPast - r.delta; // before this entry = after − its change
@@ -6446,10 +6479,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                   <td style={officeStyles.itemHistoryTd}>—</td>
                                   <td style={officeStyles.itemHistoryTd}>{formatDate(r.date)}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, color: '#8A6D1B', fontWeight: 600 }}>{r.reason}{r.changedBy ? ' · ' + r.changedBy : ''}</td>
-                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.oldStock} → {r.newStock}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.oldStock != null ? r.oldStock : <span style={{ color: '#B9BDB2' }}>—</span>} → {r.newStock}</td>
                                   <td style={officeStyles.itemHistoryTd}>box</td>
-                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700, color: r.delta >= 0 ? '#2B7A4B' : '#B5493B' }}>{r.delta >= 0 ? '+' : ''}{r.delta}</td>
-                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700, color: r.delta == null ? '#8A8F87' : r.delta >= 0 ? '#2B7A4B' : '#B5493B' }}>{r.delta == null ? '—' : (r.delta >= 0 ? '+' : '') + r.delta}</td>
+                                  <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right', fontWeight: 700 }}>{r.stockAfter != null ? r.stockAfter : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}>{r.isRealBaseline ? <span style={{ fontSize: 10, fontWeight: 700, color: '#8A6D1B', background: '#F5E9C6', border: '1px solid #E2CE8E', borderRadius: 12, padding: '1px 7px' }}>Set by hand</span> : <span style={{ fontSize: 10, fontWeight: 700, color: '#5B6058', background: '#EFEDE3', border: '1px solid #DAD7C8', borderRadius: 12, padding: '1px 7px' }} title="Logged as a change but not an official reset point — treated like a regular adjustment">Bulk correction</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}></td>
                                 </tr>
