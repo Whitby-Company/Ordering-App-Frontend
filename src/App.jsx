@@ -6240,6 +6240,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
             <option value="caseSize">Edit: Boxes per case</option>
             <option value="price">Edit: Price</option>
             <option value="cost">Edit: Cost</option>
+            <option value="netCost">Edit: Taiyo net cost</option>
             <option value="stock">Edit: Stock</option>
             <option value="active">Edit: Active</option>
             <option value="upc">Edit: UPC</option>
@@ -6298,6 +6299,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
               {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
+              {isItems && <SortableTh field="netCost" label="Taiyo net/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               <th style={officeStyles.th}></th>
               {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
               {showTodays ? (
@@ -6318,7 +6320,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 12 : 11) : 7}>No items match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={isItems ? (editMode && (editField === 'all' || editField === 'photo') ? 13 : 12) : 7}>No items match "{query}"</td></tr>
             )}
             {filtered.map(item => {
               const canEdit = f => editMode && (editField === 'all' || editField === f);
@@ -6392,6 +6394,13 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                   {canEdit('cost') ? (
                     <NumberFieldEditor item={item} field="cost" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} placeholder="—" />
                   ) : (item.cost != null ? formatMoney(item.cost) : <span style={{ color: '#B9BDB2' }}>—</span>)}
+                </td>
+                )}
+                {isItems && (
+                <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                  {canEdit('netCost') ? (
+                    <NumberFieldEditor item={item} field="netCost" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} placeholder="—" />
+                  ) : (item.netCost != null ? formatMoney(item.netCost) : <span style={{ color: '#B9BDB2' }}>—</span>)}
                 </td>
                 )}
                 <td style={officeStyles.td}>
@@ -6480,7 +6489,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 // item.stock, which can drift out of sync with it.
                 const anchorStock = item.onHand != null ? item.onHand : item.stock;
                 const hist = orderHistoryFor(item.id, anchorStock, receiptsById[item.id] || [], manualLogById[item.id] || []);
-                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 12 : 11) : 7) + (showTodays ? 3 : 0);
+                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 13 : 12) : 7) + (showTodays ? 3 : 0);
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
                   switch (f) {
@@ -7500,6 +7509,7 @@ const REPORT_LIST = [
   { id: 'matching-totals', name: 'Invoices with matching totals', desc: 'Find invoices that share the same total — a quick way to spot potential duplicates.' },
   { id: 'item-sales', name: 'Item sales by date range', desc: 'Pick items and a date range to list every invoice for those items with cases, totals, and a grand total.' },
   { id: 'taiyo', name: 'Taiyo owed (warehouse partner)', desc: 'Weekly report of Taiyo-owned items sold, with cases and amount owed at Taiyo pricing.' },
+  { id: 'taiyo-fee', name: 'Taiyo handling fee', desc: 'Total net cost of everything sold in a period, by invoice, and the 6% handling fee owed to Taiyo on it.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -7711,6 +7721,120 @@ function TaiyoReport({ onBack }) {
           <div style={{ borderTop: '2px solid #14181F', paddingTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 24, fontWeight: 800, fontSize: 15 }}>
             <span>GRAND TOTAL OWED:</span>
             <span style={{ color: '#2B5D50' }}>{formatMoney(data.grandOwed)}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Taiyo's HANDLING FEE (6% of net cost), separate from the "Taiyo owed"
+// report above (which is about Taiyo-OWNED inventory and a per-case cost).
+// This one totals net_cost x eaches sold per invoice, then applies the fee
+// rate, over a date range (delivery date) -- defaulting to the current
+// calendar month since that's how it's paid out.
+function TaiyoFeeReport({ onBack }) {
+  function monthBounds() {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    const iso = d => d.toISOString().slice(0, 10);
+    return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
+  }
+  const mb = monthBounds();
+  const [from, setFrom] = useState(mb.from);
+  const [to, setTo] = useState(mb.to);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run() {
+    setBusy(true); setErr('');
+    try { setData(await apiGet(`/orders/taiyo-fee-report?from=${from}&to=${to}`)); }
+    catch (e) { setErr(e.message || 'Could not run the report.'); }
+    finally { setBusy(false); }
+  }
+  useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
+
+  function exportCsv() {
+    if (!data) return;
+    const head = ['Invoice #', 'Delivery date', 'PO#', 'Customer', 'Net cost', 'Fee owed (6%)'];
+    const lines = [head.join(',')];
+    for (const inv of data.invoices) lines.push([inv.invoiceNumber, inv.deliveryDate, csvEscape(inv.poNumber || ''), csvEscape(inv.customer), inv.netCostTotal.toFixed(2), inv.feeOwed.toFixed(2)].join(','));
+    lines.push(['', '', '', 'GRAND TOTAL', data.grandNetCost.toFixed(2), data.grandFeeOwed.toFixed(2)].join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `taiyo-fee_${from}_${to}.csv`; a.click();
+  }
+
+  const fld = { padding: '7px 9px', border: '1px solid #D6D3C6', borderRadius: 6, fontSize: 13 };
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Taiyo handling fee</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
+        6% of the net cost of everything sold in the period (by delivery date), totaled per invoice. Set an item's net cost in the Items tab (Edit → Taiyo net cost) to include it here — for now this applies to every item; a way to exclude specific items can be added later.
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87' }}>PERIOD (delivery)</label>
+        <input type="date" style={fld} value={from} onChange={e => setFrom(e.target.value)} />
+        <span style={{ color: '#8A8F87' }}>to</span>
+        <input type="date" style={fld} value={to} onChange={e => setTo(e.target.value)} />
+        <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={run} disabled={busy}>{busy ? 'Running…' : 'Run'}</button>
+        <button style={officeStyles.smallBtn} onClick={() => { setFrom(mb.from); setTo(mb.to); }}>This month</button>
+        {data && <button style={officeStyles.smallBtn} onClick={exportCsv}>↓ Export CSV</button>}
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
+
+      {data && (
+        <>
+          <div style={{ background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 8, padding: '12px 18px', display: 'inline-block', marginBottom: 14 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, color: '#2B5D50' }}>{formatMoney(data.grandFeeOwed)}</div>
+            <div style={{ fontSize: 12, color: '#5B6058' }}>owed to Taiyo · {formatMoney(data.grandNetCost)} net cost · {from} to {to}</div>
+          </div>
+
+          {data.itemsMissingNetCost.length > 0 && (
+            <div style={{ background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 8, padding: '10px 14px', marginBottom: 14, maxWidth: 640 }}>
+              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#B5493B', marginBottom: 4 }}>
+                {data.itemsMissingNetCost.length} item{data.itemsMissingNetCost.length === 1 ? '' : 's'} sold in this period have no Taiyo net cost set — excluded from the totals above
+              </div>
+              <div style={{ fontSize: 12, color: '#7A2E22' }}>
+                {data.itemsMissingNetCost.map(it => it.name).join(', ')}
+              </div>
+            </div>
+          )}
+
+          <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead><tr>
+                <th style={repStyles.th}>Invoice</th>
+                <th style={repStyles.th}>Delivery</th>
+                <th style={repStyles.th}>Customer</th>
+                <th style={{ ...repStyles.th, textAlign: 'right' }}>Net cost</th>
+                <th style={{ ...repStyles.th, textAlign: 'right' }}>Fee owed (6%)</th>
+              </tr></thead>
+              <tbody>
+                {data.invoices.map(inv => (
+                  <tr key={inv.orderId} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                    <td style={repStyles.tdItem}>#{inv.invoiceNumber}</td>
+                    <td style={repStyles.tdItem}>{formatDate(inv.deliveryDate)}</td>
+                    <td style={repStyles.tdItem}>{inv.customer}</td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(inv.netCostTotal)}</td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: '#2B5D50' }}>{formatMoney(inv.feeOwed)}</td>
+                  </tr>
+                ))}
+                {data.invoices.length === 0 && (
+                  <tr><td colSpan={5} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>No invoices in this period.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ borderTop: '2px solid #14181F', paddingTop: 10, marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 24, fontWeight: 800, fontSize: 15 }}>
+            <span>GRAND TOTAL OWED:</span>
+            <span style={{ color: '#2B5D50' }}>{formatMoney(data.grandFeeOwed)}</span>
           </div>
         </>
       )}
@@ -9672,6 +9796,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
   if (active === 'item-sales') return <ItemSalesReport onBack={() => setActive(null)} orders={orders} items={items} />;
   if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} />;
+  if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
