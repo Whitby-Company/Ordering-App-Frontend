@@ -4311,8 +4311,8 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
             />
           </div>
         )}
-        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
-        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
+        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} customersAll={customersAll} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
+        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} customersAll={customersAll} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
         {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
@@ -4898,10 +4898,16 @@ function PdfRowItemPicker({ items, value, onChange }) {
 const pickRow = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '7px 6px', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 
 // Editable invoice number for an order (click to fix it, e.g. to match QuickBooks).
-function PoNumberCell({ order, onSaved }) {
+function PoNumberCell({ order, customer, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(order.poNumber || '');
   const [saving, setSaving] = useState(false);
+  // Older orders that predate per-order PO# storage have no saved value —
+  // show what the invoice actually displays (same formula the backend/print
+  // functions fall back to) instead of a blank dash. Saving still only ever
+  // writes an explicit value; this computed one is never written on its own.
+  const displayPo = order.poNumber || buildAutoPoBase(order.customer, customer && customer.abbreviation, order.submittedAt);
+  const isFallback = !order.poNumber && !!displayPo;
 
   async function save() {
     const trimmed = value.trim();
@@ -4919,11 +4925,11 @@ function PoNumberCell({ order, onSaved }) {
   if (!editing) {
     return (
       <button
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #D6D3C6', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: order.poNumber ? '#14181F' : '#B9BDB2' }}
-        title="Click to change this PO number"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #D6D3C6', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: displayPo ? (isFallback ? '#8A8F87' : '#14181F') : '#B9BDB2' }}
+        title={isFallback ? 'Not saved on this order — shown as it appears on the invoice. Click to set it explicitly.' : 'Click to change this PO number'}
         onClick={() => { setValue(order.poNumber || ''); setEditing(true); }}
       >
-        {order.poNumber || '—'} <span style={{ fontSize: 10, color: '#8A8F87' }}>✎</span>
+        {displayPo || '—'} <span style={{ fontSize: 10, color: '#8A8F87' }}>✎</span>
       </button>
     );
   }
@@ -4998,7 +5004,8 @@ function statusBadge(color, bg, border) {
   return { display: 'inline-block', fontSize: 11, fontWeight: 700, lineHeight: 1.2, color, background: bg, border: `1px solid ${border}`, borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
 }
 
-function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
+function OfficeOrders({ orders, items, customers, customersAll, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
+  const allCustList = (customersAll && customersAll.length) ? customersAll : customers;
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
@@ -5379,7 +5386,7 @@ function OfficeOrders({ orders, items, customers, printSequence, barcodesOff = f
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
-                    <td style={officeStyles.td}>{o.status === 'pending' ? (o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>) : <PoNumberCell order={o} onSaved={onRefresh} />}</td>
+                    <td style={officeStyles.td}>{o.status === 'pending' ? (o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>) : <PoNumberCell order={o} customer={allCustList.find(c => c.id === o.customerId)} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{totalUnits}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatMoney(orderTotal(o))}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
