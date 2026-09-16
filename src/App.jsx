@@ -2209,8 +2209,24 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     const abbr = (cust && cust.abbreviation || '').trim();
     const [y, m, d] = todayISODate().split('-');
     const mmddyy = `${m}${d}${y.slice(2)}`;
-    return abbr ? `${mmddyy}-${abbr}` : mmddyy;
-  }, [customers, customerId]);
+    const base = abbr ? `${mmddyy}-${abbr}` : mmddyy;
+    // If this store already has a SUBMITTED order for the same delivery date,
+    // this is a second invoice — make the PO unique by appending -1 (then -2…).
+    if (deliveryDate) {
+      const sameDay = (orders || []).filter(o =>
+        o.status !== 'pending' && !o.voided && o.customerId === customerId &&
+        o.deliveryDate === deliveryDate && (!isEdit || o.id !== editOrder.id)
+      );
+      if (sameDay.length > 0) {
+        // find the next free suffix so we don't collide with an existing -N
+        const usedPos = new Set(sameDay.map(o => (o.poNumber || '').trim()));
+        let n = sameDay.length;
+        while (usedPos.has(`${base}-${n}`)) n++;
+        return `${base}-${n}`;
+      }
+    }
+    return base;
+  }, [customers, customerId, deliveryDate, orders, isEdit, editOrder]);
   const poValue = poEdited ? poNumber : autoPo;
   // Next invoice number = (highest existing order id + 1) + offset. In edit mode
   // it's the order's own number.
