@@ -2182,7 +2182,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
   const [quickEntry, setQuickEntry] = useState(desktop || isEdit); // grid entry: desktop default, and always when editing an existing order
-  const [priceOverrides, setPriceOverrides] = useState({}); // itemId -> manual price/each override (only when user changes it)
+  const [priceOverrides, setPriceOverrides] = useState(() => (savedDraft.priceOverrides && typeof savedDraft.priceOverrides === 'object') ? savedDraft.priceOverrides : {}); // itemId -> manual price/each override (only when user changes it, or copied exactly from a duplicated order)
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
     if (distributorTouched) return;
@@ -2229,12 +2229,12 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     if (isEdit) return;
     try {
       if (customerId || deliveryDate || order.length > 0 || notes) {
-        localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order, notes }));
+        localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order, notes, priceOverrides }));
       } else {
         localStorage.removeItem('orderDraft');
       }
     } catch { /* localStorage unavailable — draft just won't persist */ }
-  }, [customerId, deliveryDate, order, notes, isEdit]);
+  }, [customerId, deliveryDate, order, notes, priceOverrides, isEdit]);
 
   function goBackToBrands() {
     setScreen('brands');
@@ -2618,6 +2618,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     setScreen('brands');
     setBrand('All');
     setPickersExpanded(true);
+    setPriceOverrides({});
     try { localStorage.removeItem('orderDraft'); } catch { /* ignore */ }
   }
 
@@ -4242,6 +4243,26 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
   const canGoBack = navStack.length > 1;
   const [editingOrder, setEditingOrder] = useState(null);
   const editOrderInNewTab = useCallback((o) => { setEditingOrder(o); setSection("neworder"); }, [setSection]);
+  // "Copy" a past order into a brand-new one: same customer, lines, units and
+  // EXACT original prices (via priceOverrides, so a since-changed catalog
+  // price doesn't silently re-price it) — but a fresh delivery date to pick
+  // and, once submitted, a fresh invoice # and PO# from the normal create
+  // flow. copySeed forces OrderTab to remount even if already sitting on a
+  // blank 'new' order, so the draft is picked up fresh every time.
+  const [copySeed, setCopySeed] = useState(0);
+  const copyOrderToNewTab = useCallback((o) => {
+    const draft = {
+      customerId: o.customerId,
+      deliveryDate: '',
+      order: (o.lines || []).map(l => ({ id: l.id, qty: l.qty, unit: l.unit || undefined })),
+      notes: o.notes || '',
+      priceOverrides: Object.fromEntries((o.lines || []).map(l => [l.id, String(l.price)])),
+    };
+    try { localStorage.setItem('orderDraft', JSON.stringify(draft)); } catch { /* ignore */ }
+    setEditingOrder(null);
+    setCopySeed(s => s + 1);
+    setSection('neworder');
+  }, [setSection]);
   // If the user navigates away from the New Order tab, drop the edit context so
   // coming back later starts a fresh order.
   useEffect(() => { if (section !== 'neworder' && editingOrder) setEditingOrder(null); }, [section]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -4342,7 +4363,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'neworder' && (
           <div style={officeStyles.orderFormWrap}>
             <OrderTab
-              key={editingOrder ? `edit-${editingOrder.id}` : 'new'}
+              key={editingOrder ? `edit-${editingOrder.id}` : `new-${copySeed}`}
               items={activeItems}
               customers={activeCustomers}
               customersAll={customersAll}
@@ -4359,8 +4380,8 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
             />
           </div>
         )}
-        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} customersAll={customersAll} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
-        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} customersAll={customersAll} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
+        {section === 'orders' && <OfficeOrders scope="active" orders={orders} items={activeItems} customers={activeCustomers} customersAll={customersAll} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} onCopyOrder={copyOrderToNewTab} />}
+        {section === 'history' && <OfficeOrders scope="all" orders={orders} items={activeItems} customers={activeCustomers} customersAll={customersAll} printSequence={printSequence} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} onCopyOrder={copyOrderToNewTab} />}
         {section === 'inventory' && <OfficeInventory mode="inventory" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
@@ -5052,7 +5073,7 @@ function statusBadge(color, bg, border) {
   return { display: 'inline-block', fontSize: 11, fontWeight: 700, lineHeight: 1.2, color, background: bg, border: `1px solid ${border}`, borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
 }
 
-function OfficeOrders({ orders, items, customers, customersAll, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null }) {
+function OfficeOrders({ orders, items, customers, customersAll, printSequence, barcodesOff = false, setBarcodesOff = () => {}, onRefresh, scope = 'all', onEditOrder = null, onCopyOrder = null }) {
   const allCustList = (customersAll && customersAll.length) ? customersAll : customers;
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
@@ -5459,6 +5480,9 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                           </span>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
+                          {onCopyOrder && (
+                            <button style={officeStyles.smallBtn} onClick={() => onCopyOrder(o)} title="Start a brand-new order with the same customer, items, quantities and prices as this one — pick a new delivery date and it gets its own invoice # and PO#">Copy</button>
+                          )}{' '}
                           <span style={{ position: 'relative', display: 'inline-block', verticalAlign: 'middle' }}>
                             <button style={officeStyles.smallBtn} onClick={async () => { handleInvoice(o, { autoPrint: true }); try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); await onRefresh(); } catch {} }} title="Open the invoice and prompt to save/print it as a PDF (for Dropbox)">Taiyo</button>
                             {o.taiyoDroppedAt && <span style={{ position: 'absolute', top: '100%', left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#2B5D50', fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} title="When the Taiyo PDF was last saved">Dropped: {formatDateTime(o.taiyoDroppedAt)}</span>}
