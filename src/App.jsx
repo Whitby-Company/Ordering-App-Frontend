@@ -510,16 +510,39 @@ function barcodesForCell(rawUpc) {
   }).join('');
 }
 
+// Single source of truth (mirrors backend/poNumber.js) for what an order's
+// PO# would be if none was saved. Everywhere that prints/exports an order
+// should prefer the order's own saved poNumber and only fall back to this.
+function timesStoreNumber(customerName) {
+  const name = String(customerName || '').trim();
+  if (!/^Times(\s|$)/i.test(name)) return null;
+  const m = name.match(/#\s*(\d+)/);
+  return m ? m[1] : (name === 'Times' ? '' : null);
+}
+function buildAutoPoBase(customerName, abbreviation, dateOrIso) {
+  const m = String(dateOrIso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  const [, yyyy, mm, dd] = m;
+  const yy = yyyy.slice(2);
+  const storeNum = timesStoreNumber(customerName);
+  if (storeNum !== null) {
+    const noZero = `${parseInt(mm, 10)}${parseInt(dd, 10)}${yy}`;
+    return storeNum ? `${noZero}TMS-${storeNum}` : noZero;
+  }
+  const abbr = (abbreviation || '').trim();
+  return abbr ? `${mm}${dd}${yy}-${abbr}` : `${mm}${dd}${yy}`;
+}
+// The order's saved PO# is authoritative; only compute a fallback for an
+// older order that predates per-order PO# storage.
+function poNumberFor(order, customer) {
+  if (order.poNumber && String(order.poNumber).trim()) return String(order.poNumber).trim();
+  return buildAutoPoBase(customer && customer.name, customer && customer.abbreviation, order.submittedAt);
+}
+
 function printOrder(order, printSequence, options = {}) {
   const withUpc = options.withUpc !== false; // default: include the barcode column
   const customer = options.customer || null;
-  // PO number = MMDDYY(delivery date) - customer abbreviation (same as the exports).
-  let poNumber = '';
-  const abbr = (customer && customer.abbreviation || '').trim();
-  if (abbr && order.deliveryDate) {
-    const [py, pm, pd] = String(order.deliveryDate).split('-');
-    poNumber = `${pm}${pd}${py.slice(2)}-${abbr}`;
-  }
+  const poNumber = poNumberFor(order, customer);
   const subTotal = order.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
   const total = Math.round((subTotal + Math.round(subTotal * 0.005 * 100) / 100) * 100) / 100; // incl 0.5% tax
   const totalCases = order.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
@@ -645,10 +668,7 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const grand = Math.round((subtotal + tax) * 100) / 100;
 
   const now = new Date();
-  const poDate = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getFullYear()).slice(2)}`;
-  const abbr = (c.abbreviation || '').trim();
-  const autoPoNum = abbr ? `${poDate}-${abbr}` : poDate;
-  const poNumber = (order.poNumber && String(order.poNumber).trim()) ? String(order.poNumber).trim() : autoPoNum;
+  const poNumber = poNumberFor(order, c);
   let dateStr;
   if (order.deliveryDate) {
     const [dy, dm, dd] = String(order.deliveryDate).split('-').map(Number);
@@ -1379,6 +1399,7 @@ function MainApp() {
   // back pops exactly one. Single source of truth so history and current view
   // can never get out of sync.
   const [navStack, setNavStack] = useState(['order']);
+  const [editingExistingOrder, setEditingExistingOrder] = useState(null); // "Edit that order" from the duplicate-order banner on New Order
   const tab = navStack[navStack.length - 1];
   const setTab = useCallback((next) => {
     setNavStack(stack => (next === stack[stack.length - 1] ? stack : [...stack, next]));
@@ -1517,7 +1538,20 @@ function MainApp() {
       <div style={styles.tabContent} className={canGoBack ? 'has-back' : ''}>
         <ErrorBoundary key={tab}>
         {tab === 'order' && (
-          <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} />
+          <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onEditExisting={setEditingExistingOrder} />
+        )}
+        {editingExistingOrder && (
+          <OrderEditModal
+            order={editingExistingOrder}
+            items={items}
+            customers={customers}
+            brandColors={brandColors}
+            orders={orderHistory}
+            printSequence={printSequence}
+            desktop={false}
+            onClose={() => setEditingExistingOrder(null)}
+            onSaved={async () => { setEditingExistingOrder(null); await loadAll(); }}
+          />
         )}
         {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} />}
         {tab === 'orders' && (
