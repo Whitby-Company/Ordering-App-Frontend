@@ -2855,7 +2855,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                 <ChevronDown size={16} color="#8A8F87" style={{ marginLeft: 'auto' }} />
               </button>
             )}
-            {desktop && !isEdit && (
+            {desktop && (
               <>
                 <div style={{ ...styles.dateBtn, flex: '0 0 175px', width: 'auto', marginTop: 0, padding: '9px 10px', gap: 6 }} title="PO number — auto-filled; edit to override">
                   <span style={{ fontSize: 11, fontWeight: 800, color: '#8A8F87' }}>PO#</span>
