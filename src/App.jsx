@@ -1564,6 +1564,7 @@ function MainApp() {
             customers={customers}
             printSequence={printSequence}
             onOrderChanged={loadAll}
+            onGoToOrderTab={() => setTab('order')}
           />
         )}
         </ErrorBoundary>
@@ -3891,7 +3892,7 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
 // ============================================================
 // TAB 3 — ORDERS
 // ============================================================
-function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, onOrderChanged }) {
+function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, onOrderChanged, onGoToOrderTab = () => {} }) {
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState('');
   const [editingOrder, setEditingOrder] = useState(null);
@@ -4086,7 +4087,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
           printSequence={printSequence}
           desktop={false}
           onClose={() => setEditingOrder(null)}
-          onSaved={async () => { setEditingOrder(null); await onOrderChanged(); }}
+          onSaved={async () => { setEditingOrder(null); await onOrderChanged(); onGoToOrderTab(); }}
         />
       )}
     </div>
