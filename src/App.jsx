@@ -7646,7 +7646,7 @@ function SalesByPersonReport({ onBack }) {
 // cases, eaches, and line totals, plus a grand total for the period.
 // Taiyo owed report — Taiyo-owned items sold in a date range (by delivery date),
 // cases × Taiyo cost = amount owed. Defaults to the current Mon–Sun week.
-function TaiyoReport({ onBack }) {
+function TaiyoReport({ onBack, items = [], onRefresh = async () => {} }) {
   function weekBounds() {
     const now = new Date();
     const day = (now.getDay() + 6) % 7; // 0 = Monday
@@ -7661,6 +7661,33 @@ function TaiyoReport({ onBack }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [pickQuery, setPickQuery] = useState('');
+  const [pendingIds, setPendingIds] = useState([]); // just-picked items, showing a blank cost field to fill in
+
+  const activeItems = useMemo(() => items.filter(i => i.active !== 0), [items]);
+  const ownedItems = useMemo(
+    () => activeItems.filter(i => i.taiyoCost != null || pendingIds.includes(i.id))
+      .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || a.name.localeCompare(b.name)),
+    [activeItems, pendingIds]
+  );
+  const ownedIds = useMemo(() => new Set(activeItems.filter(i => i.taiyoCost != null).map(i => i.id)), [activeItems]);
+  const pickResults = useMemo(() => {
+    const q = pickQuery.trim().toLowerCase();
+    if (!q) return [];
+    return activeItems
+      .filter(i => !ownedIds.has(i.id) && !pendingIds.includes(i.id))
+      .filter(i => i.name.toLowerCase().includes(q) || (i.brand || '').toLowerCase().includes(q) || displayCode(i.id).toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [activeItems, ownedIds, pendingIds, pickQuery]);
+
+  async function removeOwned(item) {
+    if (!window.confirm(`Stop tracking "${item.name}" as Taiyo-owned? This won't touch any past invoices, only future reports.`)) return;
+    try {
+      await apiPatch(`/items/${encodeURIComponent(item.id)}`, { taiyoCost: null });
+      setPendingIds(ids => ids.filter(id => id !== item.id));
+      await onRefresh();
+    } catch (e) { window.alert(e.message || 'Could not remove this item.'); }
+  }
 
   async function run() {
     setBusy(true); setErr('');
@@ -7693,7 +7720,58 @@ function TaiyoReport({ onBack }) {
         <div style={officeStyles.sectionTitle}>Taiyo owed</div>
       </div>
       <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
-        Taiyo-owned items sold in the period (by delivery date). Amount owed = <b>cases sold × Taiyo cost per case</b>. Set an item's Taiyo cost in the Items tab (Edit → Taiyo cost) to include it here.
+        Taiyo-owned items sold in the period (by delivery date). Amount owed = <b>cases sold × Taiyo cost per case</b>. Pick which items Taiyo owns below, and set each one's per-case cost.
+      </div>
+
+      <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, padding: 14, marginBottom: 20, maxWidth: 640 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Taiyo-owned items</div>
+        <div style={{ position: 'relative', marginBottom: 10 }}>
+          <input
+            style={{ ...fld, width: '100%', boxSizing: 'border-box' }}
+            placeholder="Search item, brand, or # to add…"
+            value={pickQuery}
+            onChange={e => setPickQuery(e.target.value)}
+          />
+          {pickResults.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 6, marginTop: 2, zIndex: 5, maxHeight: 220, overflowY: 'auto' }}>
+              {pickResults.map(it => (
+                <div
+                  key={it.id}
+                  style={{ padding: '6px 10px', fontSize: 12.5, cursor: 'pointer', borderBottom: '1px solid #EFEDE3' }}
+                  onMouseDown={() => { setPendingIds(ids => [...ids, it.id]); setPickQuery(''); }}
+                >
+                  <span style={{ fontWeight: 700 }}>{it.brand}</span> — {it.name} <span style={{ color: '#8A8F87' }}>#{displayCode(it.id)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {ownedItems.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: '#8A8F87' }}>No items tracked yet — search above to add one.</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead><tr>
+              <th style={repStyles.th}>Brand</th>
+              <th style={repStyles.th}>Item</th>
+              <th style={{ ...repStyles.th, textAlign: 'right' }}>Cost/case</th>
+              <th style={repStyles.th}></th>
+            </tr></thead>
+            <tbody>
+              {ownedItems.map(it => (
+                <tr key={it.id} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                  <td style={repStyles.tdItem}>{it.brand}</td>
+                  <td style={repStyles.tdItem}>{it.name}</td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                    <NumberFieldEditor item={it} field="taiyoCost" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} placeholder="enter cost" />
+                  </td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B5493B', fontSize: 12 }} onClick={() => removeOwned(it)} title="Stop tracking this item as Taiyo-owned">Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
@@ -9885,7 +9963,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'duplicate-invoices') return <DuplicateInvoicesReport onBack={() => setActive(null)} orders={orders} onRefresh={onRefresh} />;
   if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
   if (active === 'item-sales') return <ItemSalesReport onBack={() => setActive(null)} orders={orders} items={items} />;
-  if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} />;
+  if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
   if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
