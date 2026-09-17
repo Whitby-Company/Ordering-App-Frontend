@@ -6848,8 +6848,6 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
   const [openRow, setOpenRow] = useState(null);   // which row's search dropdown is open
   const [query, setQuery] = useState('');
   const [manualRow, setManualRow] = useState(null); // which row is in manual (not-in-catalog) entry mode
-  const [manualName, setManualName] = useState('');
-  const [manualUpc, setManualUpc] = useState('');
 
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -6868,14 +6866,10 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
     setOpenRow(null); setQuery('');
   }
   function startManual(i) {
-    const r = list[i];
-    setManualName(r.itemId ? '' : (r.name || ''));
-    setManualUpc(r.itemId ? '' : (r.upc || ''));
+    // Switch this row to manual (not-in-catalog) entry, clearing anything it
+    // picked up from a catalog pick — typing now goes straight into the row.
+    update(i, { name: '', upc: '', itemId: undefined });
     setManualRow(i); setOpenRow(null); setQuery('');
-  }
-  function saveManual(i) {
-    update(i, { name: manualName.trim(), upc: manualUpc.trim(), itemId: undefined });
-    setManualRow(null);
   }
 
   async function save() {
@@ -6904,9 +6898,9 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
             {manualRow === i ? (
               <div style={contentsStyles.row}>
                 <input style={{ ...contentsStyles.input, width: 60 }} value={r.qty} inputMode="numeric" placeholder="24" onChange={e => update(i, { qty: e.target.value.replace(/[^0-9]/g, '') })} />
-                <input autoFocus style={{ ...contentsStyles.input, flex: 1 }} placeholder="Description" value={manualName} onChange={e => setManualName(e.target.value)} />
-                <input style={{ ...contentsStyles.input, width: 130 }} placeholder="UPC (optional)" value={manualUpc} onChange={e => setManualUpc(e.target.value)} />
-                <button style={contentsStyles.pickBtn} onClick={() => saveManual(i)} title="Use this">✓</button>
+                <input autoFocus style={{ ...contentsStyles.input, flex: 1 }} placeholder="Description" value={r.name || ''} onChange={e => update(i, { name: e.target.value })} />
+                <input style={{ ...contentsStyles.input, width: 130 }} placeholder="UPC (optional)" value={r.upc || ''} onChange={e => update(i, { upc: e.target.value })} />
+                <button style={contentsStyles.pickBtn} onClick={() => setManualRow(null)} title="Done">✓</button>
                 <button style={contentsStyles.removeBtn} onClick={() => removeRow(i)} title="Remove">×</button>
               </div>
             ) : (
