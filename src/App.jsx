@@ -6847,7 +6847,6 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [openRow, setOpenRow] = useState(null);   // which row's search dropdown is open
   const [query, setQuery] = useState('');
-  const [manualRow, setManualRow] = useState(null); // which row is in manual (not-in-catalog) entry mode
 
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -6865,12 +6864,6 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
     update(i, { name: it.name, upc: firstUpc, itemId: it.id });
     setOpenRow(null); setQuery('');
   }
-  function startManual(i) {
-    // Switch this row to manual (not-in-catalog) entry, clearing anything it
-    // picked up from a catalog pick — typing now goes straight into the row.
-    update(i, { name: '', upc: '', itemId: undefined });
-    setManualRow(i); setOpenRow(null); setQuery('');
-  }
 
   async function save() {
     setSaving(true);
@@ -6887,7 +6880,7 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
     <div style={styles.editOverlay} onClick={onClose}>
       <div style={contentsStyles.card} onClick={e => e.stopPropagation()}>
         <div style={contentsStyles.title}>Contents of {item.name}</div>
-        <div style={contentsStyles.sub}>Search and pick the items this shipper contains — or enter one manually if it's not set up as its own item yet. They print under the item on the invoice as "Contains below", each with its barcode.</div>
+        <div style={contentsStyles.sub}>Type the description and UPC for each item this shipper contains, or use 🔍 to fill both in from an existing catalog item. They print under the item on the invoice as "Contains below", each with its barcode.</div>
         <div style={contentsStyles.headRow}>
           <span style={{ width: 60 }}>Qty (ea)</span>
           <span style={{ flex: 1 }}>Item</span>
@@ -6895,28 +6888,23 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
         </div>
         {list.map((r, i) => (
           <div key={i} style={{ position: 'relative', marginBottom: 6 }}>
-            {manualRow === i ? (
-              <div style={contentsStyles.row}>
-                <input style={{ ...contentsStyles.input, width: 60 }} value={r.qty} inputMode="numeric" placeholder="24" onChange={e => update(i, { qty: e.target.value.replace(/[^0-9]/g, '') })} />
-                <input autoFocus style={{ ...contentsStyles.input, flex: 1 }} placeholder="Description" value={r.name || ''} onChange={e => update(i, { name: e.target.value })} />
-                <input style={{ ...contentsStyles.input, width: 130 }} placeholder="UPC (optional)" value={r.upc || ''} onChange={e => update(i, { upc: e.target.value })} />
-                <button style={contentsStyles.pickBtn} onClick={() => setManualRow(null)} title="Done">✓</button>
-                <button style={contentsStyles.removeBtn} onClick={() => removeRow(i)} title="Remove">×</button>
-              </div>
-            ) : (
-              <div style={contentsStyles.row}>
-                <input style={{ ...contentsStyles.input, width: 60 }} value={r.qty} inputMode="numeric" placeholder="24" onChange={e => update(i, { qty: e.target.value.replace(/[^0-9]/g, '') })} />
-                <button
-                  style={{ ...contentsStyles.pickBtn, ...(r.name ? {} : { color: '#8A8F87', fontWeight: 500 }) }}
-                  onClick={() => { setOpenRow(openRow === i ? null : i); setQuery(''); }}
-                >
-                  {r.name
-                    ? <span><strong>{r.name}</strong>{r.upc ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {r.upc}</span> : ''}{!r.itemId ? <span style={{ color: '#8A8F87', fontSize: 11 }}> (not in catalog)</span> : ''}</span>
-                    : 'Search for an item…'}
-                </button>
-                <button style={contentsStyles.removeBtn} onClick={() => removeRow(i)} title="Remove">×</button>
-              </div>
-            )}
+            <div style={contentsStyles.row}>
+              <input style={{ ...contentsStyles.input, width: 60 }} value={r.qty} inputMode="numeric" placeholder="24" onChange={e => update(i, { qty: e.target.value.replace(/[^0-9]/g, '') })} />
+              <input
+                style={{ ...contentsStyles.input, flex: 1 }}
+                placeholder="Description"
+                value={r.name || ''}
+                onChange={e => update(i, { name: e.target.value })}
+                title={r.itemId ? 'Linked to a catalog item — editing this only changes the label shown here' : undefined}
+              />
+              <input style={{ ...contentsStyles.input, width: 130 }} placeholder="UPC (optional)" value={r.upc || ''} onChange={e => update(i, { upc: e.target.value })} />
+              <button
+                style={{ ...contentsStyles.searchIconBtn, ...(r.itemId ? contentsStyles.searchIconBtnLinked : {}) }}
+                onClick={() => { setOpenRow(openRow === i ? null : i); setQuery(''); }}
+                title={r.itemId ? 'Linked to a catalog item — search to change it' : 'Search the catalog to fill this in and link it'}
+              >🔍</button>
+              <button style={contentsStyles.removeBtn} onClick={() => removeRow(i)} title="Remove">×</button>
+            </div>
             {openRow === i && (
               <div style={contentsStyles.dropdown}>
                 <input autoFocus style={contentsStyles.searchInput} placeholder="Search items by name or #…" value={query} onChange={e => setQuery(e.target.value)} />
@@ -6929,7 +6917,6 @@ function ItemContentsModal({ item, allItems = [], onClose, onSaved }) {
                     </button>
                   ))}
                 </div>
-                <button style={contentsStyles.manualLink} onClick={() => startManual(i)}>Can't find it? Enter it manually instead</button>
               </div>
             )}
           </div>
@@ -6951,13 +6938,13 @@ const contentsStyles = {
   headRow: { display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#8A8F87', padding: '0 2px 4px' },
   row: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },
   input: { background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 9px', fontSize: 13, color: '#14181F', fontFamily: 'inherit', outline: 'none' },
-  pickBtn: { flex: 1, textAlign: 'left', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 7, padding: '7px 10px', fontSize: 13, color: '#14181F', fontFamily: 'inherit', cursor: 'pointer' },
+  searchIconBtn: { width: 32, height: 32, borderRadius: 7, border: '1px solid #D6D3C6', background: '#FFFFFF', fontSize: 14, cursor: 'pointer', flexShrink: 0 },
+  searchIconBtnLinked: { background: '#EAF1EE', borderColor: '#C4DDD2' },
   dropdown: { position: 'absolute', left: 68, top: '100%', marginTop: 2, width: 'min(560px, 92vw)', background: '#FFFFFF', border: '1px solid #D6D3C6', borderRadius: 8, boxShadow: '0 12px 34px rgba(20,24,31,0.22)', zIndex: 5, padding: 8 },
   searchInput: { width: '100%', background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 6, padding: '8px 10px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none', marginBottom: 6 },
   results: { maxHeight: 320, overflowY: 'auto' },
   resultRow: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F0EEE6', padding: '9px 8px', fontSize: 13.5, color: '#14181F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
   noResult: { fontSize: 12.5, color: '#8A8F87', padding: '8px 6px', fontStyle: 'italic' },
-  manualLink: { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderTop: '1px solid #EFEDE3', padding: '9px 8px 4px', fontSize: 12.5, color: '#2B5D50', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   removeBtn: { width: 28, height: 28, borderRadius: 7, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 16, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
   addBtn: { marginTop: 4, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 },
