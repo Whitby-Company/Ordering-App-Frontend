@@ -7208,9 +7208,10 @@ function PhotoEditor({ item, onSaved }) {
   );
 }
 
-function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '', width = 70 }) {
-  const original = Number(item[field]) || 0;
-  const [value, setValue] = useState(String(original));
+function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '', width = 70, placeholder }) {
+  const hasValue = item[field] != null;
+  const original = hasValue ? Number(item[field]) : null;
+  const [value, setValue] = useState(hasValue ? String(original) : '');
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -7219,13 +7220,29 @@ function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '
   // (e.g. a CSV bulk import, or someone else's edit landing via refresh) —
   // but never while the user is actively focused/typing in this field.
   useEffect(() => {
-    if (!focused) setValue(String(original));
+    if (!focused) setValue(hasValue ? String(original) : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [original]);
+  }, [original, hasValue]);
 
   async function save() {
-    const num = Number(value);
-    if (Number.isNaN(num) || num < min) { setValue(String(original)); return; }
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      if (!hasValue) return; // already unset — nothing to do
+      setSaving(true);
+      try {
+        await apiPatch(`/items/${encodeURIComponent(item.id)}`, { [field]: null });
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 1200);
+        await onSaved();
+      } catch (err) {
+        setValue(hasValue ? String(original) : '');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    const num = Number(trimmed);
+    if (Number.isNaN(num) || num < min) { setValue(hasValue ? String(original) : ''); return; }
     if (num === original) return;
     setSaving(true);
     try {
@@ -7234,7 +7251,7 @@ function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '
       setTimeout(() => setSavedFlash(false), 1200);
       await onSaved();
     } catch (err) {
-      setValue(String(original));
+      setValue(hasValue ? String(original) : '');
     } finally {
       setSaving(false);
     }
@@ -7246,6 +7263,7 @@ function NumberFieldEditor({ item, field, onSaved, min = 0, step = 1, prefix = '
       <input
         style={{ ...officeStyles.stockInput, width }}
         value={value}
+        placeholder={placeholder}
         onChange={e => setValue(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => { setFocused(false); save(); }}
@@ -7733,7 +7751,7 @@ function TaiyoReport({ onBack }) {
 // This one totals net_cost x eaches sold per invoice, then applies the fee
 // rate, over a date range (delivery date) -- defaulting to the current
 // calendar month since that's how it's paid out.
-function TaiyoFeeReport({ onBack, items = [] }) {
+function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
   function monthBounds() {
     const now = new Date();
     const y = now.getFullYear(), m = now.getMonth();
@@ -7894,8 +7912,8 @@ function TaiyoFeeReport({ onBack, items = [] }) {
                           <td style={repStyles.tdItem}>{it.brand}</td>
                           <td style={repStyles.tdItem}>{displayCode(it.id)}</td>
                           <td style={repStyles.tdItem}>{it.name}</td>
-                          <td style={{ ...repStyles.tdItem, textAlign: 'right', color: it.netCost == null ? '#B5493B' : '#14181F', fontWeight: it.netCost == null ? 700 : 400 }}>
-                            {it.netCost != null ? formatMoney(it.netCost) : 'not set'}
+                          <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                            <NumberFieldEditor item={it} field="netCost" onSaved={onRefresh} min={0} step={0.01} prefix="$" width={64} placeholder="not set" />
                           </td>
                         </tr>
                       ))}
@@ -9868,7 +9886,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
   if (active === 'item-sales') return <ItemSalesReport onBack={() => setActive(null)} orders={orders} items={items} />;
   if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} />;
-  if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} />;
+  if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
