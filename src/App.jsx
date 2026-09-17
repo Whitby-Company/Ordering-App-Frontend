@@ -6780,8 +6780,8 @@ function AddItemModal({ brands = [], onClose, onSaved }) {
   const fld = { padding: '6px 8px', border: '1px solid #D6D3C6', borderRadius: 6, fontSize: 13, width: '100%', boxSizing: 'border-box' };
   const lbl = { fontSize: 11, color: '#8A8F87', fontWeight: 700, marginBottom: 3, display: 'block' };
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 10, padding: 20, width: 520, maxWidth: '92vw', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: 20, width: 520, maxWidth: '92vw', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 12 }}>Add a new item</div>
         {err && <div style={{ color: '#B5493B', marginBottom: 10, fontSize: 13 }}>{err}</div>}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
