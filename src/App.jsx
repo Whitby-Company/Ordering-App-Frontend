@@ -7533,7 +7533,7 @@ const REPORT_LIST = [
   { id: 'duplicate-invoices', name: 'Fix duplicate invoice numbers', desc: 'Find invoice numbers used by more than one order and choose which order keeps each number.' },
   { id: 'matching-totals', name: 'Invoices with matching totals', desc: 'Find invoices that share the same total — a quick way to spot potential duplicates.' },
   { id: 'item-sales', name: 'Item sales by date range', desc: 'Pick items and a date range to list every invoice for those items with cases, totals, and a grand total.' },
-  { id: 'taiyo', name: 'Taiyo owed (warehouse partner)', desc: 'Weekly report of Taiyo-owned items sold, with cases and amount owed at Taiyo pricing.' },
+  { id: 'taiyo', name: 'Taiyo owed (warehouse partner)', desc: 'Monthly report of Taiyo-owned items sold, with boxes/cases and amount owed at Taiyo pricing.' },
   { id: 'taiyo-fee', name: 'Taiyo 6%', desc: 'Total net cost of everything sold in a period, by invoice, and the 6% handling fee owed to Taiyo on it.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
@@ -7654,15 +7654,13 @@ function SalesByPersonReport({ onBack }) {
 // Taiyo owed report — Taiyo-owned items sold in a date range (by delivery date),
 // cases × Taiyo cost = amount owed. Defaults to the current Mon–Sun week.
 function TaiyoReport({ onBack, items = [], onRefresh = async () => {} }) {
-  function weekBounds() {
+  function monthBounds() {
     const now = new Date();
-    const day = (now.getDay() + 6) % 7; // 0 = Monday
-    const mon = new Date(now); mon.setDate(now.getDate() - day);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const y = now.getFullYear(), m = now.getMonth();
     const iso = d => d.toISOString().slice(0, 10);
-    return { from: iso(mon), to: iso(sun) };
+    return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
   }
-  const wb = weekBounds();
+  const wb = monthBounds();
   const [from, setFrom] = useState(wb.from);
   const [to, setTo] = useState(wb.to);
   const [data, setData] = useState(null);
@@ -7782,12 +7780,12 @@ function TaiyoReport({ onBack, items = [], onRefresh = async () => {} }) {
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87' }}>WEEK (delivery)</label>
+        <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87' }}>MONTH (delivery)</label>
         <input type="date" style={fld} value={from} onChange={e => setFrom(e.target.value)} />
         <span style={{ color: '#8A8F87' }}>to</span>
         <input type="date" style={fld} value={to} onChange={e => setTo(e.target.value)} />
         <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={run} disabled={busy}>{busy ? 'Running…' : 'Run'}</button>
-        <button style={officeStyles.smallBtn} onClick={() => { setFrom(wb.from); setTo(wb.to); }}>This week</button>
+        <button style={officeStyles.smallBtn} onClick={() => { setFrom(wb.from); setTo(wb.to); }}>This month</button>
         {data && <button style={officeStyles.smallBtn} onClick={exportCsv}>↓ Export CSV</button>}
       </div>
       {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
