@@ -7527,7 +7527,7 @@ const REPORT_LIST = [
   { id: 'matching-totals', name: 'Invoices with matching totals', desc: 'Find invoices that share the same total — a quick way to spot potential duplicates.' },
   { id: 'item-sales', name: 'Item sales by date range', desc: 'Pick items and a date range to list every invoice for those items with cases, totals, and a grand total.' },
   { id: 'taiyo', name: 'Taiyo owed (warehouse partner)', desc: 'Weekly report of Taiyo-owned items sold, with cases and amount owed at Taiyo pricing.' },
-  { id: 'taiyo-fee', name: 'Taiyo handling fee', desc: 'Total net cost of everything sold in a period, by invoice, and the 6% handling fee owed to Taiyo on it.' },
+  { id: 'taiyo-fee', name: 'Taiyo 6%', desc: 'Total net cost of everything sold in a period, by invoice, and the 6% handling fee owed to Taiyo on it.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   // Add more reports here as they\u2019re built.
 ];
@@ -7812,7 +7812,7 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
     <div>
       <div style={officeStyles.sectionHeader}>
         <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
-        <div style={officeStyles.sectionTitle}>Taiyo handling fee</div>
+        <div style={officeStyles.sectionTitle}>Taiyo 6%</div>
       </div>
       <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
         6% of the net cost of everything sold in the period (by delivery date), totaled per invoice. Net cost is entered PER BOX. Set an item's net cost in the Items tab (Edit → Taiyo net cost (box)) to include it here — for now this applies to every item; a way to exclude specific items can be added later.
