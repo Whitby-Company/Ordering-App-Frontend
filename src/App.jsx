@@ -6814,12 +6814,12 @@ function AddItemModal({ brands = [], onClose, onSaved }) {
             <input style={fld} placeholder="e.g. 12/6/8.82oz — leave blank to auto" value={packLabel} onChange={e => setPackLabel(e.target.value)} />
           </div>
           <div>
-            <label style={lbl}>Price / each</label>
-            <input style={fld} inputMode="decimal" placeholder="e.g. 3.75" value={price} onChange={e => setPrice(e.target.value)} />
-          </div>
-          <div>
             <label style={lbl}>Cost / each (optional)</label>
             <input style={fld} inputMode="decimal" placeholder="e.g. 2.90" value={cost} onChange={e => setCost(e.target.value)} />
+          </div>
+          <div>
+            <label style={lbl}>Price / each</label>
+            <input style={fld} inputMode="decimal" placeholder="e.g. 3.75" value={price} onChange={e => setPrice(e.target.value)} />
           </div>
           <div>
             <label style={lbl}>UPC (optional)</label>
