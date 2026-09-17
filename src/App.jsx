@@ -7733,7 +7733,7 @@ function TaiyoReport({ onBack }) {
 // This one totals net_cost x eaches sold per invoice, then applies the fee
 // rate, over a date range (delivery date) -- defaulting to the current
 // calendar month since that's how it's paid out.
-function TaiyoFeeReport({ onBack }) {
+function TaiyoFeeReport({ onBack, items = [] }) {
   function monthBounds() {
     const now = new Date();
     const y = now.getFullYear(), m = now.getMonth();
@@ -7746,6 +7746,28 @@ function TaiyoFeeReport({ onBack }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [showCosts, setShowCosts] = useState(false);
+  const [costFilter, setCostFilter] = useState('all'); // 'all' | 'missing'
+  const [costQuery, setCostQuery] = useState('');
+
+  const activeItems = useMemo(() => items.filter(i => i.active !== 0), [items]);
+  const costRows = useMemo(() => {
+    const q = costQuery.trim().toLowerCase();
+    return activeItems
+      .filter(i => costFilter === 'missing' ? i.netCost == null : true)
+      .filter(i => !q || i.name.toLowerCase().includes(q) || (i.brand || '').toLowerCase().includes(q) || displayCode(i.id).toLowerCase().includes(q))
+      .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || a.name.localeCompare(b.name));
+  }, [activeItems, costFilter, costQuery]);
+  const missingCount = useMemo(() => activeItems.filter(i => i.netCost == null).length, [activeItems]);
+
+  function exportCostsCsv() {
+    const head = ['Brand', 'Item #', 'Item', 'Taiyo net cost/box'];
+    const lines = [head.join(',')];
+    for (const it of costRows) lines.push([csvEscape(it.brand || ''), displayCode(it.id), csvEscape(it.name), it.netCost != null ? it.netCost.toFixed(2) : ''].join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'taiyo-net-costs.csv'; a.click();
+  }
 
   async function run() {
     setBusy(true); setErr('');
@@ -7835,6 +7857,56 @@ function TaiyoFeeReport({ onBack }) {
           <div style={{ borderTop: '2px solid #14181F', paddingTop: 10, marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 24, fontWeight: 800, fontSize: 15 }}>
             <span>GRAND TOTAL OWED:</span>
             <span style={{ color: '#2B5D50' }}>{formatMoney(data.grandFeeOwed)}</span>
+          </div>
+
+          <div style={{ marginTop: 28 }}>
+            <button
+              style={{ ...officeStyles.smallBtn, marginBottom: showCosts ? 10 : 0 }}
+              onClick={() => setShowCosts(s => !s)}
+            >
+              {showCosts ? '▾' : '▸'} Taiyo net cost by item {missingCount > 0 ? `(${missingCount} missing)` : ''}
+            </button>
+            {showCosts && (
+              <div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                  <input
+                    style={fld} placeholder="Search item, brand, or #"
+                    value={costQuery} onChange={e => setCostQuery(e.target.value)}
+                  />
+                  <select style={fld} value={costFilter} onChange={e => setCostFilter(e.target.value)}>
+                    <option value="all">All active items</option>
+                    <option value="missing">Missing a net cost only</option>
+                  </select>
+                  <button style={officeStyles.smallBtn} onClick={exportCostsCsv}>↓ Export CSV</button>
+                  <span style={{ fontSize: 12, color: '#8A8F87' }}>{costRows.length} item{costRows.length === 1 ? '' : 's'}</span>
+                </div>
+                <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden', maxHeight: 480, overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead><tr>
+                      <th style={repStyles.th}>Brand</th>
+                      <th style={repStyles.th}>Item #</th>
+                      <th style={repStyles.th}>Item</th>
+                      <th style={{ ...repStyles.th, textAlign: 'right' }}>Net cost/box</th>
+                    </tr></thead>
+                    <tbody>
+                      {costRows.map(it => (
+                        <tr key={it.id} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                          <td style={repStyles.tdItem}>{it.brand}</td>
+                          <td style={repStyles.tdItem}>{displayCode(it.id)}</td>
+                          <td style={repStyles.tdItem}>{it.name}</td>
+                          <td style={{ ...repStyles.tdItem, textAlign: 'right', color: it.netCost == null ? '#B5493B' : '#14181F', fontWeight: it.netCost == null ? 700 : 400 }}>
+                            {it.netCost != null ? formatMoney(it.netCost) : 'not set'}
+                          </td>
+                        </tr>
+                      ))}
+                      {costRows.length === 0 && (
+                        <tr><td colSpan={4} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>No items match.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -9796,7 +9868,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
   if (active === 'item-sales') return <ItemSalesReport onBack={() => setActive(null)} orders={orders} items={items} />;
   if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} />;
-  if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} />;
+  if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   return (
     <div>
