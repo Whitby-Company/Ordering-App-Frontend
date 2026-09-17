@@ -7706,10 +7706,10 @@ function TaiyoReport({ onBack, items = [], onRefresh = async () => {} }) {
 
   function exportCsv() {
     if (!data) return;
-    const head = ['Brand', 'Item', 'Cases sold', 'Taiyo cost/case', 'Owed'];
+    const head = ['Brand', 'Item', 'Boxes sold', 'Cases (for cost)', 'Taiyo cost/case', 'Owed'];
     const lines = [head.join(',')];
-    for (const it of data.items) lines.push([csvEscape(it.brand), csvEscape(it.name), it.cases, it.taiyoCost.toFixed(2), it.owed.toFixed(2)].join(','));
-    lines.push(['', 'GRAND TOTAL', data.grandCases, '', data.grandOwed.toFixed(2)].join(','));
+    for (const it of data.items) lines.push([csvEscape(it.brand), csvEscape(it.name), it.boxes, it.cases, it.taiyoCost.toFixed(2), it.owed.toFixed(2)].join(','));
+    lines.push(['', 'GRAND TOTAL', data.grandBoxes, data.grandCases, '', data.grandOwed.toFixed(2)].join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `taiyo-owed_${from}_${to}.csv`; a.click();
@@ -7796,7 +7796,7 @@ function TaiyoReport({ onBack, items = [], onRefresh = async () => {} }) {
         <>
           <div style={{ background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 8, padding: '12px 18px', display: 'inline-block', marginBottom: 14 }}>
             <div style={{ fontSize: 26, fontWeight: 800, color: '#2B5D50' }}>{formatMoney(data.grandOwed)}</div>
-            <div style={{ fontSize: 12, color: '#5B6058' }}>owed to Taiyo · {data.grandCases} cases · {from} to {to}</div>
+            <div style={{ fontSize: 12, color: '#5B6058' }}>owed to Taiyo · {data.grandBoxes} boxes ({data.grandCases} cases) · {from} to {to}</div>
           </div>
           {Object.entries(byBrand).map(([brand, list]) => (
             <div key={brand} style={{ marginBottom: 16, border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
@@ -7804,15 +7804,17 @@ function TaiyoReport({ onBack, items = [], onRefresh = async () => {} }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead><tr>
                   <th style={repStyles.th}>Item</th>
-                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Cases sold</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Boxes sold</th>
+                  <th style={{ ...repStyles.th, textAlign: 'right' }}>Cases (for cost)</th>
                   <th style={{ ...repStyles.th, textAlign: 'right' }}>Taiyo cost/case</th>
                   <th style={{ ...repStyles.th, textAlign: 'right' }}>Owed</th>
                 </tr></thead>
                 <tbody>
                   {list.map(it => (
                     <tr key={it.itemId} style={{ borderBottom: '1px solid #EFEDE3' }}>
-                      <td style={repStyles.tdItem}>{it.name}</td>
-                      <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700 }}>{it.cases}</td>
+                      <td style={repStyles.tdItem}>{it.name}{it.caseSize > 1 ? <span style={{ color: '#8A8F87', fontSize: 11 }}> ({it.caseSize}/case)</span> : ''}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700 }}>{it.boxes}</td>
+                      <td style={{ ...repStyles.tdItem, textAlign: 'right', color: '#5B6058' }}>{it.cases}</td>
                       <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(it.taiyoCost)}</td>
                       <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: '#2B5D50' }}>{formatMoney(it.owed)}</td>
                     </tr>
