@@ -9714,6 +9714,7 @@ function OfficePurchasing({ items, onRefresh }) {
   const [selId, setSelId] = useState(null);
   const [statusFilter, setStatusFilter] = useState('open');
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
   async function load() {
     setLoading(true);
@@ -9723,10 +9724,21 @@ function OfficePurchasing({ items, onRefresh }) {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
   const shown = useMemo(() => {
-    if (statusFilter === 'all') return pos;
-    if (statusFilter === 'open') return pos.filter(p => p.status === 'open' || p.status === 'partial');
-    return pos.filter(p => p.status === statusFilter);
-  }, [pos, statusFilter]);
+    let list = pos;
+    if (statusFilter === 'open') list = list.filter(p => p.status === 'open' || p.status === 'partial');
+    else if (statusFilter !== 'all') list = list.filter(p => p.status === statusFilter);
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter(p =>
+        (p.supplier || '').toLowerCase().includes(q) ||
+        (p.reference || '').toLowerCase().includes(q) ||
+        `#${p.id}`.includes(q) ||
+        (p.expectedDate && (p.expectedDate.includes(q) || formatDate(p.expectedDate).toLowerCase().includes(q))) ||
+        (p.orderDate && (p.orderDate.includes(q) || formatDate(p.orderDate).toLowerCase().includes(q)))
+      );
+    }
+    return list;
+  }, [pos, statusFilter, query]);
 
   if (view === 'new') return <PurchaseOrderForm items={items} onBack={() => setView('list')} onSaved={async () => { setView('list'); await load(); }} />;
   if (view === 'detail' && selId != null) return <PurchaseOrderDetail poId={selId} items={items} onBack={() => { setView('list'); setSelId(null); }} onChanged={async () => { await load(); await onRefresh(); }} />;
@@ -9749,6 +9761,13 @@ function OfficePurchasing({ items, onRefresh }) {
             <button key={id} style={{ background: statusFilter === id ? '#2B5D50' : '#FFFFFF', color: statusFilter === id ? '#F7F8F4' : '#8A8F87', border: 'none', padding: '7px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => setStatusFilter(id)}>{label}</button>
           ))}
         </div>
+        <input
+          style={{ ...poStyles.input, width: 240 }}
+          placeholder="Search supplier, PO #, or date…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
+        {query && <button style={officeStyles.smallBtn} onClick={() => setQuery('')}>Clear</button>}
       </div>
       {loading ? <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div> : (
         <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
@@ -9785,7 +9804,7 @@ function OfficePurchasing({ items, onRefresh }) {
                   )}
                 </React.Fragment>
               ))}
-              {shown.length === 0 && <tr><td colSpan={7} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>No purchase orders.</td></tr>}
+              {shown.length === 0 && <tr><td colSpan={7} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>{query ? `No purchase orders match "${query}".` : 'No purchase orders.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -9892,6 +9911,12 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   const [recv, setRecv] = useState({}); // itemId -> qty to receive
   const [receivedDate, setReceivedDate] = useState(todayISODate());
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editSupplier, setEditSupplier] = useState('');
+  const [editReference, setEditReference] = useState('');
+  const [editExpected, setEditExpected] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [saveErr, setSaveErr] = useState('');
 
   async function load() {
     setLoading(true);
@@ -9899,6 +9924,33 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
     finally { setLoading(false); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [poId]);
+
+  function startEdit() {
+    setEditSupplier(po.supplier || '');
+    setEditReference(po.reference || '');
+    setEditExpected(po.expectedDate || '');
+    setEditNotes(po.notes || '');
+    setSaveErr('');
+    setEditing(true);
+  }
+  async function saveEdit() {
+    setBusy(true);
+    setSaveErr('');
+    try {
+      await apiPatch(`/purchase-orders/${poId}`, {
+        supplier: editSupplier.trim() || null,
+        reference: editReference.trim() || null,
+        expectedDate: editExpected || null,
+        notes: editNotes.trim() || null,
+      });
+      setEditing(false);
+      await load(); await onChanged();
+    } catch (err) {
+      setSaveErr(err.message || 'Could not save these changes.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function receive(all) {
     setBusy(true);
@@ -9937,11 +9989,33 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
       <div style={officeStyles.sectionHeader}>
         <button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button>
         <div style={officeStyles.sectionTitle}>PO {po.reference || `#${po.id}`} · {po.supplier || 'No supplier'}</div>
+        {!editing && po.status !== 'cancelled' && <button style={officeStyles.smallBtn} onClick={startEdit}>Edit details</button>}
         {po.status !== 'cancelled' && po.status !== 'received' && <button style={officeStyles.smallBtn} onClick={cancelPO} disabled={busy}>Cancel PO</button>}
       </div>
-      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>
-        {po.reference ? `Ref ${po.reference} · ` : ''}{po.expectedDate ? `Expected ${formatDate(po.expectedDate)} · ` : ''}Status: <strong style={{ textTransform: 'capitalize' }}>{po.status}</strong>
-      </div>
+      {editing ? (
+        <div style={{ ...poStyles.linesCard, padding: 16, marginBottom: 14 }}>
+          <div style={poStyles.formGrid}>
+            <label style={poStyles.field}><span style={poStyles.lbl}>Supplier</span><input style={poStyles.input} value={editSupplier} onChange={e => setEditSupplier(e.target.value)} placeholder="e.g. Albanese" /></label>
+            <label style={poStyles.field}><span style={poStyles.lbl}>Reference #</span><input style={poStyles.input} value={editReference} onChange={e => setEditReference(e.target.value)} placeholder="Supplier PO / SO #" /></label>
+            <label style={poStyles.field}><span style={poStyles.lbl}>Expected date</span><input style={poStyles.input} type="date" value={editExpected} onChange={e => setEditExpected(e.target.value)} /></label>
+            <label style={{ ...poStyles.field, gridColumn: '1 / -1' }}><span style={poStyles.lbl}>Notes</span><input style={poStyles.input} value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Optional notes / special instructions" /></label>
+          </div>
+          {saveErr && <div style={{ color: '#B5493B', fontSize: 12.5, marginTop: 8 }}>{saveErr}</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={saveEdit} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+            <button style={officeStyles.smallBtn} onClick={() => setEditing(false)} disabled={busy}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>
+          {po.reference ? `Ref ${po.reference} · ` : ''}{po.expectedDate ? `Expected ${formatDate(po.expectedDate)} · ` : ''}Status: <strong style={{ textTransform: 'capitalize' }}>{po.status}</strong>
+          {po.notes && (
+            <div style={{ marginTop: 6, background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '6px 12px', maxWidth: 640 }}>
+              <span style={{ fontWeight: 700 }}>📝</span> {po.notes}
+            </div>
+          )}
+        </div>
+      )}
       <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
         <table style={officeStyles.table}>
           <thead><tr>
