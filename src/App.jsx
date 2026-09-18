@@ -12233,6 +12233,7 @@ const officeStyles = {
     display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
     position: 'sticky', top: 0, zIndex: 5,
     background: '#F7F8F4',
+    marginTop: -16, paddingTop: 16,
     marginBottom: 14,
   },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
