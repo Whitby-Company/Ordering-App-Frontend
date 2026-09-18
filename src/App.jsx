@@ -696,6 +696,25 @@ function renderInvoicePagesOffscreen(order, customer, printSequence, items) {
           setTimeout(() => {
             if (settled) return;
             try {
+              // html2canvas has poor support for `writing-mode`, which the
+              // "BILL TO"/"SHIP TO" vertical labels rely on (in the browser's
+              // own print/render, this renders correctly; only html2canvas
+              // — used solely by this batch-PDF path — gets it wrong,
+              // rendering the text upside down). Fix it up here, isolated to
+              // this harvested copy only: wrap each label's text in a span
+              // and swap to a plain rotate() in the override CSS added when
+              // the combined document is built, instead of touching the
+              // shared style/markup every other invoice path relies on.
+              const vlbls = doc.querySelectorAll('.addr-vlbl');
+              vlbls.forEach(el => {
+                if (el.querySelector('.addr-vlbl-text')) return;
+                const text = el.textContent;
+                el.textContent = '';
+                const span = doc.createElement('span');
+                span.className = 'addr-vlbl-text';
+                span.textContent = text;
+                el.appendChild(span);
+              });
               const pagesEl = doc.getElementById('pages');
               const styleEl = doc.querySelector('style');
               const pagesHtml = pagesEl ? pagesEl.innerHTML : '';
@@ -5448,9 +5467,17 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       const today = new Date();
       const mmddyy = `${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}.${String(today.getFullYear()).slice(2)}`;
       const combinedName = `Taiyo Batch ${mmddyy} (${batch.length} invoices).pdf`.replace(/[\\/:*?"<>|]/g, '');
+      // Override for html2canvas's poor writing-mode support (see the
+      // addr-vlbl-text wrapping done in renderInvoicePagesOffscreen above):
+      // reset the label box to a plain flex-centered container and rotate
+      // just the inner text span instead, which html2canvas renders
+      // correctly. Appended after the shared style so it takes precedence;
+      // only affects this combined PDF, not the normal invoice styling.
+      const vlblOverride = '.addr-vlbl { writing-mode: horizontal-tb; transform: none; display: flex; align-items: center; justify-content: center; overflow: visible; }' +
+        '.addr-vlbl-text { display: inline-block; transform: rotate(-90deg); white-space: nowrap; }';
       const combinedHtml = '<!doctype html><html><head><meta charset="utf-8" />' +
         '<title>' + combinedName.replace(/\.pdf$/, '') + '</title>' +
-        PDF_LIBS_HTML + '<style>' + sharedStyle + '</style></head><body>' +
+        PDF_LIBS_HTML + '<style>' + sharedStyle + vlblOverride + '</style></head><body>' +
         '<div id="pages">' + allPagesHtml.join('') + '</div>' +
         '<script>' + buildSavePdfScript(combinedName) + '<\/script>' +
         '</body></html>';
