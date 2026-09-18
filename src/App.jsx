@@ -1540,19 +1540,14 @@ function MainApp() {
       <div style={styles.tabContent} className={canGoBack ? 'has-back' : ''}>
         <ErrorBoundary key={tab}>
         {tab === 'order' && (
-          <OrderTab items={items} customers={customers} customersAll={customersAll} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll} barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff} onEditExisting={setEditingExistingOrder} />
-        )}
-        {editingExistingOrder && (
-          <OrderEditModal
-            order={editingExistingOrder}
-            items={items}
-            customers={customers}
-            brandColors={brandColors}
-            orders={orderHistory}
-            printSequence={printSequence}
-            desktop={false}
+          <OrderTab
+            key={editingExistingOrder ? `edit-${editingExistingOrder.id}` : 'new'}
+            items={items} customers={customers} customersAll={customersAll} orders={orderHistory}
+            brandColors={brandColors} printSequence={printSequence} onOrderSubmitted={loadAll}
+            barcodesOff={barcodesOff} setBarcodesOff={setBarcodesOff}
+            onEditExisting={setEditingExistingOrder}
+            editOrder={editingExistingOrder}
             onClose={() => setEditingExistingOrder(null)}
-            onSaved={async () => { setEditingExistingOrder(null); await loadAll(); }}
           />
         )}
         {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} />}
@@ -1564,7 +1559,7 @@ function MainApp() {
             customers={customers}
             printSequence={printSequence}
             onOrderChanged={loadAll}
-            onGoToOrderTab={() => setTab('order')}
+            onEditOrder={o => { setEditingExistingOrder(o); setTab('order'); }}
           />
         )}
         </ErrorBoundary>
@@ -3892,10 +3887,9 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
 // ============================================================
 // TAB 3 — ORDERS
 // ============================================================
-function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, onOrderChanged, onGoToOrderTab = () => {} }) {
+function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, onOrderChanged, onEditOrder }) {
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState('');
-  const [editingOrder, setEditingOrder] = useState(null);
   const [iifBusyId, setIifBusyId] = useState(null);
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
@@ -4066,7 +4060,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                         {processingId === o.id ? 'Submitting…' : 'Submit order'}
                       </button>
                     )}
-                    <button style={styles.orderCardActionBtn} onClick={() => setEditingOrder(o)}>Edit</button>
+                    <button style={styles.orderCardActionBtn} onClick={() => onEditOrder(o)}>Edit</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
                     <button style={styles.orderCardActionBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) || null, printSequence, items, {})}>Invoice</button>
                   </div>
@@ -4077,19 +4071,6 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
         })}
         <div style={{ height: 24 }} />
       </div>
-
-      {editingOrder && (
-        <OrderEditModal
-          order={editingOrder}
-          items={items}
-          customers={customers}
-          orders={orders}
-          printSequence={printSequence}
-          desktop={false}
-          onClose={() => setEditingOrder(null)}
-          onSaved={async () => { setEditingOrder(null); await onOrderChanged(); onGoToOrderTab(); }}
-        />
-      )}
     </div>
   );
 }
