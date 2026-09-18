@@ -5217,6 +5217,8 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   const [iifBusyId, setIifBusyId] = useState(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const [taiyoBatchBusy, setTaiyoBatchBusy] = useState(false);
+  const [taiyoSelectMode, setTaiyoSelectMode] = useState(false);
+  const [taiyoSelectedIds, setTaiyoSelectedIds] = useState(() => new Set());
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
@@ -5331,7 +5333,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   }
 
   async function handleBatchTaiyo() {
-    const batch = filtered.filter(o => o.status !== 'pending' && !o.voided && !o.taiyoDroppedAt);
+    const batch = filtered.filter(o => taiyoSelectedIds.has(o.id));
     if (batch.length === 0) return;
     if (!window.confirm(`Generate ${batch.length} individual Taiyo PDF${batch.length === 1 ? '' : 's'}? Your browser may ask for one-time permission to allow multiple downloads/pop-ups from this site.`)) return;
     setTaiyoBatchBusy(true);
@@ -5352,12 +5354,32 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       for (const o of batch) {
         try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); } catch { /* keep going */ }
       }
+      setTaiyoSelectMode(false);
+      setTaiyoSelectedIds(new Set());
       await onRefresh();
     } catch (err) {
       setIifError(err.message || 'Could not generate the Taiyo PDFs.');
     } finally {
       setTaiyoBatchBusy(false);
     }
+  }
+  function startTaiyoSelect() {
+    // Pre-check everything eligible in the current view — fewer clicks for
+    // the common "drop everything" case, while still letting specific ones
+    // be excluded before generating.
+    setTaiyoSelectedIds(new Set(taiyoBatchable.map(o => o.id)));
+    setTaiyoSelectMode(true);
+  }
+  function cancelTaiyoSelect() {
+    setTaiyoSelectMode(false);
+    setTaiyoSelectedIds(new Set());
+  }
+  function toggleTaiyoSelected(id, checked) {
+    setTaiyoSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
   }
 
   // Refresh from the server, then generate the invoice from the freshest version
@@ -5501,13 +5523,23 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
           </button>
         )}
         <button
-          style={{ ...officeStyles.smallBtn, ...(taiyoBatchable.length === 0 || taiyoBatchBusy ? officeStyles.smallBtnDisabled : {}) }}
-          onClick={handleBatchTaiyo}
-          disabled={taiyoBatchable.length === 0 || taiyoBatchBusy}
-          title="Generate an individual Taiyo PDF for every not-yet-dropped order currently shown (each downloads separately — for Dropbox)"
+          style={{ ...officeStyles.smallBtn, ...(taiyoBatchable.length === 0 && !taiyoSelectMode ? officeStyles.smallBtnDisabled : {}) }}
+          onClick={taiyoSelectMode ? cancelTaiyoSelect : startTaiyoSelect}
+          disabled={taiyoBatchable.length === 0 && !taiyoSelectMode}
+          title={taiyoSelectMode ? 'Exit without generating anything' : 'Choose which orders to generate a Taiyo PDF for'}
         >
-          {taiyoBatchBusy ? 'Generating…' : `Taiyo (batch)${taiyoBatchable.length ? ` (${taiyoBatchable.length})` : ''}`}
+          {taiyoSelectMode ? 'Cancel' : `Taiyo (batch)${taiyoBatchable.length ? ` (${taiyoBatchable.length})` : ''}`}
         </button>
+        {taiyoSelectMode && (
+          <button
+            style={{ ...officeStyles.primarySmallBtn, ...(taiyoSelectedIds.size === 0 || taiyoBatchBusy ? officeStyles.smallBtnDisabled : {}) }}
+            onClick={handleBatchTaiyo}
+            disabled={taiyoSelectedIds.size === 0 || taiyoBatchBusy}
+            title="Each selected order downloads as its own separate PDF (for Dropbox)"
+          >
+            {taiyoBatchBusy ? 'Generating…' : `Generate ${taiyoSelectedIds.size} Taiyo PDF${taiyoSelectedIds.size === 1 ? '' : 's'}`}
+          </button>
+        )}
         {!activeScope && (
           <button
             style={{ ...officeStyles.smallBtn, ...(showUnprocessedOnly ? officeStyles.editModeBtnActive : {}) }}
@@ -5560,6 +5592,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
             <tr>
               <th style={{ ...officeStyles.th, width: 44, textAlign: 'center' }} title="Ready for QuickBooks import (shared)">Ready</th>
               <th style={{ ...officeStyles.th, width: 60, textAlign: 'center' }} title="Transaction Pro export">TP</th>
+              {taiyoSelectMode && <th style={{ ...officeStyles.th, width: 40, textAlign: 'center' }} title="Select for the Taiyo batch">Taiyo</th>}
               <th style={officeStyles.th}></th>
               <SortableTh field="submittedAt" label="Submitted" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
               <SortableTh field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
@@ -5573,13 +5606,13 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td style={officeStyles.emptyCell} colSpan={11}>No orders match "{query}"</td></tr>
+              <tr><td style={officeStyles.emptyCell} colSpan={taiyoSelectMode ? 12 : 11}>No orders match "{query}"</td></tr>
             )}
             {displayRows.map(row => {
               if (row.type === 'month') {
                 return (
                   <tr key={'m-' + row.key} style={{ background: '#EDEBE3', cursor: 'pointer' }} onClick={() => setOpenHistMonths(m => ({ ...m, [row.key]: !m[row.key] }))}>
-                    <td style={{ ...officeStyles.td, fontWeight: 800 }} colSpan={11}>
+                    <td style={{ ...officeStyles.td, fontWeight: 800 }} colSpan={taiyoSelectMode ? 12 : 11}>
                       {openHistMonths[row.key] ? '▾' : '▸'} 📁 {row.label} ({row.count})
                     </td>
                   </tr>
@@ -5610,6 +5643,18 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                         </span>
                       )}
                     </td>
+                    {taiyoSelectMode && (
+                      <td style={{ ...officeStyles.td, textAlign: 'center' }}>
+                        {(o.status !== 'pending' && !o.voided) && (
+                          <input
+                            type="checkbox"
+                            checked={taiyoSelectedIds.has(o.id)}
+                            onChange={e => toggleTaiyoSelected(o.id, e.target.checked)}
+                            title={o.taiyoDroppedAt ? `Already dropped ${formatDateTime(o.taiyoDroppedAt)} — will drop again` : 'Include in this Taiyo batch'}
+                          />
+                        )}
+                      </td>
+                    )}
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       <ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                     </td>
@@ -5686,7 +5731,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                   )}
                   {isOpen && (
                     <tr>
-                      <td style={officeStyles.detailCell} colSpan={11}>
+                      <td style={officeStyles.detailCell} colSpan={taiyoSelectMode ? 12 : 11}>
                         {o.notes && (
                           <div style={officeStyles.orderNotes}>
                             <span style={officeStyles.orderNotesLabel}>Notes:</span> {o.notes}
