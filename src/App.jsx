@@ -11139,7 +11139,7 @@ const styles = {
   editModalWrap: { width: '100%', maxWidth: 1100, height: '92vh', maxHeight: 900, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(20,24,31,0.4)' },
   editOverlayMobile: { position: 'fixed', inset: 0, background: '#F7F8F4', zIndex: 60 },
   editModalWrapMobile: { width: '100%', height: '100%', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
-  mobileDetailHeader: { padding: '14px 12px 4px', flexShrink: 0 },
+  mobileDetailHeader: { padding: 'calc(14px + env(safe-area-inset-top, 0px)) 12px 4px', flexShrink: 0, background: '#F7F8F4' },
   backArrow: { position: 'absolute', top: 16, left: 12, zIndex: 40, width: 30, height: 30, borderRadius: 15, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 },
   screenWrap: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' },
   tabBar: { display: 'flex', borderTop: '1px solid #E3E1D6', background: '#FFFFFF', padding: '10px 0 calc(12px + env(safe-area-inset-bottom, 0px))', flexShrink: 0, position: 'relative', zIndex: 10 },
