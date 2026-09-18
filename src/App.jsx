@@ -2177,7 +2177,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [uploadOpen, setUploadOpen] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
-  const [quickEntry, setQuickEntry] = useState(desktop || isEdit); // grid entry: desktop default, and always when editing an existing order
+  const [quickEntry, setQuickEntry] = useState(desktop); // grid entry: desktop only — the toggle to turn it on is desktop-only too, so mobile should never default into it (including when editing), or there'd be no way back out of it
   const [priceOverrides, setPriceOverrides] = useState(() => (savedDraft.priceOverrides && typeof savedDraft.priceOverrides === 'object') ? savedDraft.priceOverrides : {}); // itemId -> manual price/each override (only when user changes it, or copied exactly from a duplicated order)
   // Adopt the customer's "is distributor" default (unless manually toggled).
   useEffect(() => {
