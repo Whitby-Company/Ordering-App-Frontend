@@ -638,6 +638,95 @@ function invoiceNumberFor(order) {
 // Build a printable invoice that matches the Hawken Group template, using the
 // same data as the TP export (customer bill-to/ship-to, PO, line items with
 // cases/eaches/price, UPCs, totals, 0.5% sales tax).
+// Shared jsPDF/html2canvas "auto-save" script, parameterized by filename.
+// Renders every .page div present in the document (in document order) into
+// one multi-page PDF and triggers a download — no user interaction beyond
+// the initial page load. Used by printInvoice's own single-invoice savePdf
+// mode (inline, kept as-is there) and by the combined Taiyo batch PDF below,
+// which concatenates .page divs harvested from several invoices first.
+function buildSavePdfScript(pdfName) {
+  return '(function(){' +
+    'var s=document.createElement("div");s.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#2B5D50;color:#fff;font-family:Arial;font-size:15px;font-weight:700;padding:12px 16px;text-align:center";s.textContent="Preparing PDF\\u2026";document.body.insertBefore(s,document.body.firstChild);' +
+    'var tries=0;' +
+    'function fail(msg){s.style.background="#B5493B";s.textContent=msg+" \\u2014 you can print instead (Ctrl/Cmd+P). Close this window when done.";}' +
+    'function go(){tries++;' +
+    'if(tries>60){return fail("Could not load the PDF tool");}' +
+    'if(!window.jspdf||!window.html2canvas){return setTimeout(go,200);}' +
+    'var pages=document.querySelectorAll(".page");if(!pages.length){return setTimeout(go,200);}' +
+    'try{var jsPDF=window.jspdf.jsPDF;var pdf=new jsPDF({unit:"in",format:"letter"});var i=0;' +
+    'function next(){if(i>=pages.length){try{pdf.save(' + JSON.stringify(pdfName) + ');s.style.background="#2B5D50";s.textContent="Saved: ' + JSON.stringify(pdfName).replace(/^"|"$/g, '').replace(/'/g, "") + ' \\u2014 you can close this window.";}catch(e){fail("Save failed: "+e.message);}return;}' +
+    's.textContent="Rendering page "+(i+1)+" of "+pages.length+"\\u2026";' +
+    'html2canvas(pages[i],{scale:2,backgroundColor:"#ffffff"}).then(function(canvas){try{var img=canvas.toDataURL("image/jpeg",0.95);if(i>0)pdf.addPage();pdf.addImage(img,"JPEG",0,0,8.5,11);i++;next();}catch(e){fail("Render error: "+e.message);}}).catch(function(e){fail("Render error: "+(e&&e.message||e));});}' +
+    'next();}catch(e){fail("PDF error: "+e.message);}}' +
+    'setTimeout(go,500);})();';
+}
+const PDF_LIBS_HTML = '<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>' +
+  '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>';
+
+// Render one order's invoice off-screen (an invisible iframe, never shown to
+// the user) purely to let printInvoice's own pagination script do its work,
+// then harvest the finished, static .page HTML it produced — so the tricky
+// multi-page pagination logic itself is never touched or reimplemented here,
+// just reused as-is. Resolves { pagesHtml, styleText }.
+function renderInvoicePagesOffscreen(order, customer, printSequence, items) {
+  return new Promise((resolve, reject) => {
+    let html;
+    try { html = printInvoice(order, customer, printSequence, items, { inline: true }); }
+    catch (e) { reject(e); return; }
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed; top:-10000px; left:-10000px; width:900px; height:1200px; border:0; visibility:hidden;';
+    document.body.appendChild(iframe);
+    let settled = false;
+    const cleanup = () => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); };
+    const hardTimeout = setTimeout(() => {
+      if (settled) return; settled = true;
+      cleanup();
+      reject(new Error(`Timed out rendering the invoice for ${(customer && customer.name) || 'an order'}.`));
+    }, 12000);
+    iframe.onload = () => {
+      const start = Date.now();
+      function poll() {
+        if (settled) return;
+        let doc = null;
+        try { doc = iframe.contentDocument; } catch (e) { /* cross-origin — shouldn't happen for srcdoc */ }
+        const hasPage = doc && doc.querySelector('.page');
+        if (hasPage) {
+          // A short settle delay: the pagination script may still be adding
+          // more pages (long orders) after the first .page div appears.
+          setTimeout(() => {
+            if (settled) return;
+            try {
+              const pagesEl = doc.getElementById('pages');
+              const styleEl = doc.querySelector('style');
+              const pagesHtml = pagesEl ? pagesEl.innerHTML : '';
+              const styleText = styleEl ? styleEl.textContent : '';
+              settled = true;
+              clearTimeout(hardTimeout);
+              cleanup();
+              if (!pagesHtml) { reject(new Error(`Could not render the invoice for ${(customer && customer.name) || 'an order'}.`)); return; }
+              resolve({ pagesHtml, styleText });
+            } catch (e) {
+              settled = true;
+              clearTimeout(hardTimeout);
+              cleanup();
+              reject(e);
+            }
+          }, 600);
+        } else if (Date.now() - start > 10000) {
+          settled = true;
+          clearTimeout(hardTimeout);
+          cleanup();
+          reject(new Error(`Timed out waiting for the invoice for ${(customer && customer.name) || 'an order'} to lay out.`));
+        } else {
+          setTimeout(poll, 150);
+        }
+      }
+      poll();
+    };
+    iframe.srcdoc = html;
+  });
+}
+
 function printInvoice(order, customer, printSequence, items = [], opts = {}) {
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const c = customer || {};
@@ -5335,22 +5424,41 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   async function handleBatchTaiyo() {
     const batch = filtered.filter(o => taiyoSelectedIds.has(o.id));
     if (batch.length === 0) return;
-    if (!window.confirm(`Generate ${batch.length} individual Taiyo PDF${batch.length === 1 ? '' : 's'}? Your browser may ask for one-time permission to allow multiple downloads/pop-ups from this site.`)) return;
+    if (!window.confirm(`Generate one combined Taiyo PDF with ${batch.length} invoice${batch.length === 1 ? '' : 's'}?`)) return;
     setTaiyoBatchBusy(true);
     setIifError('');
     try {
-      // Fetch fresh data once for the whole batch, so every PDF reflects the
-      // latest version of its order.
+      // Fetch fresh data once for the whole batch, so every invoice reflects
+      // the latest version of its order.
       const latest = await apiGet('/orders');
       const byId = {};
       for (const o of latest) byId[o.id] = o;
-      // Open every save-PDF window together, in the same click, so the
-      // browser treats them as one user-triggered action instead of
-      // blocking the 2nd+ as unsolicited pop-ups.
+      // Render each invoice off-screen (one at a time) and harvest its
+      // already-paginated .page HTML — reusing printInvoice's real pagination
+      // logic as-is rather than reimplementing it for a multi-invoice layout.
+      let sharedStyle = '';
+      const allPagesHtml = [];
       for (const o of batch) {
         const fresh = byId[o.id] || o;
-        printInvoice(fresh, custFor(fresh), printSequence, items, { savePdf: true });
+        const cust = custFor(fresh);
+        const { pagesHtml, styleText } = await renderInvoicePagesOffscreen(fresh, cust, printSequence, items);
+        if (!sharedStyle && styleText) sharedStyle = styleText;
+        allPagesHtml.push(pagesHtml);
       }
+      const today = new Date();
+      const mmddyy = `${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}.${String(today.getFullYear()).slice(2)}`;
+      const combinedName = `Taiyo Batch ${mmddyy} (${batch.length} invoices).pdf`.replace(/[\\/:*?"<>|]/g, '');
+      const combinedHtml = '<!doctype html><html><head><meta charset="utf-8" />' +
+        '<title>' + combinedName.replace(/\.pdf$/, '') + '</title>' +
+        PDF_LIBS_HTML + '<style>' + sharedStyle + '</style></head><body>' +
+        '<div id="pages">' + allPagesHtml.join('') + '</div>' +
+        '<script>' + buildSavePdfScript(combinedName) + '<\/script>' +
+        '</body></html>';
+      const win = window.open('', '_blank', 'width=880,height=1000');
+      if (!win) throw new Error('Pop-up blocked — please allow pop-ups for this site and try again.');
+      win.document.write(combinedHtml);
+      win.document.close();
+      win.focus();
       for (const o of batch) {
         try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); } catch { /* keep going */ }
       }
@@ -5358,7 +5466,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       setTaiyoSelectedIds(new Set());
       await onRefresh();
     } catch (err) {
-      setIifError(err.message || 'Could not generate the Taiyo PDFs.');
+      setIifError(err.message || 'Could not generate the combined Taiyo PDF.');
     } finally {
       setTaiyoBatchBusy(false);
     }
@@ -5526,7 +5634,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
           style={{ ...officeStyles.smallBtn, ...(taiyoBatchable.length === 0 && !taiyoSelectMode ? officeStyles.smallBtnDisabled : {}) }}
           onClick={taiyoSelectMode ? cancelTaiyoSelect : startTaiyoSelect}
           disabled={taiyoBatchable.length === 0 && !taiyoSelectMode}
-          title={taiyoSelectMode ? 'Exit without generating anything' : 'Choose which orders to generate a Taiyo PDF for'}
+          title={taiyoSelectMode ? 'Exit without generating anything' : 'Choose which orders to combine into one Taiyo PDF'}
         >
           {taiyoSelectMode ? 'Cancel' : `Taiyo (batch)${taiyoBatchable.length ? ` (${taiyoBatchable.length})` : ''}`}
         </button>
@@ -5535,9 +5643,9 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
             style={{ ...officeStyles.primarySmallBtn, ...(taiyoSelectedIds.size === 0 || taiyoBatchBusy ? officeStyles.smallBtnDisabled : {}) }}
             onClick={handleBatchTaiyo}
             disabled={taiyoSelectedIds.size === 0 || taiyoBatchBusy}
-            title="Each selected order downloads as its own separate PDF (for Dropbox)"
+            title="All selected invoices combine into one PDF (for Dropbox)"
           >
-            {taiyoBatchBusy ? 'Generating…' : `Generate ${taiyoSelectedIds.size} Taiyo PDF${taiyoSelectedIds.size === 1 ? '' : 's'}`}
+            {taiyoBatchBusy ? 'Generating…' : `Generate combined PDF (${taiyoSelectedIds.size})`}
           </button>
         )}
         {!activeScope && (
