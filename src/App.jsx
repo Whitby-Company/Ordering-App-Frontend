@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
+import { BrowserMultiFormatReader } from '@zxing/library';
 import taiyoLogo from './assets/taiyo-logo.png';
 import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal, fullPackLabel } from './utils.js';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
   AlertTriangle, ChevronRight, Loader2, WifiOff, RefreshCw, Monitor,
-  Grid2x2, Rows, Image as ImageIcon, Trash2, Pencil,
+  Grid2x2, Rows, Image as ImageIcon, Trash2, Pencil, Camera, Tag,
 } from 'lucide-react';
 
 const GRID_SIZES = [
@@ -1659,6 +1660,7 @@ function MainApp() {
           />
         )}
         {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} />}
+        {tab === 'pricecheck' && <PriceCheckTab items={items} />}
         {tab === 'orders' && (
           <OrdersTab
             orders={orderHistory}
@@ -1682,6 +1684,7 @@ function TabBar({ active, onChange }) {
   const tabs = [
     { id: 'order', label: 'New Order', icon: PlusCircle },
     { id: 'inventory', label: 'Inventory', icon: Boxes },
+    { id: 'pricecheck', label: 'Price Check', icon: Tag },
     { id: 'orders', label: 'Orders', icon: ClipboardCheck },
   ];
   return (
@@ -4097,6 +4100,380 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
     </div>
   );
 }
+
+// ============================================================
+// TAB — PRICE CHECK (competitive pricing at retail accounts we don't
+// service): scan an item's barcode, log what it's priced at there.
+// ============================================================
+
+// Full-screen camera barcode scanner. Calls onDetected(text) once with the
+// decoded barcode digits, or onClose() if the user backs out. Camera access
+// (and the actual video decoding) only starts once this is mounted, and is
+// released again on unmount/close.
+function BarcodeScanner({ onDetected, onClose }) {
+  const videoRef = useRef(null);
+  const readerRef = useRef(null);
+  const detectedRef = useRef(false);
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const reader = new BrowserMultiFormatReader();
+    readerRef.current = reader;
+    reader.decodeFromConstraints(
+      { video: { facingMode: 'environment' } },
+      videoRef.current,
+      (result) => {
+        if (result && !detectedRef.current && !cancelled) {
+          detectedRef.current = true;
+          const text = result.getText();
+          try { reader.reset(); } catch { /* ignore */ }
+          onDetectedRef.current(text);
+        }
+        // A per-frame "not found" error is normal while aiming the camera —
+        // only a genuine startup failure (camera denied/unavailable) is
+        // reported below, via the decodeFromConstraints promise rejection.
+      }
+    ).catch(e => {
+      if (!cancelled) setError(e && e.message ? e.message : 'Could not access the camera. Check camera permissions for this site.');
+    });
+    return () => {
+      cancelled = true;
+      try { reader.reset(); } catch { /* ignore */ }
+    };
+  }, []);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+        <div style={{ position: 'absolute', top: '32%', left: '8%', right: '8%', bottom: '42%', border: '3px solid #6FBF9B', borderRadius: 10, boxShadow: '0 0 0 2000px rgba(0,0,0,0.45)' }} />
+        <div style={{ position: 'absolute', top: 'calc(32% - 34px)', left: 0, right: 0, textAlign: 'center', color: '#fff', fontSize: 14, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+          Hold the barcode inside the box
+        </div>
+        {error && (
+          <div style={{ position: 'absolute', top: 16, left: 16, right: 16, background: '#B5493B', color: '#fff', padding: 12, borderRadius: 8, fontSize: 13 }}>
+            {error}
+          </div>
+        )}
+      </div>
+      <div style={{ padding: 16, paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))', background: '#14181F' }}>
+        <button
+          style={{ width: '100%', background: '#2B2E27', color: '#F7F8F4', border: 'none', borderRadius: 10, padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PriceCheckTab({ items }) {
+  const [screen, setScreen] = useState('list'); // list | scan | form
+  const [checks, setChecks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [scannedItem, setScannedItem] = useState(null);
+  const [notFoundUpc, setNotFoundUpc] = useState('');
+  const [manualQuery, setManualQuery] = useState('');
+  const [locations, setLocations] = useState([]);
+
+  // Form fields
+  const [retailLocation, setRetailLocation] = useState('');
+  const [basePrice, setBasePrice] = useState('');
+  const [promoPrice, setPromoPrice] = useState('');
+  const [notes, setNotes] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState('');
+
+  async function load() {
+    setLoading(true);
+    try { setChecks(await apiGet('/price-checks')); } catch { setChecks([]); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    apiGet('/price-checks/locations').then(setLocations).catch(() => setLocations([]));
+  }, [screen]);
+
+  function findItemByUpc(code) {
+    const digits = String(code || '').replace(/\D/g, '');
+    if (!digits) return null;
+    return items.find(it => parseUpcList(it.upc).some(u => u.replace(/\D/g, '') === digits)) || null;
+  }
+
+  function handleDetected(text) {
+    const found = findItemByUpc(text);
+    if (found) {
+      setScannedItem(found);
+      setNotFoundUpc('');
+      setScreen('form');
+    } else {
+      setNotFoundUpc(text);
+      setScannedItem(null);
+      setScreen('notfound');
+    }
+  }
+
+  function pickManualItem(it) {
+    setScannedItem(it);
+    setManualQuery('');
+    setScreen('form');
+  }
+
+  function resetForm() {
+    setRetailLocation(''); setBasePrice(''); setPromoPrice(''); setNotes('');
+    setPhotoFile(null); setPhotoPreview(''); setSaveErr('');
+  }
+
+  function onPhotoSelected(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setPhotoPreview(reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function submitCheck() {
+    if (!scannedItem || !retailLocation.trim()) { setSaveErr('Enter which store this is for.'); return; }
+    setSaving(true); setSaveErr('');
+    try {
+      const res = await apiPost('/price-checks', {
+        itemId: scannedItem.id,
+        retailLocation: retailLocation.trim(),
+        basePrice: basePrice || undefined,
+        promoPrice: promoPrice || undefined,
+        notes: notes.trim() || undefined,
+        checkedBy: getSubmitterName() || undefined,
+      });
+      if (photoPreview && res && res.id) {
+        const [, ext] = /^data:image\/(\w+);/.exec(photoPreview) || [, 'jpg'];
+        try { await apiPost(`/price-checks/${res.id}/photo`, { imageData: photoPreview, ext }); } catch { /* photo upload failing shouldn't lose the price check */ }
+      }
+      resetForm();
+      setScannedItem(null);
+      setScreen('list');
+      await load();
+    } catch (err) {
+      setSaveErr(err.message || 'Could not save this price check.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filteredChecks = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return checks;
+    return checks.filter(c =>
+      (c.itemName || '').toLowerCase().includes(q) ||
+      (c.brand || '').toLowerCase().includes(q) ||
+      (c.retailLocation || '').toLowerCase().includes(q)
+    );
+  }, [checks, query]);
+
+  const manualResults = useMemo(() => {
+    const q = manualQuery.trim().toLowerCase();
+    if (!q) return [];
+    return items.filter(it => it.name.toLowerCase().includes(q) || it.brand.toLowerCase().includes(q) || displayCode(it.id).toLowerCase().includes(q)).slice(0, 12);
+  }, [items, manualQuery]);
+
+  if (screen === 'scan') {
+    return <BarcodeScanner onDetected={handleDetected} onClose={() => setScreen('list')} />;
+  }
+
+  if (screen === 'notfound') {
+    return (
+      <div style={styles.screenWrap}>
+        <div style={styles.header}>
+          <div style={styles.headerTop}>
+            <Tag size={18} color="#EDEBE3" strokeWidth={2} />
+            <span style={styles.headerTitle}>Price Check</span>
+          </div>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, color: '#B5493B', marginBottom: 4 }}>No item matches that barcode</div>
+            <div style={{ fontSize: 13, color: '#7A2E22' }}>Scanned: {notFoundUpc}</div>
+          </div>
+          <div style={{ position: 'relative', marginBottom: 12 }}>
+            <input
+              style={styles.searchInput}
+              placeholder="Search for the item by name instead…"
+              value={manualQuery}
+              onChange={e => setManualQuery(e.target.value)}
+            />
+            {manualResults.length > 0 && (
+              <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, marginTop: 6, maxHeight: 300, overflowY: 'auto', background: '#fff' }}>
+                {manualResults.map(it => (
+                  <button
+                    key={it.id}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', background: 'none', border: 'none', borderBottom: '1px solid #EFEDE3', cursor: 'pointer', fontFamily: 'inherit' }}
+                    onClick={() => pickManualItem(it)}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{it.name}</div>
+                    <div style={{ fontSize: 11.5, color: '#8A8F87' }}>{it.brand} · #{displayCode(it.id)}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button style={{ ...styles.backBtnBig, width: '100%', justifyContent: 'center' }} onClick={() => setScreen('scan')}>
+            <Camera size={18} color="#14181F" /> Try scanning again
+          </button>
+          <button style={{ ...styles.backBtnBig, width: '100%', justifyContent: 'center', marginTop: 8, background: 'transparent' }} onClick={() => setScreen('list')}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'form' && scannedItem) {
+    return (
+      <div style={styles.screenWrap}>
+        <div style={styles.header}>
+          <div style={styles.headerTop}>
+            <Tag size={18} color="#EDEBE3" strokeWidth={2} />
+            <span style={styles.headerTitle}>Price Check</span>
+          </div>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', background: '#F2F4EF', borderRadius: 10, padding: 12, marginBottom: 18 }}>
+            {scannedItem.imageUrl
+              ? <img src={scannedItem.imageUrl} alt="" style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 6, background: '#fff' }} />
+              : <div style={{ width: 48, height: 48, borderRadius: 6, background: '#E3E1D6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Package size={22} color="#8A8F87" /></div>}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{scannedItem.name}</div>
+              <div style={{ fontSize: 12, color: '#8A8F87' }}>{scannedItem.brand} · #{displayCode(scannedItem.id)}</div>
+            </div>
+          </div>
+
+          {saveErr && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 10 }}>{saveErr}</div>}
+
+          <label style={pcStyles.lbl}>Retail location</label>
+          <input
+            style={pcStyles.input}
+            placeholder="e.g. Foodland Kailua"
+            value={retailLocation}
+            onChange={e => setRetailLocation(e.target.value)}
+            list="pc-locations"
+          />
+          <datalist id="pc-locations">
+            {locations.map(l => <option key={l.location} value={l.location} />)}
+          </datalist>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={pcStyles.lbl}>Base price</label>
+              <input style={pcStyles.input} inputMode="decimal" placeholder="e.g. 3.99" value={basePrice} onChange={e => setBasePrice(e.target.value)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={pcStyles.lbl}>Promo price (optional)</label>
+              <input style={pcStyles.input} inputMode="decimal" placeholder="e.g. 2.99" value={promoPrice} onChange={e => setPromoPrice(e.target.value)} />
+            </div>
+          </div>
+
+          <label style={{ ...pcStyles.lbl, marginTop: 12 }}>Notes (optional)</label>
+          <input style={pcStyles.input} placeholder="e.g. end-cap display, expiring soon…" value={notes} onChange={e => setNotes(e.target.value)} />
+
+          <label style={{ ...pcStyles.lbl, marginTop: 12 }}>Photo (optional)</label>
+          {photoPreview ? (
+            <div style={{ position: 'relative', marginTop: 4, display: 'inline-block' }}>
+              <img src={photoPreview} alt="" style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8, border: '1px solid #D6D3C6' }} />
+              <button
+                style={{ position: 'absolute', top: -8, right: -8, width: 26, height: 26, borderRadius: 13, background: '#14181F', color: '#fff', border: 'none', cursor: 'pointer' }}
+                onClick={() => { setPhotoFile(null); setPhotoPreview(''); }}
+              >×</button>
+            </div>
+          ) : (
+            <label style={{ ...styles.backBtnBig, width: '100%', justifyContent: 'center', marginTop: 4, cursor: 'pointer' }}>
+              <Camera size={18} color="#14181F" /> Take a photo
+              <input type="file" accept="image/*" capture="environment" onChange={onPhotoSelected} style={{ display: 'none' }} />
+            </label>
+          )}
+
+          <button
+            style={{ width: '100%', marginTop: 22, background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}
+            onClick={submitCheck}
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save price check'}
+          </button>
+          <button
+            style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: '#8A8F87', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', padding: '10px 0' }}
+            onClick={() => { resetForm(); setScannedItem(null); setScreen('list'); }}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.screenWrap}>
+      <div style={styles.header}>
+        <div style={styles.headerTop}>
+          <Tag size={18} color="#EDEBE3" strokeWidth={2} />
+          <span style={styles.headerTitle}>Price Check</span>
+        </div>
+        <div style={{ fontSize: 12.5, color: '#B7BCB2', marginTop: 2 }}>Competitive pricing at retail accounts we don't service</div>
+      </div>
+
+      <div style={{ padding: '14px 16px 0' }}>
+        <button
+          style={{ width: '100%', background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+          onClick={() => setScreen('scan')}
+        >
+          <Camera size={18} /> Scan an item
+        </button>
+      </div>
+
+      <div style={styles.searchWrap}>
+        <Search size={16} color="#8A8F87" style={styles.searchIcon} />
+        <input style={styles.searchInput} placeholder="Search past checks by item or store" value={query} onChange={e => setQuery(e.target.value)} />
+        {query && <button style={styles.clearSearchBtn} onClick={() => setQuery('')}><X size={14} color="#8A8F87" /></button>}
+      </div>
+
+      <div style={styles.list}>
+        {loading ? <div style={{ padding: 30, color: '#8A8F87', textAlign: 'center' }}>Loading…</div> : (
+          <>
+            {filteredChecks.length === 0 && <div style={styles.emptyState}>{query ? `No price checks match "${query}"` : 'No price checks logged yet — scan an item to start.'}</div>}
+            {filteredChecks.map(c => (
+              <div key={c.id} style={pcStyles.row}>
+                {c.photoUrl
+                  ? <img src={c.photoUrl} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
+                  : <div style={{ width: 44, height: 44, borderRadius: 6, background: '#E3E1D6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Tag size={18} color="#8A8F87" /></div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{c.itemName || c.itemId}</div>
+                  <div style={{ fontSize: 11.5, color: '#8A8F87' }}>{c.retailLocation} · {formatDateTime(c.checkedAt)}</div>
+                  {c.notes && <div style={{ fontSize: 11.5, color: '#5B6058', fontStyle: 'italic', marginTop: 2 }}>{c.notes}</div>}
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{c.basePrice != null ? formatMoney(c.basePrice) : '—'}</div>
+                  {c.promoPrice != null && <div style={{ fontSize: 11.5, color: '#B5793B', fontWeight: 700 }}>promo {formatMoney(c.promoPrice)}</div>}
+                </div>
+              </div>
+            ))}
+            <div style={{ height: 24 }} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+const pcStyles = {
+  lbl: { fontSize: 11, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.03em' },
+  input: { width: '100%', boxSizing: 'border-box', padding: '11px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 15, fontFamily: 'inherit' },
+  row: { display: 'flex', gap: 12, alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #EFEDE3' },
+};
 
 // ============================================================
 // TAB 3 — ORDERS
