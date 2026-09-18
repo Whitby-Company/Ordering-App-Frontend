@@ -3259,7 +3259,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
               {deliveryDate ? <span>Delivery {formatDate(deliveryDate)}</span> : <span style={{ color: '#B5493B' }}>No delivery date set</span>}
             </div>
             <div style={styles.sheetLines}>
-              {/* Column header — invoice-style */}
+              {/* Column header — invoice-style (desktop only; mobile uses a stacked layout instead) */}
+              {desktop && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 4px 6px', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid #E3E1D6' }}>
                 <span style={{ width: 34, textAlign: 'center' }}>Cs</span>
                 <span style={{ width: 40, textAlign: 'center' }}>Each</span>
@@ -3269,10 +3270,43 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                 <span style={{ width: 74, textAlign: 'right' }}>Total</span>
                 <span style={{ width: 30 }} />
               </div>
+              )}
               {orderLines.map(l => {
                 const eaches = (Number(l.qty) || 0) * (l.unit === 'case' ? ((Number(l.pack) || 1) * (Number(l.caseSize) || 1)) : (Number(l.pack) || 1));
                 const packLbl = (l.unit === 'case' && Number(l.caseSize) > 0) ? (fullPackLabel(l) || String((Number(l.pack) || 1) * Number(l.caseSize))) : (l.packLabel || (l.pack ? String(l.pack) : ''));
                 const backordered = l.requestedQty != null && l.requestedQty !== l.qty;
+                if (!desktop) {
+                  // Mobile: stacked layout — qty + name + total on the primary row
+                  // (name gets the room it needs), pack/each/price as a compact
+                  // detail line underneath, instead of 7 columns squeezed in.
+                  return (
+                    <div key={l.id} style={styles.sheetLineMobile}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <TicketQtyInput qty={backordered ? l.requestedQty : l.qty} onSet={v => setQty(l.id, v)} disabled={submitting} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={styles.sheetLineName}>
+                            <span style={styles.sheetLineCode}>{displayCode(l.id)}</span>
+                            {l.name}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: '#8A8F87', marginTop: 1 }}>
+                            {eaches} ea{packLbl ? ` · ${packLbl}` : ''}{l.price > 0 ? ` · ${formatMoney(l.price)}/ea` : ''}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontSize: 14.5, fontWeight: 700 }}>{l.price > 0 && l.qty > 0 ? formatMoney(lineTotal(l, l.qty)) : '—'}</div>
+                        </div>
+                        <button style={styles.removeBtn} onClick={() => removeLine(l.id)} disabled={submitting}>
+                          <X size={16} color="#8A8F87" />
+                        </button>
+                      </div>
+                      {backordered && (
+                        <span style={{ ...styles.backorderTag, display: 'inline-block', marginTop: 6, marginLeft: 56 }} title={`${l.requestedQty} requested, only ${l.qty} available to ship now`}>
+                          shipping {l.qty} of {l.requestedQty}
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
                 return (
                 <div key={l.id} style={{ ...styles.sheetLine, alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 34, display: 'flex', justifyContent: 'center' }}>
@@ -11154,6 +11188,7 @@ const styles = {
   sheetDelivery: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#5B6058', marginBottom: 12 },
   sheetLines: { overflowY: 'auto', flex: 1 },
   sheetLine: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid #EAE8DD' },
+  sheetLineMobile: { padding: '12px 0', borderBottom: '1px solid #EAE8DD' },
   sheetLineName: { fontSize: 13.5, fontWeight: 600, color: '#14181F' },
   sheetLineCode: { fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, color: '#2B5D50', marginRight: 7 },
   ticketQtyWrap: { display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 },
