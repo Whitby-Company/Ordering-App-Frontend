@@ -6314,11 +6314,11 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   );
 }
 
-function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left' }) {
+function SortableTh({ field, label, sortField, sortDir, onClick, align = 'left', stickyTop }) {
   const active = sortField === field;
   return (
     <th
-      style={{ ...officeStyles.th, textAlign: align, cursor: 'pointer', userSelect: 'none', color: active ? '#14181F' : undefined }}
+      style={{ ...officeStyles.th, ...(stickyTop != null ? { top: stickyTop } : {}), textAlign: align, cursor: 'pointer', userSelect: 'none', color: active ? '#14181F' : undefined }}
       onClick={() => onClick(field)}
       title={`Sort by ${label}`}
     >
@@ -6805,6 +6805,11 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     }
   }
 
+  // This section's toolbar wraps onto a second row (Physical count / CSV
+  // exports / Edit), unlike most other sections, so its table headers need a
+  // taller sticky offset to clear both rows instead of just one.
+  const invThTop = 110;
+
   return (
     <div>
       <input
@@ -7018,30 +7023,30 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         <table style={officeStyles.table}>
           <thead>
             <tr>
-              <th style={{ ...officeStyles.th, width: 56 }}></th>
-              <SortableTh field="id" label="Item #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              <SortableTh field="name" label="Item" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              <SortableTh field="brand" label="Brand" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
-              {isItems && <SortableTh field="upc" label="UPC" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />}
-              {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              {isItems && <SortableTh field="netCost" label="Taiyo net/bx" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
-              <th style={officeStyles.th}></th>
-              {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />}
+              <th style={{ ...officeStyles.th, width: 56, top: invThTop }}></th>
+              <SortableTh field="id" label="Item #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} stickyTop={invThTop} />
+              <SortableTh field="name" label="Item" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} stickyTop={invThTop} />
+              <SortableTh field="brand" label="Brand" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} stickyTop={invThTop} />
+              {isItems && <SortableTh field="upc" label="UPC" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} stickyTop={invThTop} />}
+              {isItems && <SortableTh field="pack" label="Pack" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" stickyTop={invThTop} />}
+              {isItems && <SortableTh field="price" label="Price/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" stickyTop={invThTop} />}
+              {isItems && <SortableTh field="cost" label="Cost/ea" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" stickyTop={invThTop} />}
+              {isItems && <SortableTh field="netCost" label="Taiyo net/bx" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" stickyTop={invThTop} />}
+              <th style={{ ...officeStyles.th, top: invThTop }}></th>
+              {isItems && <SortableTh field="casePrice" label="Case price" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" stickyTop={invThTop} />}
               {showTodays ? (
                 <>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Physical stock on hand right now (edit this)">On hand</th>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Boxes allocated to future-delivery orders (not shipped yet)">Allocated</th>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders = what's left to sell">After allocation</th>
-                  <th style={{ ...officeStyles.th, textAlign: 'right' }} title="Stock incoming on open purchase orders (not yet received)">Incoming</th>
+                  <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="Physical stock on hand right now (edit this)">On hand</th>
+                  <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="Boxes allocated to future-delivery orders (not shipped yet)">Allocated</th>
+                  <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders = what's left to sell">After allocation</th>
+                  <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="Stock incoming on open purchase orders (not yet received)">Incoming</th>
                 </>
               ) : (
-                <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+                <SortableTh field="stock" label="Stock" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" stickyTop={invThTop} />
               )}
-              <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
+              <SortableTh field="active" label="Active" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" stickyTop={invThTop} />
               {isItems && editMode && (editField === 'all' || editField === 'photo') && (
-                <th style={{ ...officeStyles.th, textAlign: 'center' }}>Photo</th>
+                <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'center' }}>Photo</th>
               )}
             </tr>
           </thead>
@@ -12249,7 +12254,7 @@ const officeStyles = {
   countPill: { marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#5B6058', background: '#EAE8DD', borderRadius: 999, padding: '6px 12px', whiteSpace: 'nowrap' },
   tableCard: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 12, overflow: 'visible' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 },
-  th: { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6', background: '#FBFAF6', whiteSpace: 'nowrap' },
+  th: { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6', background: '#FBFAF6', whiteSpace: 'nowrap', position: 'sticky', top: 66, zIndex: 4 },
   td: { padding: '10px 14px', borderBottom: '1px solid #EAE8DD', color: '#14181F', verticalAlign: 'middle' },
   rowClickable: { cursor: 'pointer' },
   rowUnprocessed: { background: '#FBF3E4' },
