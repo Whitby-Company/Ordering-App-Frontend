@@ -12229,7 +12229,12 @@ const officeStyles = {
   body: { flex: 1, minHeight: 0, padding: '16px 24px 20px', background: '#F7F8F4', overflow: 'auto' },
   bodyNoScroll: { flex: 1, minHeight: 0, padding: '12px 24px 16px', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
   orderFormWrap: { width: '100%', flex: 1, minHeight: 0, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 3px rgba(20,24,31,0.12)', border: '1px solid #E3E1D6', display: 'flex', flexDirection: 'column' },
-  sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' },
+  sectionHeader: {
+    display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+    position: 'sticky', top: 0, zIndex: 5,
+    background: '#F7F8F4',
+    margin: '-16px -24px 14px', padding: '16px 24px 14px',
+  },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#14181F', marginRight: 4 },
   search: { flex: '1 1 260px', maxWidth: 340, background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', fontSize: 13.5, fontFamily: 'inherit', color: '#14181F', outline: 'none' },
   searchSlim: { width: '100%', background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontFamily: 'inherit', color: '#14181F', outline: 'none', boxSizing: 'border-box' },
