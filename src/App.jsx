@@ -3730,7 +3730,7 @@ function InventoryItemDetailSheet({ item, onClose }) {
             {upcs.map(u => {
               const svg = barcodeSVG(u);
               return svg
-                ? <div key={u} dangerouslySetInnerHTML={{ __html: svg }} />
+                ? <div key={u} style={{ width: '100%' }} dangerouslySetInnerHTML={{ __html: svg.replace('<svg', '<svg style="width:100%;height:auto;display:block;"') }} />
                 : <div key={u} style={{ fontSize: 13, color: '#5B6058' }}>{u}</div>;
             })}
           </div>
@@ -3762,12 +3762,12 @@ function InventoryItemDetailSheet({ item, onClose }) {
   );
 }
 const invDetailStyles = {
-  card: { background: '#fff', borderRadius: 12, padding: 18, width: 380, maxWidth: '92vw', maxHeight: '85vh', overflow: 'auto' },
+  card: { background: '#fff', borderRadius: 12, padding: 18, width: 420, maxWidth: '94vw', maxHeight: '85vh', overflow: 'auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
   name: { fontSize: 16, fontWeight: 700, color: '#14181F' },
   meta: { fontSize: 12.5, color: '#8A8F87', marginTop: 2 },
   closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 2, flexShrink: 0 },
-  barcodeBox: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 8, padding: 14, marginBottom: 14 },
+  barcodeBox: { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 8, padding: '14px 6px', marginBottom: 14 },
   noBarcode: { fontSize: 12.5, color: '#8A8F87', fontStyle: 'italic', textAlign: 'center', padding: 14, marginBottom: 14 },
   stockGrid: { display: 'flex', gap: 10, marginBottom: 10 },
   stockCell: { flex: 1, background: '#F2F4EF', borderRadius: 8, padding: '10px 14px', textAlign: 'center' },
