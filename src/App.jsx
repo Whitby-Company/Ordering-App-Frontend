@@ -4388,7 +4388,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
   const copyOrderToNewTab = useCallback((o) => {
     const draft = {
       customerId: o.customerId,
-      deliveryDate: '',
+      deliveryDate: o.deliveryDate || '',
       order: (o.lines || []).map(l => ({ id: l.id, qty: l.qty, unit: l.unit || undefined })),
       notes: o.notes || '',
       priceOverrides: Object.fromEntries((o.lines || []).map(l => [l.id, String(l.price)])),
@@ -5602,7 +5602,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                           </span>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           {onCopyOrder && (
-                            <button style={officeStyles.smallBtn} onClick={() => onCopyOrder(o)} title="Start a brand-new order with the same customer, items, quantities and prices as this one — pick a new delivery date and it gets its own invoice # and PO#">Copy</button>
+                            <button style={officeStyles.smallBtn} onClick={() => onCopyOrder(o)} title="Start a brand-new order with the same customer, items, quantities, prices and delivery date as this one — it gets its own invoice # and PO#">Copy</button>
                           )}{' '}
                           <span style={{ position: 'relative', display: 'inline-block', verticalAlign: 'middle' }}>
                             <button style={officeStyles.smallBtn} onClick={async () => { handleInvoice(o, { autoPrint: true }); try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); await onRefresh(); } catch {} }} title="Open the invoice and prompt to save/print it as a PDF (for Dropbox)">Taiyo</button>
