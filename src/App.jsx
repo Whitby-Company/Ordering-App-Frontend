@@ -4198,7 +4198,6 @@ function MobileOrderDetailScreen({ order: o, onClose, onEditOrder, onSubmitPendi
                 </button>
               )}
               <button style={styles.orderCardActionBtn} onClick={() => onEditOrder(o)}>Edit</button>
-              <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
               <button style={styles.orderCardActionBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) || null, printSequence, items, {})}>Invoice</button>
             </div>
             <div style={styles.orderCardLines}>
@@ -5330,18 +5329,6 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
     }
   }
 
-  // Print an order, then auto-mark it processed. withUpc toggles the barcode column.
-  async function handlePrint(order, withUpc = false) {
-    const customer = customers.find(cc => cc.name === order.customer) || customers.find(cc => cc.id === order.customerId) || null;
-    printOrder(order, printSequence, { withUpc, customer });
-    if (!order.processed) {
-      try {
-        await apiPatch(`/orders/${order.id}/processed`, { processed: true });
-        await onRefresh();
-      } catch { /* printing still succeeded; status just won't update */ }
-    }
-  }
-
   // Refresh from the server, then generate the invoice from the freshest version
   // of the order — so edits made just before clicking are always reflected.
   const custFor = (order) => customers.find(cc => cc.name === order.customer) || customers.find(cc => cc.id === order.customerId) || null;
@@ -5605,8 +5592,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                           >
                             {processingId === o.id ? '…' : 'Submit'}
                           </button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>
+                          <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>
                         </>
                       ) : (
                         <>
@@ -5614,7 +5600,6 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                             <button style={officeStyles.smallBtn} onClick={() => (onEditOrder ? onEditOrder(o) : setEditingOrder(o))}>Edit</button>
                             {o.editedAt && <span style={{ position: 'absolute', top: '100%', left: 0, right: 0, textAlign: 'center', fontSize: 9, color: '#B5793B', fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} title={`Edited ${formatDateTime(o.editedAt)}`}>Edited: {formatDateTime(o.editedAt)}</span>}
                           </span>{' '}
-                          <button style={officeStyles.smallBtn} onClick={() => handlePrint(o, false)} title="Print a compact order sheet (no barcodes)">Print</button>{' '}
                           <button style={officeStyles.smallBtn} onClick={() => handleInvoice(o, { noBarcode: barcodesOff })} title="Print an invoice for this order">Invoice</button>{' '}
                           {onCopyOrder && (
                             <button style={officeStyles.smallBtn} onClick={() => onCopyOrder(o)} title="Start a brand-new order with the same customer, items, quantities and prices as this one — pick a new delivery date and it gets its own invoice # and PO#">Copy</button>
