@@ -6874,6 +6874,7 @@ function AddItemModal({ brands = [], onClose, onSaved }) {
   const [caseSize, setCaseSize] = useState('');
   const [packLabel, setPackLabel] = useState('');
   const [price, setPrice] = useState('');
+  const [priceTouched, setPriceTouched] = useState(false); // stops auto-fill once the user edits price directly
   const [casePrice, setCasePrice] = useState('');
   const [cost, setCost] = useState('');
   const [upc, setUpc] = useState('');
@@ -6936,11 +6937,35 @@ function AddItemModal({ brands = [], onClose, onSaved }) {
           </div>
           <div>
             <label style={lbl}>Cost / each (optional)</label>
-            <input style={fld} inputMode="decimal" placeholder="e.g. 2.90" value={cost} onChange={e => setCost(e.target.value)} />
+            <input
+              style={fld} inputMode="decimal" placeholder="e.g. 2.90" value={cost}
+              onChange={e => {
+                const v = e.target.value;
+                setCost(v);
+                // Auto-fill price at the standard 11% markup (cost / 0.89 —
+                // the lowest an item can be invoiced at after HG's 5% and
+                // Taiyo's 6%) unless the user has typed their own price.
+                if (!priceTouched) {
+                  const n = Number(v);
+                  setPrice(v.trim() !== '' && Number.isFinite(n) ? (n / 0.89).toFixed(2) : '');
+                }
+              }}
+            />
           </div>
           <div>
             <label style={lbl}>Price / each</label>
-            <input style={fld} inputMode="decimal" placeholder="e.g. 3.75" value={price} onChange={e => setPrice(e.target.value)} />
+            <input
+              style={fld} inputMode="decimal" placeholder="e.g. 3.75" value={price}
+              onChange={e => {
+                const v = e.target.value;
+                setPrice(v);
+                // Clearing it back to blank resumes auto-fill from cost.
+                setPriceTouched(v.trim() !== '');
+              }}
+            />
+            <div style={{ fontSize: 11, color: '#8A8F87', marginTop: 3 }}>
+              {priceTouched ? 'Manually set — clear it to go back to the standard markup' : 'Auto-filled at cost ÷ 0.89 (11% markup) — type here to override'}
+            </div>
           </div>
           <div>
             <label style={lbl}>UPC (optional)</label>
