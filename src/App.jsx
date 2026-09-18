@@ -3706,11 +3706,82 @@ function Confirmation({ data, onNewOrder }) {
 // ============================================================
 // TAB 2 — INVENTORY
 // ============================================================
+// Mobile: tap an inventory row to see its barcode(s) and stock detail —
+// on-hand vs. available (after what's already committed to other orders).
+function InventoryItemDetailSheet({ item, onClose }) {
+  const upcs = parseUpcList(item.upc);
+  const onHand = item.onHand != null ? item.onHand : item.stock;
+  const available = item.available != null ? item.available : item.stock;
+  const committed = Math.max(0, onHand - available);
+  const low = available <= 5;
+  return (
+    <div style={styles.editOverlay} onClick={onClose}>
+      <div style={invDetailStyles.card} onClick={e => e.stopPropagation()}>
+        <div style={invDetailStyles.header}>
+          <div style={{ minWidth: 0 }}>
+            <div style={invDetailStyles.name}>{item.name}</div>
+            <div style={invDetailStyles.meta}>{item.brand} · #{displayCode(item.id)}{fullPackLabel(item) ? ` · ${fullPackLabel(item)}` : ''}</div>
+          </div>
+          <button style={invDetailStyles.closeBtn} onClick={onClose}><X size={18} color="#5B6058" /></button>
+        </div>
+
+        {upcs.length > 0 ? (
+          <div style={invDetailStyles.barcodeBox}>
+            {upcs.map(u => {
+              const svg = barcodeSVG(u);
+              return svg
+                ? <div key={u} dangerouslySetInnerHTML={{ __html: svg }} />
+                : <div key={u} style={{ fontSize: 13, color: '#5B6058' }}>{u}</div>;
+            })}
+          </div>
+        ) : (
+          <div style={invDetailStyles.noBarcode}>No UPC on file for this item</div>
+        )}
+
+        <div style={invDetailStyles.stockGrid}>
+          <div style={invDetailStyles.stockCell}>
+            <div style={invDetailStyles.stockLabel}>On hand</div>
+            <div style={invDetailStyles.stockValue}>{onHand}</div>
+          </div>
+          <div style={invDetailStyles.stockCell}>
+            <div style={invDetailStyles.stockLabel}>Available</div>
+            <div style={{ ...invDetailStyles.stockValue, color: low ? '#B5493B' : '#14181F' }}>{available}</div>
+          </div>
+        </div>
+        {committed > 0 && (
+          <div style={invDetailStyles.note}>{committed} already committed to other upcoming orders</div>
+        )}
+        {item.incoming > 0 && (
+          <div style={invDetailStyles.note}>+{item.incoming} incoming on a purchase order</div>
+        )}
+        {item.price > 0 && (
+          <div style={invDetailStyles.note}>{formatMoney(item.price)}/ea{item.pack > 1 ? ` · ${formatMoney(casePrice(item))}/cs` : ''}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+const invDetailStyles = {
+  card: { background: '#fff', borderRadius: 12, padding: 18, width: 380, maxWidth: '92vw', maxHeight: '85vh', overflow: 'auto' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 14 },
+  name: { fontSize: 16, fontWeight: 700, color: '#14181F' },
+  meta: { fontSize: 12.5, color: '#8A8F87', marginTop: 2 },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: 2, flexShrink: 0 },
+  barcodeBox: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, background: '#F7F8F4', border: '1px solid #E3E1D6', borderRadius: 8, padding: 14, marginBottom: 14 },
+  noBarcode: { fontSize: 12.5, color: '#8A8F87', fontStyle: 'italic', textAlign: 'center', padding: 14, marginBottom: 14 },
+  stockGrid: { display: 'flex', gap: 10, marginBottom: 10 },
+  stockCell: { flex: 1, background: '#F2F4EF', borderRadius: 8, padding: '10px 14px', textAlign: 'center' },
+  stockLabel: { fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em' },
+  stockValue: { fontSize: 22, fontWeight: 800, marginTop: 2 },
+  note: { fontSize: 12.5, color: '#5B6058', textAlign: 'center', marginTop: 4 },
+};
+
 function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
   const [brand, setBrand] = useState('All');
   const [query, setQuery] = useState('');
   const [screen, setScreen] = useState('brands');
   const [lowOnly, setLowOnly] = useState(false);
+  const [detailItem, setDetailItem] = useState(null);
 
   const brandList = useMemo(() => Array.from(new Set(items.map(i => i.brand))), [items]);
   const brandCounts = useMemo(() => {
@@ -3856,7 +3927,7 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
             const low = item.stock <= 5;
             const pct = Math.min(100, (item.stock / 40) * 100);
             return (
-              <div key={item.id} style={styles.invRow}>
+              <div key={item.id} style={{ ...styles.invRow, cursor: 'pointer' }} onClick={() => setDetailItem(item)}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={styles.itemName}>{item.name}</div>
                   <div style={styles.itemMeta}>
@@ -3880,6 +3951,7 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
           <div style={{ height: 24 }} />
         </div>
       )}
+      {detailItem && <InventoryItemDetailSheet item={detailItem} onClose={() => setDetailItem(null)} />}
     </div>
   );
 }
