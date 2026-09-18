@@ -5473,7 +5473,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       // just the inner text span instead, which html2canvas renders
       // correctly. Appended after the shared style so it takes precedence;
       // only affects this combined PDF, not the normal invoice styling.
-      const vlblOverride = '.addr-vlbl { writing-mode: horizontal-tb; transform: none; display: flex; align-items: center; justify-content: center; overflow: visible; }' +
+      const vlblOverride = '.addr-vlbl { writing-mode: horizontal-tb; transform: none; display: flex; align-items: center; justify-content: center; width: 20px; padding: 0; overflow: visible; }' +
         '.addr-vlbl-text { display: inline-block; transform: rotate(-90deg); white-space: nowrap; }';
       const combinedHtml = '<!doctype html><html><head><meta charset="utf-8" />' +
         '<title>' + combinedName.replace(/\.pdf$/, '') + '</title>' +
