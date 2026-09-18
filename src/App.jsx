@@ -4183,9 +4183,23 @@ function MobileOrderDetailScreen({ order: o, onClose, onEditOrder, onSubmitPendi
             <div style={{ ...styles.orderCardMeta, marginBottom: 4 }}>
               {formatDateTime(o.submittedAt)}{o.submittedBy ? ` · by ${o.submittedBy}` : ''}
             </div>
-            <div style={{ ...styles.orderCardDelivery, marginBottom: 16 }}>
+            <div style={{ ...styles.orderCardDelivery, marginBottom: 14 }}>
               <Calendar size={12} color="#5B6058" />
               Delivery {formatDate(o.deliveryDate)}
+            </div>
+            <div style={{ ...styles.orderCardActions, marginBottom: 16 }}>
+              {o.status === 'pending' && (
+                <button
+                  style={{ ...styles.orderCardActionBtn, background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' }}
+                  onClick={() => onSubmitPending(o.id)}
+                  disabled={processingId === o.id}
+                >
+                  {processingId === o.id ? 'Submitting…' : 'Submit order'}
+                </button>
+              )}
+              <button style={styles.orderCardActionBtn} onClick={() => onEditOrder(o)}>Edit</button>
+              <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
+              <button style={styles.orderCardActionBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) || null, printSequence, items, {})}>Invoice</button>
             </div>
             <div style={styles.orderCardLines}>
               {o.lines.map(l => (
@@ -4207,20 +4221,6 @@ function MobileOrderDetailScreen({ order: o, onClose, onEditOrder, onSubmitPendi
                   <span style={styles.orderCardNotesLabel}>Notes:</span> {o.notes}
                 </div>
               )}
-              <div style={styles.orderCardActions}>
-                {o.status === 'pending' && (
-                  <button
-                    style={{ ...styles.orderCardActionBtn, background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' }}
-                    onClick={() => onSubmitPending(o.id)}
-                    disabled={processingId === o.id}
-                  >
-                    {processingId === o.id ? 'Submitting…' : 'Submit order'}
-                  </button>
-                )}
-                <button style={styles.orderCardActionBtn} onClick={() => onEditOrder(o)}>Edit</button>
-                <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
-                <button style={styles.orderCardActionBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) || null, printSequence, items, {})}>Invoice</button>
-              </div>
             </div>
           </div>
         </div>
