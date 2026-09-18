@@ -4110,11 +4110,10 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
         )}
         {filtered.length === 0 && <div style={styles.emptyState}>No orders match "{query}"</div>}
         {filtered.map(o => {
-          const isOpen = openId === o.id;
           const totalUnits = o.lines.reduce((s, l) => s + l.qty, 0);
           return (
             <div key={o.id} style={{ ...styles.orderCard, ...(o.processed ? {} : styles.orderCardUnprocessed) }}>
-              <button style={styles.orderCardHeader} onClick={() => setOpenId(isOpen ? null : o.id)}>
+              <button style={styles.orderCardHeader} onClick={() => setOpenId(o.id)}>
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <div style={styles.orderCardCustomer}>{o.customer}</div>
@@ -4132,50 +4131,99 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
                     <Calendar size={12} color="#5B6058" />
                     {formatDate(o.deliveryDate)}
                   </div>
-                  <ChevronRight size={16} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                  <ChevronRight size={16} color="#8A8F87" />
                 </div>
               </button>
-              {isOpen && (
-                <div style={styles.orderCardLines}>
-                  {o.lines.map(l => (
-                    <div key={l.id} style={styles.orderCardLine}>
-                      <div>
-                        <div style={styles.sheetLineName}>{l.name}</div>
-                        <div style={styles.sheetLineSku}>{displayCode(l.id)}</div>
-                      </div>
-                      <div style={styles.sheetLineQty}>
-                        ×{l.qty}
-                        {l.requestedQty != null && l.requestedQty !== l.qty && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: '#B5493B' }}>({l.requestedQty} req.)</div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {o.notes && (
-                    <div style={styles.orderCardNotes}>
-                      <span style={styles.orderCardNotesLabel}>Notes:</span> {o.notes}
-                    </div>
-                  )}
-                  <div style={styles.orderCardActions}>
-                    {o.status === 'pending' && (
-                      <button
-                        style={{ ...styles.orderCardActionBtn, background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' }}
-                        onClick={() => submitPending(o.id)}
-                        disabled={processingId === o.id}
-                      >
-                        {processingId === o.id ? 'Submitting…' : 'Submit order'}
-                      </button>
-                    )}
-                    <button style={styles.orderCardActionBtn} onClick={() => onEditOrder(o)}>Edit</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
-                    <button style={styles.orderCardActionBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) || null, printSequence, items, {})}>Invoice</button>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}
         <div style={{ height: 24 }} />
+      </div>
+      {openId && (() => {
+        const o = orders.find(x => x.id === openId);
+        if (!o) return null;
+        return (
+          <MobileOrderDetailScreen
+            order={o}
+            onClose={() => setOpenId(null)}
+            onEditOrder={ord => { setOpenId(null); onEditOrder(ord); }}
+            onSubmitPending={submitPending}
+            processingId={processingId}
+            customers={customers}
+            printSequence={printSequence}
+            items={items}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
+// Mobile: a dedicated full-screen page for one order's details (line items,
+// notes, actions) — opened from the Orders list instead of expanding inline,
+// so the content has room to breathe and scrolls on its own.
+function MobileOrderDetailScreen({ order: o, onClose, onEditOrder, onSubmitPending, processingId, customers, printSequence, items }) {
+  return (
+    <div style={styles.editOverlayMobile}>
+      <div style={styles.editModalWrapMobile}>
+        <div style={styles.mobileDetailHeader}>
+          <button style={styles.backBtnBig} onClick={onClose}>
+            <ChevronLeft size={22} color="#14181F" strokeWidth={2.5} />
+            <span>Orders</span>
+          </button>
+        </div>
+        <div style={{ ...styles.screenWrap, overflowY: 'auto', flex: 1 }}>
+          <div style={{ padding: '4px 16px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ ...styles.orderCardCustomer, fontSize: 19 }}>{o.customer}</div>
+              {o.status === 'pending'
+                ? <span style={styles.badgePendingMobile}>Pending</span>
+                : !o.processed && <span style={styles.badgeUnprocessedMobile}>New</span>}
+            </div>
+            <div style={{ ...styles.orderCardMeta, marginBottom: 4 }}>
+              {formatDateTime(o.submittedAt)}{o.submittedBy ? ` · by ${o.submittedBy}` : ''}
+            </div>
+            <div style={{ ...styles.orderCardDelivery, marginBottom: 16 }}>
+              <Calendar size={12} color="#5B6058" />
+              Delivery {formatDate(o.deliveryDate)}
+            </div>
+            <div style={styles.orderCardLines}>
+              {o.lines.map(l => (
+                <div key={l.id} style={styles.orderCardLine}>
+                  <div>
+                    <div style={styles.sheetLineName}>{l.name}</div>
+                    <div style={styles.sheetLineSku}>{displayCode(l.id)}</div>
+                  </div>
+                  <div style={styles.sheetLineQty}>
+                    ×{l.qty}
+                    {l.requestedQty != null && l.requestedQty !== l.qty && (
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#B5493B' }}>({l.requestedQty} req.)</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {o.notes && (
+                <div style={styles.orderCardNotes}>
+                  <span style={styles.orderCardNotesLabel}>Notes:</span> {o.notes}
+                </div>
+              )}
+              <div style={styles.orderCardActions}>
+                {o.status === 'pending' && (
+                  <button
+                    style={{ ...styles.orderCardActionBtn, background: '#2B5D50', color: '#F7F8F4', borderColor: '#2B5D50' }}
+                    onClick={() => onSubmitPending(o.id)}
+                    disabled={processingId === o.id}
+                  >
+                    {processingId === o.id ? 'Submitting…' : 'Submit order'}
+                  </button>
+                )}
+                <button style={styles.orderCardActionBtn} onClick={() => onEditOrder(o)}>Edit</button>
+                <button style={styles.orderCardActionBtn} onClick={() => printOrder(o, printSequence, { withUpc: false, forcePrintOrder: true, customer: customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) })}>Print</button>
+                <button style={styles.orderCardActionBtn} onClick={() => printInvoice(o, customers.find(cc => cc.name === o.customer) || customers.find(cc => cc.id === o.customerId) || null, printSequence, items, {})}>Invoice</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -11091,6 +11139,7 @@ const styles = {
   editModalWrap: { width: '100%', maxWidth: 1100, height: '92vh', maxHeight: 900, background: '#F7F8F4', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(20,24,31,0.4)' },
   editOverlayMobile: { position: 'fixed', inset: 0, background: '#F7F8F4', zIndex: 60 },
   editModalWrapMobile: { width: '100%', height: '100%', background: '#F7F8F4', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  mobileDetailHeader: { padding: '14px 12px 4px', flexShrink: 0 },
   backArrow: { position: 'absolute', top: 16, left: 12, zIndex: 40, width: 30, height: 30, borderRadius: 15, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 },
   screenWrap: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' },
   tabBar: { display: 'flex', borderTop: '1px solid #E3E1D6', background: '#FFFFFF', padding: '10px 0 calc(12px + env(safe-area-inset-bottom, 0px))', flexShrink: 0, position: 'relative', zIndex: 10 },
