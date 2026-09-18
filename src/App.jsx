@@ -4968,6 +4968,12 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
           >
             Purchasing
           </button>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'pricechecks' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('pricechecks')}
+          >
+            Price Checks
+          </button>
         </div>
         {isManualOverride && (
           <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
@@ -5008,6 +5014,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
         {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
+        {section === 'pricechecks' && <OfficePriceChecks />}
       </div>
     </div>
   );
@@ -10782,6 +10789,134 @@ const poStyles = {
   addBtn: { marginTop: 4, background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   rm: { width: 26, height: 26, borderRadius: 6, border: '1px solid #E6C6B4', background: '#FBEEE7', color: '#B5493B', fontSize: 15, fontWeight: 700, cursor: 'pointer', lineHeight: 1 },
 };
+
+// Office view of price checks logged from the mobile Price Check tab —
+// grouped by retail location (store), each entry showing the item, prices,
+// and the date/time the check was actually completed.
+function OfficePriceChecks() {
+  const [checks, setChecks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [openStores, setOpenStores] = useState({});
+
+  async function load() {
+    setLoading(true);
+    try { setChecks(await apiGet('/price-checks')); } catch { setChecks([]); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return checks;
+    return checks.filter(c =>
+      (c.itemName || '').toLowerCase().includes(q) ||
+      (c.brand || '').toLowerCase().includes(q) ||
+      (c.retailLocation || '').toLowerCase().includes(q)
+    );
+  }, [checks, query]);
+
+  // Group by store, each group's entries newest-first; stores ordered by
+  // their own most recent check.
+  const byStore = useMemo(() => {
+    const groups = {};
+    for (const c of filtered) {
+      (groups[c.retailLocation] || (groups[c.retailLocation] = [])).push(c);
+    }
+    const stores = Object.keys(groups).map(name => {
+      const entries = groups[name].sort((a, b) => (b.checkedAt || '').localeCompare(a.checkedAt || ''));
+      return { name, entries, lastChecked: entries[0] ? entries[0].checkedAt : '' };
+    });
+    stores.sort((a, b) => (b.lastChecked || '').localeCompare(a.lastChecked || ''));
+    return stores;
+  }, [filtered]);
+
+  useEffect(() => {
+    // Default every store open the first time data loads, so nothing is
+    // hidden by surprise; user's manual toggles afterward are respected.
+    setOpenStores(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const s of byStore) { if (!(s.name in next)) { next[s.name] = true; changed = true; } }
+      return changed ? next : prev;
+    });
+  }, [byStore]);
+
+  async function removeCheck(id) {
+    if (!window.confirm('Remove this price check?')) return;
+    try { await apiDelete(`/price-checks/${id}`); await load(); }
+    catch (e) { window.alert(e.message || 'Could not remove this price check.'); }
+  }
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Price Checks</div>
+        <input
+          style={officeStyles.search}
+          placeholder="Search by item, brand, or store…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
+        <div style={officeStyles.countPill}>{filtered.length} check{filtered.length === 1 ? '' : 's'} · {byStore.length} store{byStore.length === 1 ? '' : 's'}</div>
+      </div>
+
+      {loading ? <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div> : byStore.length === 0 ? (
+        <div style={{ padding: 30, color: '#8A8F87', fontStyle: 'italic' }}>{query ? `No price checks match "${query}".` : 'No price checks logged yet.'}</div>
+      ) : (
+        byStore.map(store => (
+          <div key={store.name} style={{ ...officeStyles.tableCard, marginBottom: 14, overflow: 'hidden' }}>
+            <div
+              style={{ padding: '10px 16px', background: '#F2F4EF', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+              onClick={() => setOpenStores(prev => ({ ...prev, [store.name]: !prev[store.name] }))}
+            >
+              <span style={{ fontWeight: 800, fontSize: 14 }}>{openStores[store.name] ? '▾' : '▸'} {store.name}</span>
+              <span style={{ fontSize: 12, color: '#8A8F87' }}>{store.entries.length} item{store.entries.length === 1 ? '' : 's'} · last checked {formatDateTime(store.lastChecked)}</span>
+            </div>
+            {openStores[store.name] && (
+              <table style={officeStyles.table}>
+                <thead><tr>
+                  <th style={officeStyles.th}></th>
+                  <th style={officeStyles.th}>Item</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }}>Base price</th>
+                  <th style={{ ...officeStyles.th, textAlign: 'right' }}>Promo price</th>
+                  <th style={officeStyles.th}>Notes</th>
+                  <th style={officeStyles.th}>Checked</th>
+                  <th style={officeStyles.th}></th>
+                </tr></thead>
+                <tbody>
+                  {store.entries.map(c => (
+                    <tr key={c.id}>
+                      <td style={officeStyles.td}>
+                        {c.photoUrl
+                          ? <img src={c.photoUrl} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 5 }} />
+                          : <div style={{ width: 36, height: 36, borderRadius: 5, background: '#E3E1D6' }} />}
+                      </td>
+                      <td style={officeStyles.td}>
+                        <div style={{ fontWeight: 700 }}>{c.itemName || c.itemId}</div>
+                        <div style={{ fontSize: 11, color: '#8A8F87' }}>{c.brand} · #{displayCode(c.itemId)}</div>
+                      </td>
+                      <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>{c.basePrice != null ? formatMoney(c.basePrice) : '—'}</td>
+                      <td style={{ ...officeStyles.td, textAlign: 'right', color: c.promoPrice != null ? '#B5793B' : '#B9BDB2', fontWeight: c.promoPrice != null ? 700 : 400 }}>{c.promoPrice != null ? formatMoney(c.promoPrice) : '—'}</td>
+                      <td style={{ ...officeStyles.td, fontSize: 12.5, fontStyle: c.notes ? 'normal' : 'italic', color: c.notes ? '#14181F' : '#B9BDB2' }}>{c.notes || '—'}</td>
+                      <td style={officeStyles.td}>
+                        <div style={{ fontSize: 12.5 }}>{formatDateTime(c.checkedAt)}</div>
+                        {c.checkedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {c.checkedBy}</div>}
+                      </td>
+                      <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                        <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B5493B', fontSize: 12 }} onClick={() => removeCheck(c.id)}>Remove</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 // App-wide inventory change trail.
 function StockChangesReport({ onBack }) {
