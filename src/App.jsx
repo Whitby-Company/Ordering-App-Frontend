@@ -5216,6 +5216,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   const [editingOrder, setEditingOrder] = useState(null);
   const [iifBusyId, setIifBusyId] = useState(null);
   const [batchBusy, setBatchBusy] = useState(false);
+  const [taiyoBatchBusy, setTaiyoBatchBusy] = useState(false);
   const [iifError, setIifError] = useState('');
   const [processingId, setProcessingId] = useState(null);
   const [showUnprocessedOnly, setShowUnprocessedOnly] = useState(false);
@@ -5326,6 +5327,36 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       setIifError(err.message || 'Could not export the batch Transaction Pro file.');
     } finally {
       setBatchBusy(false);
+    }
+  }
+
+  async function handleBatchTaiyo() {
+    const batch = filtered.filter(o => o.status !== 'pending' && !o.voided && !o.taiyoDroppedAt);
+    if (batch.length === 0) return;
+    if (!window.confirm(`Generate ${batch.length} individual Taiyo PDF${batch.length === 1 ? '' : 's'}? Your browser may ask for one-time permission to allow multiple downloads/pop-ups from this site.`)) return;
+    setTaiyoBatchBusy(true);
+    setIifError('');
+    try {
+      // Fetch fresh data once for the whole batch, so every PDF reflects the
+      // latest version of its order.
+      const latest = await apiGet('/orders');
+      const byId = {};
+      for (const o of latest) byId[o.id] = o;
+      // Open every save-PDF window together, in the same click, so the
+      // browser treats them as one user-triggered action instead of
+      // blocking the 2nd+ as unsolicited pop-ups.
+      for (const o of batch) {
+        const fresh = byId[o.id] || o;
+        printInvoice(fresh, custFor(fresh), printSequence, items, { savePdf: true });
+      }
+      for (const o of batch) {
+        try { await apiPost(`/orders/${o.id}/taiyo-dropped`, {}); } catch { /* keep going */ }
+      }
+      await onRefresh();
+    } catch (err) {
+      setIifError(err.message || 'Could not generate the Taiyo PDFs.');
+    } finally {
+      setTaiyoBatchBusy(false);
     }
   }
 
@@ -5445,6 +5476,9 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
 
   // Submitted (non-pending) orders not yet processed — what the batch exports.
   const batchExportable = orders.filter(o => o.status !== 'pending' && !o.processed);
+  // Submitted, non-voided orders currently in view that haven't had a Taiyo
+  // PDF dropped yet — what the Taiyo batch button generates.
+  const taiyoBatchable = filtered.filter(o => o.status !== 'pending' && !o.voided && !o.taiyoDroppedAt);
 
   return (
     <div>
@@ -5466,6 +5500,14 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
             {batchBusy ? 'Exporting…' : `Export all to TP${batchExportable.length ? ` (${batchExportable.length})` : ''}`}
           </button>
         )}
+        <button
+          style={{ ...officeStyles.smallBtn, ...(taiyoBatchable.length === 0 || taiyoBatchBusy ? officeStyles.smallBtnDisabled : {}) }}
+          onClick={handleBatchTaiyo}
+          disabled={taiyoBatchable.length === 0 || taiyoBatchBusy}
+          title="Generate an individual Taiyo PDF for every not-yet-dropped order currently shown (each downloads separately — for Dropbox)"
+        >
+          {taiyoBatchBusy ? 'Generating…' : `Taiyo (batch)${taiyoBatchable.length ? ` (${taiyoBatchable.length})` : ''}`}
+        </button>
         {!activeScope && (
           <button
             style={{ ...officeStyles.smallBtn, ...(showUnprocessedOnly ? officeStyles.editModeBtnActive : {}) }}
