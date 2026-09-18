@@ -6815,6 +6815,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       {showAddItem && (
         <AddItemModal
           brands={[...new Set(items.map(i => i.brand).filter(Boolean))].sort()}
+          allItems={items}
           onClose={() => setShowAddItem(false)}
           onSaved={async () => { setShowAddItem(false); await onRefresh(); }}
         />
@@ -6865,7 +6866,7 @@ function ItemStockEvents({ itemId }) {
 }
 
 // Modal to add a brand-new item to the catalog.
-function AddItemModal({ brands = [], onClose, onSaved }) {
+function AddItemModal({ brands = [], allItems = [], onClose, onSaved }) {
   const [brand, setBrand] = useState('');
   const [newBrand, setNewBrand] = useState('');
   const [code, setCode] = useState('');
@@ -6881,6 +6882,35 @@ function AddItemModal({ brands = [], onClose, onSaved }) {
   const [stock, setStock] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [copyQuery, setCopyQuery] = useState('');
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copiedFrom, setCopiedFrom] = useState(null); // name of the item copied from, for a confirmation note
+
+  const copyResults = useMemo(() => {
+    const q = copyQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allItems
+      .filter(it => it.name.toLowerCase().includes(q) || it.brand.toLowerCase().includes(q) || displayCode(it.id).toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [allItems, copyQuery]);
+
+  function copyFrom(it) {
+    // Brand, packaging, and pricing carry over as a starting point; code,
+    // name, UPC, and stock stay whatever's already typed (or blank) since
+    // those have to be unique/fresh for a new item.
+    setBrand(it.brand || '');
+    setNewBrand('');
+    setPack(it.pack != null ? String(it.pack) : '');
+    setCaseSize(it.caseSize != null ? String(it.caseSize) : '');
+    setPackLabel(it.packLabel || '');
+    setPrice(it.price != null ? String(it.price) : '');
+    setPriceTouched(true); // an explicit copied price shouldn't get silently overwritten by the cost auto-fill
+    setCasePrice(it.casePrice != null ? String(it.casePrice) : '');
+    setCost(it.cost != null ? String(it.cost) : '');
+    setCopiedFrom(it.name);
+    setCopyOpen(false);
+    setCopyQuery('');
+  }
 
   async function save() {
     const useBrand = (newBrand.trim() || brand).trim();
@@ -6906,6 +6936,33 @@ function AddItemModal({ brands = [], onClose, onSaved }) {
       <div style={{ background: '#fff', borderRadius: 10, padding: 20, width: 520, maxWidth: '92vw', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 12 }}>Add a new item</div>
         {err && <div style={{ color: '#B5493B', marginBottom: 10, fontSize: 13 }}>{err}</div>}
+        <div style={{ position: 'relative', marginBottom: 14 }}>
+          <label style={lbl}>Copy from an existing item (optional)</label>
+          <input
+            style={fld}
+            placeholder="Search item, brand, or # to copy brand/pack/pricing from…"
+            value={copyQuery}
+            onChange={e => { setCopyQuery(e.target.value); setCopyOpen(true); }}
+            onFocus={() => setCopyOpen(true)}
+            onBlur={() => setCopyOpen(false)}
+          />
+          {copiedFrom && !copyOpen && (
+            <div style={{ fontSize: 11, color: '#2B5D50', marginTop: 3 }}>Copied brand/pack/pricing from "{copiedFrom}" — code, name, UPC and stock still need to be entered.</div>
+          )}
+          {copyOpen && copyResults.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 6, marginTop: 2, zIndex: 5, maxHeight: 220, overflowY: 'auto' }}>
+              {copyResults.map(it => (
+                <button
+                  key={it.id}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', fontSize: 12.5, background: 'none', border: 'none', borderBottom: '1px solid #EFEDE3', cursor: 'pointer', fontFamily: 'inherit' }}
+                  onMouseDown={() => copyFrom(it)}
+                >
+                  <span style={{ fontWeight: 700 }}>{it.brand}</span> — {it.name} <span style={{ color: '#8A8F87' }}>#{displayCode(it.id)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
             <label style={lbl}>Brand</label>
