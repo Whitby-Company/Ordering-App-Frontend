@@ -4947,6 +4947,11 @@ function MobileOrderDetailScreen({ order: o, onClose, onEditOrder, onSubmitPendi
               <Calendar size={12} color="#5B6058" />
               Delivery {formatDate(o.deliveryDate)}
             </div>
+            {o.notes && (
+              <div style={{ ...styles.orderCardNotes, marginBottom: 14 }}>
+                <span style={styles.orderCardNotesLabel}>Notes:</span> {o.notes}
+              </div>
+            )}
             <div style={{ ...styles.orderCardActions, marginBottom: 16 }}>
               {o.status === 'pending' && (
                 <button
@@ -4975,11 +4980,6 @@ function MobileOrderDetailScreen({ order: o, onClose, onEditOrder, onSubmitPendi
                   </div>
                 </div>
               ))}
-              {o.notes && (
-                <div style={styles.orderCardNotes}>
-                  <span style={styles.orderCardNotesLabel}>Notes:</span> {o.notes}
-                </div>
-              )}
             </div>
           </div>
         </div>
