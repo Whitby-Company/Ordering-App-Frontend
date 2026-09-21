@@ -1440,8 +1440,8 @@ function WarehousePage() {
     return Math.round(sub * 1.005 * 100) / 100;
   };
 
-  const [sortField, setSortField] = useState('invoiceNumber');
-  const [sortDir, setSortDir] = useState('desc');
+  const [sortField, setSortField] = useState('deliveryDate');
+  const [sortDir, setSortDir] = useState('asc');
   function handleSortClick(field) {
     if (field === sortField) {
       setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
