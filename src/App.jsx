@@ -1364,14 +1364,16 @@ function WarehousePage() {
   function onPodFileSelected(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const dot = file.name.lastIndexOf('.');
+    const ext = (dot >= 0 ? file.name.slice(dot + 1) : 'jpg').toLowerCase() || 'jpg';
+    const nameOnly = dot >= 0 ? file.name.slice(0, dot) : file.name;
     setPodExt(ext);
+    setPodReference(nameOnly);
     const reader = new FileReader();
     reader.onload = () => setPodPreview(reader.result);
     reader.readAsDataURL(file);
   }
   async function uploadPod() {
-    if (!podReference.trim()) { setPodErr('Enter a reference (e.g. invoice # or customer) so this is identifiable later.'); return; }
     if (!podPreview) { setPodErr('Choose a file to upload.'); return; }
     setPodUploading(true);
     setPodErr('');
@@ -1635,25 +1637,20 @@ function WarehousePage() {
           <div>
             <div style={{ background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, padding: 18, marginBottom: 20, maxWidth: 480 }}>
               <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>Upload a signed proof of delivery / invoice</div>
+              <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>The file's own name is used to identify it — make sure it's named clearly (e.g. "Invoice 26023 - Don Quijote") before choosing it.</div>
               {podErr && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 10 }}>{podErr}</div>}
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 4 }}>Reference (invoice #, customer, etc.)</label>
-              <input
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', marginBottom: 12 }}
-                placeholder="e.g. Invoice 26023 - Don Quijote"
-                value={podReference}
-                onChange={e => setPodReference(e.target.value)}
-              />
               {podPreview ? (
                 <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>{podReference}</div>
                   {podExt === 'pdf'
                     ? <div style={{ fontSize: 13, color: '#5B6058', padding: '10px 0' }}>📄 PDF selected — ready to upload</div>
                     : <img src={podPreview} alt="" style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid #D6D3C6' }} />}
-                  <div><button style={{ background: 'none', border: 'none', color: '#B5493B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }} onClick={() => { setPodPreview(''); setPodExt('jpg'); }}>Remove</button></div>
+                  <div><button style={{ background: 'none', border: 'none', color: '#B5493B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }} onClick={() => { setPodPreview(''); setPodExt('jpg'); setPodReference(''); }}>Remove</button></div>
                 </div>
               ) : (
                 <label style={{ ...S.moveBtn, display: 'inline-block', cursor: 'pointer', marginBottom: 12 }}>
                   📎 Choose file (photo or PDF)
-                  <input type="file" accept="image/*,application/pdf" capture="environment" onChange={onPodFileSelected} style={{ display: 'none' }} />
+                  <input type="file" accept="image/*,application/pdf" onChange={onPodFileSelected} style={{ display: 'none' }} />
                 </label>
               )}
               <div>
