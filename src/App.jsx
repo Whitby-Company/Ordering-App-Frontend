@@ -664,6 +664,27 @@ function buildSavePdfScript(pdfName) {
 const PDF_LIBS_HTML = '<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>' +
   '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>';
 
+// Combine several invoices' already-harvested .page HTML (from
+// renderInvoicePagesOffscreen) into one open-and-save-PDF document. Used by
+// both the office Taiyo batch feature and the standalone Taiyo warehouse
+// page's batch print.
+function buildCombinedInvoicePdfHtml(allPagesHtml, sharedStyle, pdfName) {
+  // Override for html2canvas's poor writing-mode support (see the
+  // addr-vlbl-text wrapping done in renderInvoicePagesOffscreen): reset the
+  // label box to a plain flex-centered container and rotate just the inner
+  // text span instead, which html2canvas renders correctly. Appended after
+  // the shared style so it takes precedence; only affects this combined PDF,
+  // not the normal invoice styling.
+  const vlblOverride = '.addr-vlbl { writing-mode: horizontal-tb; transform: none; display: flex; align-items: center; justify-content: center; width: 20px; padding: 0; overflow: visible; }' +
+    '.addr-vlbl-text { display: inline-block; transform: rotate(-90deg); white-space: nowrap; }';
+  return '<!doctype html><html><head><meta charset="utf-8" />' +
+    '<title>' + pdfName.replace(/\.pdf$/, '') + '</title>' +
+    PDF_LIBS_HTML + '<style>' + sharedStyle + vlblOverride + '</style></head><body>' +
+    '<div id="pages">' + allPagesHtml.join('') + '</div>' +
+    '<script>' + buildSavePdfScript(pdfName) + '<\/script>' +
+    '</body></html>';
+}
+
 // Render one order's invoice off-screen (an invisible iframe, never shown to
 // the user) purely to let printInvoice's own pagination script do its work,
 // then harvest the finished, static .page HTML it produced — so the tricky
@@ -1306,6 +1327,9 @@ function WarehousePage() {
   const [tab, setTab] = useState('current'); // 'current' | 'storage'
   const [undo, setUndo] = useState(null); // { order } shown briefly after moving to storage
   const [openMonths, setOpenMonths] = useState({}); // month key -> expanded in storage
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchErr, setBatchErr] = useState('');
 
   async function reload() {
     try { setOrders(await apiGet('/orders')); } catch { /* keep */ }
@@ -1322,6 +1346,7 @@ function WarehousePage() {
       setStatus('ready');
     }).catch(() => setStatus('error'));
   }, []);
+  useEffect(() => { setSelectedIds(new Set()); }, [tab]);
 
   const list = useMemo(() => {
     const submitted = (orders || []).filter(o => o.status !== 'pending' && !o.voided);
@@ -1377,6 +1402,58 @@ function WarehousePage() {
     }
   }
 
+  function toggleSelected(id, checked) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  }
+
+  async function printSelected() {
+    const selected = list.filter(o => selectedIds.has(o.id));
+    if (selected.length === 0) return;
+    setBatchBusy(true);
+    setBatchErr('');
+    try {
+      const latest = await apiGet('/orders');
+      const byId = {};
+      for (const o of latest) byId[o.id] = o;
+      let sharedStyle = '';
+      const allPagesHtml = [];
+      for (const o of selected) {
+        const fresh = byId[o.id] || o;
+        const cust = customers.find(c => c.name === fresh.customer) || customers.find(c => c.id === fresh.customerId) || null;
+        const { pagesHtml, styleText } = await renderInvoicePagesOffscreen(fresh, cust, printSequence, items);
+        if (!sharedStyle && styleText) sharedStyle = styleText;
+        allPagesHtml.push(pagesHtml);
+      }
+      const today = new Date();
+      const mmddyy = `${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}.${String(today.getFullYear()).slice(2)}`;
+      const combinedName = `Taiyo Invoices ${mmddyy} (${selected.length}).pdf`.replace(/[\\/:*?"<>|]/g, '');
+      const combinedHtml = buildCombinedInvoicePdfHtml(allPagesHtml, sharedStyle, combinedName);
+      const win = window.open('', '_blank', 'width=880,height=1000');
+      if (!win) throw new Error('Pop-up blocked — please allow pop-ups for this site and try again.');
+      win.document.write(combinedHtml);
+      win.document.close();
+      win.focus();
+      // Auto-move printed invoices to storage, matching the single-invoice
+      // View button's behavior.
+      const toStore = selected.filter(o => !o.taiyoStored);
+      if (toStore.length) {
+        setOrders(prev => prev.map(x => toStore.some(o => o.id === x.id) ? { ...x, taiyoStored: true } : x));
+        for (const o of toStore) {
+          try { await apiPost(`/orders/${o.id}/taiyo-stored`, { stored: true }); } catch { /* keep going */ }
+        }
+      }
+      setSelectedIds(new Set());
+    } catch (err) {
+      setBatchErr(err.message || 'Could not generate the combined PDF.');
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
   const orderTotal = (o) => {
     const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
     return Math.round(sub * 1.005 * 100) / 100;
@@ -1400,6 +1477,9 @@ function WarehousePage() {
 
   const InvoiceRow = ({ o }) => (
     <tr style={S.row}>
+      <td style={{ ...S.td, width: 30 }}>
+        <input type="checkbox" checked={selectedIds.has(o.id)} onChange={e => toggleSelected(o.id, e.target.checked)} onClick={e => e.stopPropagation()} />
+      </td>
       <td style={S.td}>{o.deliveryDate ? formatDateMMDDYY(o.deliveryDate).replace(/\//g, '.') : ''}</td>
       <td style={{ ...S.td, fontWeight: 700 }}>{o.customer}</td>
       <td style={S.td}>{invoiceNumberFor(o)}</td>
@@ -1433,12 +1513,42 @@ function WarehousePage() {
           <button onClick={() => setTab('storage')} style={{ ...S.tab, ...(tab === 'storage' ? S.tabActive : {}) }}>Taiyo Storage ({storageCount})</button>
         </div>
         <input style={S.search} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+          <button
+            style={{ ...S.viewBtn, ...(selectedIds.size === 0 || batchBusy ? { opacity: 0.5, cursor: 'default' } : {}) }}
+            onClick={printSelected}
+            disabled={selectedIds.size === 0 || batchBusy}
+          >
+            {batchBusy ? 'Generating…' : `Print ${selectedIds.size || ''} selected`.trim()}
+          </button>
+          {selectedIds.size > 0 && !batchBusy && (
+            <button style={{ background: 'transparent', border: 'none', color: '#5B6058', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => setSelectedIds(new Set())}>
+              Clear selection
+            </button>
+          )}
+          {batchErr && <span style={{ color: '#B5493B', fontSize: 13 }}>{batchErr}</span>}
+        </div>
         {status === 'loading' && <div style={{ color: '#8A8F87', padding: 20, textAlign: 'center' }}>Loading invoices…</div>}
         {status === 'error' && <div style={{ color: '#B5493B', padding: 20, textAlign: 'center' }}>Couldn't load invoices. Refresh to try again.</div>}
         {status === 'ready' && (
           <table style={S.table}>
             <thead>
               <tr>
+                <th style={S.th}>
+                  <input
+                    type="checkbox"
+                    checked={list.length > 0 && list.every(o => selectedIds.has(o.id))}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setSelectedIds(prev => {
+                        const next = new Set(prev);
+                        for (const o of list) { if (checked) next.add(o.id); else next.delete(o.id); }
+                        return next;
+                      });
+                    }}
+                    title="Select all shown"
+                  />
+                </th>
                 <th style={S.th}>Delivery Date</th>
                 <th style={S.th}>Customer</th>
                 <th style={S.th}>INV#</th>
@@ -1450,7 +1560,7 @@ function WarehousePage() {
             </thead>
             <tbody>
               {(tab === 'storage' ? storageGroups.recent.length + storageGroups.months.length : list.length) === 0 && (
-                <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={7}>{tab === 'storage' ? 'Storage is empty.' : 'No invoices found.'}</td></tr>
+                <tr><td style={{ ...S.td, textAlign: 'center', color: '#8A8F87' }} colSpan={8}>{tab === 'storage' ? 'Storage is empty.' : 'No invoices found.'}</td></tr>
               )}
               {/* Storage tab: recent (past 30 days) loose, then month folders */}
               {tab === 'storage' ? (
@@ -1459,7 +1569,7 @@ function WarehousePage() {
                   {storageGroups.months.map(mo => (
                     <React.Fragment key={mo.key}>
                       <tr style={{ background: '#EDEBE3', cursor: 'pointer' }} onClick={() => setOpenMonths(m => ({ ...m, [mo.key]: !m[mo.key] }))}>
-                        <td style={{ ...S.td, fontWeight: 800 }} colSpan={7}>
+                        <td style={{ ...S.td, fontWeight: 800 }} colSpan={8}>
                           {openMonths[mo.key] ? '▾' : '▸'} 📁 {mo.label} ({mo.orders.length})
                         </td>
                       </tr>
@@ -5851,20 +5961,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       const today = new Date();
       const mmddyy = `${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}.${String(today.getFullYear()).slice(2)}`;
       const combinedName = `Taiyo Batch ${mmddyy} (${batch.length} invoices).pdf`.replace(/[\\/:*?"<>|]/g, '');
-      // Override for html2canvas's poor writing-mode support (see the
-      // addr-vlbl-text wrapping done in renderInvoicePagesOffscreen above):
-      // reset the label box to a plain flex-centered container and rotate
-      // just the inner text span instead, which html2canvas renders
-      // correctly. Appended after the shared style so it takes precedence;
-      // only affects this combined PDF, not the normal invoice styling.
-      const vlblOverride = '.addr-vlbl { writing-mode: horizontal-tb; transform: none; display: flex; align-items: center; justify-content: center; width: 20px; padding: 0; overflow: visible; }' +
-        '.addr-vlbl-text { display: inline-block; transform: rotate(-90deg); white-space: nowrap; }';
-      const combinedHtml = '<!doctype html><html><head><meta charset="utf-8" />' +
-        '<title>' + combinedName.replace(/\.pdf$/, '') + '</title>' +
-        PDF_LIBS_HTML + '<style>' + sharedStyle + vlblOverride + '</style></head><body>' +
-        '<div id="pages">' + allPagesHtml.join('') + '</div>' +
-        '<script>' + buildSavePdfScript(combinedName) + '<\/script>' +
-        '</body></html>';
+      const combinedHtml = buildCombinedInvoicePdfHtml(allPagesHtml, sharedStyle, combinedName);
       const win = window.open('', '_blank', 'width=880,height=1000');
       if (!win) throw new Error('Pop-up blocked — please allow pop-ups for this site and try again.');
       win.document.write(combinedHtml);
