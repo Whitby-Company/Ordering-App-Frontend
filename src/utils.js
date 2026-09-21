@@ -22,7 +22,13 @@ export function formatDateMMDDYY(iso) {
 // current year if year omitted). Returns '' if unparseable.
 export function parseTypedDate(text) {
   const t = (text || '').trim();
-  const m = t.match(/^(\d{1,2})\D+(\d{1,2})(?:\D+(\d{2,4}))?$/);
+  // MMDDYY / MMDDYYYY — no separator, exactly 6 or 8 digits (unambiguous:
+  // always 2-digit month + 2-digit day + 2-or-4-digit year).
+  let m = t.match(/^(\d{2})(\d{2})(\d{2}|\d{4})$/);
+  if (!m) {
+    // MM/DD/YY, MM.DD.YY, MM-DD-YY, etc. — any non-digit separator(s).
+    m = t.match(/^(\d{1,2})\D+(\d{1,2})(?:\D+(\d{2,4}))?$/);
+  }
   if (!m) return '';
   let [, mm, dd, yy] = m;
   let year = yy ? Number(yy) : new Date().getFullYear();

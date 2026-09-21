@@ -1403,9 +1403,10 @@ function WarehousePage() {
     const submitted = (orders || []).filter(o => o.status !== 'pending' && !o.voided);
     const byTab = submitted.filter(o => tab === 'storage' ? o.taiyoStored : !o.taiyoStored);
     const query = q.trim().toLowerCase();
+    const typedDate = parseTypedDate(q.trim());
     const filtered = query ? byTab.filter(o => {
       const inv = String(invoiceNumberFor(o) || '');
-      return (o.customer || '').toLowerCase().includes(query) || inv.includes(query.replace(/\D/g, '')) || (o.poNumber || '').toLowerCase().includes(query) || (o.deliveryDate || '').includes(query);
+      return (o.customer || '').toLowerCase().includes(query) || inv.includes(query.replace(/\D/g, '')) || (o.poNumber || '').toLowerCase().includes(query) || (o.deliveryDate || '').includes(query) || (typedDate && o.deliveryDate === typedDate);
     }) : byTab;
     return [...filtered].sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.id - a.id));
   }, [orders, q, tab]);
@@ -10669,13 +10670,14 @@ function OfficePurchasing({ items, onRefresh }) {
     if (statusFilter === 'open') list = list.filter(p => p.status === 'open' || p.status === 'partial');
     else if (statusFilter !== 'all') list = list.filter(p => p.status === statusFilter);
     const q = query.trim().toLowerCase();
+    const typedDate = parseTypedDate(query.trim());
     if (q) {
       list = list.filter(p =>
         (p.supplier || '').toLowerCase().includes(q) ||
         (p.reference || '').toLowerCase().includes(q) ||
         `#${p.id}`.includes(q) ||
-        (p.expectedDate && (p.expectedDate.includes(q) || formatDate(p.expectedDate).toLowerCase().includes(q))) ||
-        (p.orderDate && (p.orderDate.includes(q) || formatDate(p.orderDate).toLowerCase().includes(q)))
+        (p.expectedDate && (p.expectedDate.includes(q) || formatDate(p.expectedDate).toLowerCase().includes(q) || (typedDate && p.expectedDate === typedDate))) ||
+        (p.orderDate && (p.orderDate.includes(q) || formatDate(p.orderDate).toLowerCase().includes(q) || (typedDate && p.orderDate === typedDate)))
       );
     }
     return list;
@@ -11552,12 +11554,14 @@ function OrderMarginReport({ onBack }) {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
+    const typedDate = parseTypedDate(q.trim());
     const list = [...orders].sort((a, b) => String(b.submittedAt || '').localeCompare(String(a.submittedAt || '')));
     if (!s) return list.slice(0, 60);
     return list.filter(o =>
       String(o.id).includes(s) ||
       (o.customer || '').toLowerCase().includes(s) ||
-      (o.deliveryDate || '').includes(s)
+      (o.deliveryDate || '').includes(s) ||
+      (typedDate && o.deliveryDate === typedDate)
     ).slice(0, 60);
   }, [orders, q]);
 
