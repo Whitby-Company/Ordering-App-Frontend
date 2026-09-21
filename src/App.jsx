@@ -1429,6 +1429,18 @@ function WarehousePage() {
 
   const storageCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && o.taiyoStored).length, [orders]);
   const currentCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && !o.taiyoStored).length, [orders]);
+  // Look up the real invoice behind a Taiyo Out reference (which is just the
+  // invoice number) so the list can show the customer/date, and flag any
+  // upload whose number doesn't match a real invoice.
+  const ordersByInvoiceNumber = useMemo(() => {
+    const map = new Map();
+    for (const o of (orders || [])) map.set(invoiceNumberFor(o), o);
+    return map;
+  }, [orders]);
+  function matchedOrderFor(reference) {
+    const num = (String(reference || '').match(/\d+/) || [])[0];
+    return num ? ordersByInvoiceNumber.get(Number(num)) : null;
+  }
 
   async function setStored(o, stored) {
     // optimistic
@@ -1637,7 +1649,7 @@ function WarehousePage() {
           <div>
             <div style={{ background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, padding: 18, marginBottom: 20, maxWidth: 480 }}>
               <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>Upload a signed proof of delivery / invoice</div>
-              <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>The file's own name is used to identify it — make sure it's named clearly (e.g. "Invoice 26023 - Don Quijote") before choosing it.</div>
+              <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>Name the file with just the invoice number (e.g. "26088.pdf") — it'll automatically match up to that invoice below.</div>
               {podErr && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 10 }}>{podErr}</div>}
               {podPreview ? (
                 <div style={{ marginBottom: 12 }}>
@@ -1675,9 +1687,20 @@ function WarehousePage() {
                   <th style={S.th}></th>
                 </tr></thead>
                 <tbody>
-                  {podDocs.map(d => (
+                  {podDocs.map(d => {
+                    const matched = matchedOrderFor(d.reference);
+                    return (
                     <tr key={d.id}>
-                      <td style={{ ...S.td, fontWeight: 700 }}>{d.reference}</td>
+                      <td style={{ ...S.td, fontWeight: 700 }}>
+                        {d.reference}
+                        {matched ? (
+                          <div style={{ fontSize: 12, color: '#5B6058', fontWeight: 400 }}>
+                            {matched.customer}{matched.deliveryDate ? ` · ${formatDateMMDDYY(matched.deliveryDate).replace(/\//g, '.')}` : ''}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: '#B5493B', fontWeight: 700 }}>⚠ No matching invoice found</div>
+                        )}
+                      </td>
                       <td style={S.td}>
                         <a href={d.fileUrl} target="_blank" rel="noreferrer" style={{ color: '#2B5D50', fontWeight: 700 }}>
                           {d.fileType === 'pdf' ? '📄 View PDF' : '🖼 View photo'}
@@ -1688,7 +1711,8 @@ function WarehousePage() {
                         <button style={{ background: 'none', border: 'none', color: '#B5493B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => removePodDoc(d.id)}>Remove</button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}
