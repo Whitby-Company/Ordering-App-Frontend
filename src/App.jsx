@@ -1317,6 +1317,24 @@ class ErrorBoundary extends React.Component {
 
 // Standalone warehouse page (at /warehouse): a clean, uncomplicated list of
 // invoices with a big "View invoice" button. No nav, no editing — view only.
+// Sortable column header for the standalone Taiyo warehouse page, styled to
+// match its own S.th (distinct from officeStyles.th that SortableTh uses).
+function ThSort({ field, label, sortField, sortDir, onClick, thStyle, align = 'left' }) {
+  const active = sortField === field;
+  return (
+    <th
+      style={{ ...thStyle, textAlign: align, cursor: 'pointer', userSelect: 'none' }}
+      onClick={() => onClick(field)}
+      title={`Sort by ${label}`}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
+        {label}
+        {active && <span style={{ fontSize: 10 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </span>
+    </th>
+  );
+}
+
 function WarehousePage() {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -1417,6 +1435,33 @@ function WarehousePage() {
     return d.toISOString().slice(0, 10);
   }, []);
 
+  const orderTotal = (o) => {
+    const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
+    return Math.round(sub * 1.005 * 100) / 100;
+  };
+
+  const [sortField, setSortField] = useState('invoiceNumber');
+  const [sortDir, setSortDir] = useState('desc');
+  function handleSortClick(field) {
+    if (field === sortField) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      // Dates/numbers default newest-or-highest first; text A→Z.
+      setSortDir(field === 'customer' || field === 'poNumber' ? 'asc' : 'desc');
+    }
+  }
+  function sortValueFor(o, field) {
+    switch (field) {
+      case 'deliveryDate': return o.deliveryDate || '';
+      case 'customer': return (o.customer || '').toLowerCase();
+      case 'poNumber': return (o.poNumber || '').toLowerCase();
+      case 'total': return orderTotal(o);
+      case 'invoiceNumber':
+      default: return invoiceNumberFor(o);
+    }
+  }
+
   const list = useMemo(() => {
     const submitted = (orders || []).filter(o => o.status !== 'pending' && !o.voided);
     const byTab = submitted.filter(o => tab === 'storage' ? o.taiyoStored : !o.taiyoStored);
@@ -1426,8 +1471,12 @@ function WarehousePage() {
       const inv = String(invoiceNumberFor(o) || '');
       return (o.customer || '').toLowerCase().includes(query) || inv.includes(query.replace(/\D/g, '')) || (o.poNumber || '').toLowerCase().includes(query) || (o.deliveryDate || '').includes(query) || (typedDate && o.deliveryDate === typedDate);
     }) : byTab;
-    return [...filtered].sort((a, b) => (b.deliveryDate || '').localeCompare(a.deliveryDate || '') || (b.id - a.id));
-  }, [orders, q, tab]);
+    return [...filtered].sort((a, b) => {
+      const av = sortValueFor(a, sortField), bv = sortValueFor(b, sortField);
+      const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+      return (sortDir === 'asc' ? cmp : -cmp) || (b.id - a.id);
+    });
+  }, [orders, q, tab, sortField, sortDir]);
 
   // For the Storage tab: split into recent (past 30 days, loose) and older
   // (grouped into folders by month, newest month first). Uses delivery date.
@@ -1529,11 +1578,6 @@ function WarehousePage() {
       setBatchBusy(false);
     }
   }
-
-  const orderTotal = (o) => {
-    const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
-    return Math.round(sub * 1.005 * 100) / 100;
-  };
 
   const S = {
     page: { minHeight: '100vh', width: '100vw', maxWidth: '100%', boxSizing: 'border-box', background: '#F2F4EF', fontFamily: "'Inter', system-ui, sans-serif", color: '#14181F' },
@@ -1645,11 +1689,11 @@ function WarehousePage() {
                     title="Select all shown"
                   />
                 </th>
-                <th style={S.th}>Delivery Date</th>
-                <th style={S.th}>Customer</th>
-                <th style={S.th}>INV#</th>
-                <th style={S.th}>PO#</th>
-                <th style={{ ...S.th, textAlign: 'right' }}>Total</th>
+                <ThSort field="deliveryDate" label="Delivery Date" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} thStyle={S.th} />
+                <ThSort field="customer" label="Customer" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} thStyle={S.th} />
+                <ThSort field="invoiceNumber" label="INV#" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} thStyle={S.th} />
+                <ThSort field="poNumber" label="PO#" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} thStyle={S.th} />
+                <ThSort field="total" label="Total" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} thStyle={S.th} align="right" />
                 <th style={S.th}></th>
                 <th style={S.th}>Notes</th>
               </tr>
