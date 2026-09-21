@@ -1393,6 +1393,12 @@ function WarehousePage() {
     catch (err) { window.alert(err.message || 'Could not remove this document.'); }
   }
 
+  const tomorrowISO = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
   const list = useMemo(() => {
     const submitted = (orders || []).filter(o => o.status !== 'pending' && !o.voided);
     const byTab = submitted.filter(o => tab === 'storage' ? o.taiyoStored : !o.taiyoStored);
@@ -1572,7 +1578,17 @@ function WarehousePage() {
         </div>
         {tab !== 'out' && (
         <>
-        <input style={S.search} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+          <input style={{ ...S.search, marginBottom: 0, flex: 1 }} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
+          {tab === 'current' && (
+            <button
+              onClick={() => setQ(q === tomorrowISO ? '' : tomorrowISO)}
+              style={{ ...S.tab, whiteSpace: 'nowrap', ...(q === tomorrowISO ? S.tabActive : {}) }}
+            >
+              Tomorrow
+            </button>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
           <button
             style={{ ...S.viewBtn, ...(selectedIds.size === 0 || batchBusy ? { opacity: 0.5, cursor: 'default' } : {}) }}
