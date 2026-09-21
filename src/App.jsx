@@ -1324,15 +1324,26 @@ function WarehousePage() {
   const [printSequence, setPrintSequence] = useState([]);
   const [status, setStatus] = useState('loading');
   const [q, setQ] = useState('');
-  const [tab, setTab] = useState('current'); // 'current' | 'storage'
+  const [tab, setTab] = useState('current'); // 'current' | 'storage' | 'out'
   const [undo, setUndo] = useState(null); // { order } shown briefly after moving to storage
   const [openMonths, setOpenMonths] = useState({}); // month key -> expanded in storage
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchErr, setBatchErr] = useState('');
+  // Taiyo Out: signed proof-of-delivery/invoice uploads. Standalone log, not
+  // tied to a specific order row — starts empty, populates only on upload.
+  const [podDocs, setPodDocs] = useState([]);
+  const [podReference, setPodReference] = useState('');
+  const [podPreview, setPodPreview] = useState('');
+  const [podExt, setPodExt] = useState('jpg');
+  const [podUploading, setPodUploading] = useState(false);
+  const [podErr, setPodErr] = useState('');
 
   async function reload() {
     try { setOrders(await apiGet('/orders')); } catch { /* keep */ }
+  }
+  async function reloadPodDocs() {
+    try { setPodDocs(await apiGet('/pod-uploads')); } catch { /* keep */ }
   }
   useEffect(() => {
     Promise.all([
@@ -1340,13 +1351,45 @@ function WarehousePage() {
       apiGet('/customers'),
       apiGet('/items'),
       apiGet('/print-order').catch(() => []),
-    ]).then(([o, c, it, ps]) => {
+      apiGet('/pod-uploads').catch(() => []),
+    ]).then(([o, c, it, ps, pods]) => {
       setOrders(o || []); setCustomers(c || []); setItems(it || []);
       setPrintSequence(Array.isArray(ps) ? ps : (ps && ps.sequence) || []);
+      setPodDocs(pods || []);
       setStatus('ready');
     }).catch(() => setStatus('error'));
   }, []);
   useEffect(() => { setSelectedIds(new Set()); }, [tab]);
+
+  function onPodFileSelected(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    setPodExt(ext);
+    const reader = new FileReader();
+    reader.onload = () => setPodPreview(reader.result);
+    reader.readAsDataURL(file);
+  }
+  async function uploadPod() {
+    if (!podReference.trim()) { setPodErr('Enter a reference (e.g. invoice # or customer) so this is identifiable later.'); return; }
+    if (!podPreview) { setPodErr('Choose a file to upload.'); return; }
+    setPodUploading(true);
+    setPodErr('');
+    try {
+      await apiPost('/pod-uploads', { reference: podReference.trim(), imageData: podPreview, ext: podExt, uploadedBy: getSubmitterName() || undefined });
+      setPodReference(''); setPodPreview(''); setPodExt('jpg');
+      await reloadPodDocs();
+    } catch (err) {
+      setPodErr(err.message || 'Could not upload this document.');
+    } finally {
+      setPodUploading(false);
+    }
+  }
+  async function removePodDoc(id) {
+    if (!window.confirm('Remove this uploaded document?')) return;
+    try { await apiDelete(`/pod-uploads/${id}`); await reloadPodDocs(); }
+    catch (err) { window.alert(err.message || 'Could not remove this document.'); }
+  }
 
   const list = useMemo(() => {
     const submitted = (orders || []).filter(o => o.status !== 'pending' && !o.voided);
@@ -1511,7 +1554,10 @@ function WarehousePage() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           <button onClick={() => setTab('current')} style={{ ...S.tab, ...(tab === 'current' ? S.tabActive : {}) }}>Current ({currentCount})</button>
           <button onClick={() => setTab('storage')} style={{ ...S.tab, ...(tab === 'storage' ? S.tabActive : {}) }}>Taiyo Storage ({storageCount})</button>
+          <button onClick={() => setTab('out')} style={{ ...S.tab, ...(tab === 'out' ? S.tabActive : {}) }}>Taiyo Out ({podDocs.length})</button>
         </div>
+        {tab !== 'out' && (
+        <>
         <input style={S.search} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
           <button
@@ -1582,6 +1628,74 @@ function WarehousePage() {
               )}
             </tbody>
           </table>
+        )}
+        </>
+        )}
+        {tab === 'out' && (
+          <div>
+            <div style={{ background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, padding: 18, marginBottom: 20, maxWidth: 480 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>Upload a signed proof of delivery / invoice</div>
+              {podErr && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 10 }}>{podErr}</div>}
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#8A8F87', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 4 }}>Reference (invoice #, customer, etc.)</label>
+              <input
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', marginBottom: 12 }}
+                placeholder="e.g. Invoice 26023 - Don Quijote"
+                value={podReference}
+                onChange={e => setPodReference(e.target.value)}
+              />
+              {podPreview ? (
+                <div style={{ marginBottom: 12 }}>
+                  {podExt === 'pdf'
+                    ? <div style={{ fontSize: 13, color: '#5B6058', padding: '10px 0' }}>📄 PDF selected — ready to upload</div>
+                    : <img src={podPreview} alt="" style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid #D6D3C6' }} />}
+                  <div><button style={{ background: 'none', border: 'none', color: '#B5493B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }} onClick={() => { setPodPreview(''); setPodExt('jpg'); }}>Remove</button></div>
+                </div>
+              ) : (
+                <label style={{ ...S.moveBtn, display: 'inline-block', cursor: 'pointer', marginBottom: 12 }}>
+                  📎 Choose file (photo or PDF)
+                  <input type="file" accept="image/*,application/pdf" capture="environment" onChange={onPodFileSelected} style={{ display: 'none' }} />
+                </label>
+              )}
+              <div>
+                <button
+                  style={{ ...S.viewBtn, ...(podUploading || !podPreview || !podReference.trim() ? { opacity: 0.5, cursor: 'default' } : {}) }}
+                  onClick={uploadPod}
+                  disabled={podUploading || !podPreview || !podReference.trim()}
+                >
+                  {podUploading ? 'Uploading…' : 'Upload'}
+                </button>
+              </div>
+            </div>
+
+            {podDocs.length === 0 ? (
+              <div style={{ color: '#8A8F87', padding: '10px 0' }}>Nothing uploaded yet.</div>
+            ) : (
+              <table style={S.table}>
+                <thead><tr>
+                  <th style={S.th}>Reference</th>
+                  <th style={S.th}>File</th>
+                  <th style={S.th}>Uploaded</th>
+                  <th style={S.th}></th>
+                </tr></thead>
+                <tbody>
+                  {podDocs.map(d => (
+                    <tr key={d.id}>
+                      <td style={{ ...S.td, fontWeight: 700 }}>{d.reference}</td>
+                      <td style={S.td}>
+                        <a href={d.fileUrl} target="_blank" rel="noreferrer" style={{ color: '#2B5D50', fontWeight: 700 }}>
+                          {d.fileType === 'pdf' ? '📄 View PDF' : '🖼 View photo'}
+                        </a>
+                      </td>
+                      <td style={S.td}>{formatDateTime(d.uploadedAt)}{d.uploadedBy ? ` · ${d.uploadedBy}` : ''}</td>
+                      <td style={{ ...S.td, textAlign: 'right' }}>
+                        <button style={{ background: 'none', border: 'none', color: '#B5493B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => removePodDoc(d.id)}>Remove</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         )}
       </div>
       {/* Undo popup after auto-move on print */}
