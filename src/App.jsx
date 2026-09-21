@@ -1592,7 +1592,7 @@ function WarehousePage() {
       <div style={S.body}>
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-          <button onClick={() => setTab('current')} style={{ ...S.tab, ...(tab === 'current' ? S.tabActive : {}) }}>Current ({currentCount})</button>
+          <button onClick={() => setTab('current')} style={{ ...S.tab, ...(tab === 'current' ? S.tabActive : {}) }}>Taiyo In ({currentCount})</button>
           <button onClick={() => setTab('storage')} style={{ ...S.tab, ...(tab === 'storage' ? S.tabActive : {}) }}>Taiyo Storage ({storageCount})</button>
           <button onClick={() => setTab('out')} style={{ ...S.tab, ...(tab === 'out' ? S.tabActive : {}) }}>Taiyo Out ({podDocs.length})</button>
         </div>
