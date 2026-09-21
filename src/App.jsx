@@ -1325,7 +1325,6 @@ function WarehousePage() {
   const [status, setStatus] = useState('loading');
   const [q, setQ] = useState('');
   const [tab, setTab] = useState('current'); // 'current' | 'storage' | 'out'
-  const [undo, setUndo] = useState(null); // { order } shown briefly after moving to storage
   const [openMonths, setOpenMonths] = useState({}); // month key -> expanded in storage
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchBusy, setBatchBusy] = useState(false);
@@ -1477,12 +1476,6 @@ function WarehousePage() {
   function openInvoice(o) {
     const cust = customers.find(c => c.name === o.customer) || customers.find(c => c.id === o.customerId) || null;
     printInvoice(o, cust, printSequence, items, {});
-    // After printing from the Current tab, auto-move to storage with an undo option.
-    if (!o.taiyoStored) {
-      setStored(o, true);
-      setUndo({ order: o });
-      setTimeout(() => setUndo(u => (u && u.order.id === o.id ? null : u)), 8000);
-    }
   }
 
   function toggleSelected(id, checked) {
@@ -1764,14 +1757,6 @@ function WarehousePage() {
           </div>
         )}
       </div>
-      {/* Undo popup after auto-move on print */}
-      {undo && (
-        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#14181F', color: '#fff', borderRadius: 10, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 16, boxShadow: '0 8px 30px rgba(0,0,0,0.35)', zIndex: 1000 }}>
-          <span style={{ fontSize: 14 }}>Moved <b>{undo.order.customer}</b> (INV {invoiceNumberFor(undo.order)}) to Taiyo Storage.</span>
-          <button style={{ background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => { setStored(undo.order, false); setUndo(null); if (tab !== 'current') setTab('current'); }}>Undo</button>
-          <button style={{ background: 'transparent', color: '#C7CBC1', border: 'none', fontSize: 18, cursor: 'pointer' }} onClick={() => setUndo(null)}>×</button>
-        </div>
-      )}
     </div>
   );
 }
