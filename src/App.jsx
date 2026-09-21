@@ -1333,10 +1333,9 @@ function WarehousePage() {
   // Taiyo Out: signed proof-of-delivery/invoice uploads. Standalone log, not
   // tied to a specific order row — starts empty, populates only on upload.
   const [podDocs, setPodDocs] = useState([]);
-  const [podReference, setPodReference] = useState('');
-  const [podPreview, setPodPreview] = useState('');
-  const [podExt, setPodExt] = useState('jpg');
+  const [podFiles, setPodFiles] = useState([]); // [{file, reference, ext}] — chosen, not yet uploaded
   const [podUploading, setPodUploading] = useState(false);
+  const [podProgress, setPodProgress] = useState(null); // {done, total} while uploading
   const [podErr, setPodErr] = useState('');
 
   async function reload() {
@@ -1361,31 +1360,51 @@ function WarehousePage() {
   }, []);
   useEffect(() => { setSelectedIds(new Set()); }, [tab]);
 
-  function onPodFileSelected(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const dot = file.name.lastIndexOf('.');
-    const ext = (dot >= 0 ? file.name.slice(dot + 1) : 'jpg').toLowerCase() || 'jpg';
-    const nameOnly = dot >= 0 ? file.name.slice(0, dot) : file.name;
-    setPodExt(ext);
-    setPodReference(nameOnly);
-    const reader = new FileReader();
-    reader.onload = () => setPodPreview(reader.result);
-    reader.readAsDataURL(file);
+  function onPodFilesSelected(e) {
+    const fileList = Array.from(e.target.files || []);
+    if (fileList.length === 0) return;
+    const picked = fileList.map(file => {
+      const dot = file.name.lastIndexOf('.');
+      const ext = (dot >= 0 ? file.name.slice(dot + 1) : 'jpg').toLowerCase() || 'jpg';
+      const reference = dot >= 0 ? file.name.slice(0, dot) : file.name;
+      return { file, reference, ext };
+    });
+    setPodFiles(picked);
+    setPodErr('');
+    e.target.value = ''; // allow re-selecting the same file(s) later
+  }
+  function removePodFile(idx) {
+    setPodFiles(prev => prev.filter((_, i) => i !== idx));
+  }
+  function readAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Could not read file'));
+      reader.readAsDataURL(file);
+    });
   }
   async function uploadPod() {
-    if (!podPreview) { setPodErr('Choose a file to upload.'); return; }
+    if (podFiles.length === 0) { setPodErr('Choose one or more files to upload.'); return; }
     setPodUploading(true);
     setPodErr('');
-    try {
-      await apiPost('/pod-uploads', { reference: podReference.trim(), imageData: podPreview, ext: podExt, uploadedBy: getSubmitterName() || undefined });
-      setPodReference(''); setPodPreview(''); setPodExt('jpg');
-      await reloadPodDocs();
-    } catch (err) {
-      setPodErr(err.message || 'Could not upload this document.');
-    } finally {
-      setPodUploading(false);
+    setPodProgress({ done: 0, total: podFiles.length });
+    const failed = [];
+    for (let i = 0; i < podFiles.length; i++) {
+      const { file, reference, ext } = podFiles[i];
+      try {
+        const imageData = await readAsDataURL(file);
+        await apiPost('/pod-uploads', { reference: reference.trim(), imageData, ext, uploadedBy: getSubmitterName() || undefined });
+      } catch (err) {
+        failed.push(reference);
+      }
+      setPodProgress({ done: i + 1, total: podFiles.length });
     }
+    if (failed.length) setPodErr(`Could not upload: ${failed.join(', ')}`);
+    setPodFiles(failed.length ? podFiles.filter(f => failed.includes(f.reference)) : []);
+    await reloadPodDocs();
+    setPodUploading(false);
+    setPodProgress(null);
   }
   async function removePodDoc(id) {
     if (!window.confirm('Remove this uploaded document?')) return;
@@ -1672,30 +1691,32 @@ function WarehousePage() {
         {tab === 'out' && (
           <div>
             <div style={{ background: '#fff', border: '1px solid #E3E1D6', borderRadius: 12, padding: 18, marginBottom: 20, maxWidth: 480 }}>
-              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>Upload a signed proof of delivery / invoice</div>
-              <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>Name the file with just the invoice number (e.g. "26088.pdf") — it'll automatically match up to that invoice below.</div>
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>Upload signed proofs of delivery / invoices</div>
+              <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12 }}>Select as many files as you need — name each one with just its invoice number (e.g. "26088.pdf") and it'll automatically match up to that invoice below.</div>
               {podErr && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 10 }}>{podErr}</div>}
-              {podPreview ? (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>{podReference}</div>
-                  {podExt === 'pdf'
-                    ? <div style={{ fontSize: 13, color: '#5B6058', padding: '10px 0' }}>📄 PDF selected — ready to upload</div>
-                    : <img src={podPreview} alt="" style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid #D6D3C6' }} />}
-                  <div><button style={{ background: 'none', border: 'none', color: '#B5493B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0' }} onClick={() => { setPodPreview(''); setPodExt('jpg'); setPodReference(''); }}>Remove</button></div>
+              {podFiles.length > 0 && (
+                <div style={{ marginBottom: 12, border: '1px solid #EFEDE3', borderRadius: 8, overflow: 'hidden' }}>
+                  {podFiles.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: i < podFiles.length - 1 ? '1px solid #EFEDE3' : 'none' }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 700 }}>{f.ext === 'pdf' ? '📄' : '🖼'} {f.reference}</span>
+                      {!podUploading && (
+                        <button style={{ background: 'none', border: 'none', color: '#B5493B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => removePodFile(i)}>Remove</button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <label style={{ ...S.moveBtn, display: 'inline-block', cursor: 'pointer', marginBottom: 12 }}>
-                  📎 Choose file (photo or PDF)
-                  <input type="file" accept="image/*,application/pdf" onChange={onPodFileSelected} style={{ display: 'none' }} />
-                </label>
               )}
+              <label style={{ ...S.moveBtn, display: 'inline-block', cursor: 'pointer', marginBottom: 12 }}>
+                📎 {podFiles.length > 0 ? 'Choose different files' : 'Choose files (photo or PDF)'}
+                <input type="file" accept="image/*,application/pdf" multiple onChange={onPodFilesSelected} style={{ display: 'none' }} disabled={podUploading} />
+              </label>
               <div>
                 <button
-                  style={{ ...S.viewBtn, ...(podUploading || !podPreview || !podReference.trim() ? { opacity: 0.5, cursor: 'default' } : {}) }}
+                  style={{ ...S.viewBtn, ...(podUploading || podFiles.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}) }}
                   onClick={uploadPod}
-                  disabled={podUploading || !podPreview || !podReference.trim()}
+                  disabled={podUploading || podFiles.length === 0}
                 >
-                  {podUploading ? 'Uploading…' : 'Upload'}
+                  {podUploading ? `Uploading ${podProgress ? `${podProgress.done}/${podProgress.total}` : '…'}` : `Upload ${podFiles.length || ''}`.trim()}
                 </button>
               </div>
             </div>
