@@ -5293,6 +5293,12 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
           >
             Price Checks
           </button>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'taiyoout' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('taiyoout')}
+          >
+            Taiyo Out
+          </button>
         </div>
         {isManualOverride && (
           <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
@@ -5334,6 +5340,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
         {section === 'pricechecks' && <OfficePriceChecks />}
+        {section === 'taiyoout' && <OfficePodUploads />}
       </div>
     </div>
   );
@@ -11225,6 +11232,111 @@ function OfficePriceChecks() {
             )}
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+// Office view of the Taiyo Out log (signed proof-of-delivery/invoice
+// uploads from the standalone /taiyo warehouse page). Read-only reference
+// plus a way to remove a mistaken entry; matches each upload's reference
+// (an invoice number) against the real orders to show customer/date, same
+// as the warehouse page itself does.
+function OfficePodUploads() {
+  const [docs, setDocs] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [d, o] = await Promise.all([apiGet('/pod-uploads'), apiGet('/orders')]);
+      setDocs(d || []); setOrders(o || []);
+    } catch { setDocs([]); setOrders([]); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const ordersByInvoiceNumber = useMemo(() => {
+    const map = new Map();
+    for (const o of orders) map.set(invoiceNumberFor(o), o);
+    return map;
+  }, [orders]);
+  function matchedOrderFor(reference) {
+    const num = (String(reference || '').match(/\d+/) || [])[0];
+    return num ? ordersByInvoiceNumber.get(Number(num)) : null;
+  }
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter(d => {
+      const m = matchedOrderFor(d.reference);
+      return (d.reference || '').toLowerCase().includes(q) || (d.uploadedBy || '').toLowerCase().includes(q) || (m && (m.customer || '').toLowerCase().includes(q));
+    });
+  }, [docs, query, ordersByInvoiceNumber]);
+
+  async function removeDoc(id) {
+    if (!window.confirm('Remove this uploaded document?')) return;
+    try { await apiDelete(`/pod-uploads/${id}`); await load(); }
+    catch (e) { window.alert(e.message || 'Could not remove this document.'); }
+  }
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Taiyo Out</div>
+        <input
+          style={officeStyles.search}
+          placeholder="Search by reference, customer, or uploader…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
+        <div style={officeStyles.countPill}>{filtered.length} document{filtered.length === 1 ? '' : 's'}</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 14, maxWidth: 640 }}>
+        Signed proof-of-delivery/invoice documents uploaded from Taiyo's warehouse page, matched to the real invoice by number.
+      </div>
+
+      {loading ? <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div> : filtered.length === 0 ? (
+        <div style={{ padding: 30, color: '#8A8F87', fontStyle: 'italic' }}>{query ? `No documents match "${query}".` : 'Nothing uploaded yet.'}</div>
+      ) : (
+        <div style={officeStyles.tableCard}>
+          <table style={officeStyles.table}>
+            <thead><tr>
+              <th style={officeStyles.th}>Reference</th>
+              <th style={officeStyles.th}>Matched invoice</th>
+              <th style={officeStyles.th}>File</th>
+              <th style={officeStyles.th}>Uploaded</th>
+              <th style={officeStyles.th}></th>
+            </tr></thead>
+            <tbody>
+              {filtered.map(d => {
+                const matched = matchedOrderFor(d.reference);
+                return (
+                  <tr key={d.id}>
+                    <td style={{ ...officeStyles.td, fontWeight: 700 }}>{d.reference}</td>
+                    <td style={officeStyles.td}>
+                      {matched
+                        ? <span>{matched.customer}{matched.deliveryDate ? ` · ${formatDate(matched.deliveryDate)}` : ''}</span>
+                        : <span style={{ color: '#B5493B', fontWeight: 700 }}>⚠ No matching invoice found</span>}
+                    </td>
+                    <td style={officeStyles.td}>
+                      <a href={d.fileUrl} target="_blank" rel="noreferrer" style={{ color: '#2B5D50', fontWeight: 700 }}>
+                        {d.fileType === 'pdf' ? '📄 View PDF' : '🖼 View photo'}
+                      </a>
+                    </td>
+                    <td style={officeStyles.td}>{formatDateTime(d.uploadedAt)}{d.uploadedBy ? ` · ${d.uploadedBy}` : ''}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                      <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B5493B', fontSize: 12 }} onClick={() => removeDoc(d.id)}>Remove</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
