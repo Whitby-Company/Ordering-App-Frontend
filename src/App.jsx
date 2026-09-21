@@ -1592,6 +1592,13 @@ function WarehousePage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
           <button
+            style={{ ...S.moveBtn, ...(list.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}) }}
+            onClick={() => setSelectedIds(new Set(list.map(o => o.id)))}
+            disabled={list.length === 0}
+          >
+            Select all shown ({list.length})
+          </button>
+          <button
             style={{ ...S.viewBtn, ...(selectedIds.size === 0 || batchBusy ? { opacity: 0.5, cursor: 'default' } : {}) }}
             onClick={printSelected}
             disabled={selectedIds.size === 0 || batchBusy}
