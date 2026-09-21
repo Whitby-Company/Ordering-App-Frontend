@@ -6808,7 +6808,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // This section's toolbar wraps onto a second row (Physical count / CSV
   // exports / Edit), unlike most other sections, so its table headers need a
   // taller sticky offset to clear both rows instead of just one.
-  const invThTop = 110;
+  const invThTop = 97;
 
   return (
     <div>
@@ -10463,7 +10463,7 @@ function OfficePurchasing({ items, onRefresh }) {
         {query && <button style={officeStyles.smallBtn} onClick={() => setQuery('')}>Clear</button>}
       </div>
       {loading ? <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div> : (
-        <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
+        <div style={officeStyles.tableCard}>
           <table style={officeStyles.table}>
             <thead><tr>
               <th style={officeStyles.th}>PO #</th>
@@ -10709,7 +10709,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
           )}
         </div>
       )}
-      <div style={{ ...officeStyles.tableCard, overflowX: 'auto' }}>
+      <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
           <thead><tr>
             <th style={officeStyles.th}>Item</th>
@@ -12254,7 +12254,7 @@ const officeStyles = {
   countPill: { marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#5B6058', background: '#EAE8DD', borderRadius: 999, padding: '6px 12px', whiteSpace: 'nowrap' },
   tableCard: { background: '#FFFFFF', border: '1px solid #E3E1D6', borderRadius: 12, overflow: 'visible' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 },
-  th: { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6', background: '#FBFAF6', whiteSpace: 'nowrap', position: 'sticky', top: 66, zIndex: 4 },
+  th: { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#8A8F87', borderBottom: '1px solid #E3E1D6', background: '#FBFAF6', whiteSpace: 'nowrap', position: 'sticky', top: 50, zIndex: 4 },
   td: { padding: '10px 14px', borderBottom: '1px solid #EAE8DD', color: '#14181F', verticalAlign: 'middle' },
   rowClickable: { cursor: 'pointer' },
   rowUnprocessed: { background: '#FBF3E4' },
