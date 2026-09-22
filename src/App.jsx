@@ -636,6 +636,118 @@ function invoiceNumberFor(order) {
   return INVOICE_OFFSET + Number(order.id || 0);
 }
 
+// Build one item's stock history — merging its order shipments, PO receipts,
+// and manual log entries (physical counts, corrections) into a single,
+// chronologically-sorted running total. Shared by the office Inventory
+// "History" view and the Taiyo warehouse page's Inventory tab, so both show
+// the exact same reconstruction logic rather than two separately-maintained
+// copies. `items`/`orders` are passed explicitly since callers keep their
+// own copies of this data.
+function buildItemHistory(itemId, currentStock = 0, receipts = [], manualLog = [], items = [], orders = []) {
+  // The item's case size (boxes per case). Stock is in BOXES.
+  const it = items.find(i => i.id === itemId);
+  const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
+  const rows = [];
+  for (const o of orders) {
+    const line = (o.lines || []).find(l => l.id === itemId);
+    if (!line) continue;
+    const qty = Number(line.qty) || 0;
+    const unit = line.unit || 'box';
+    const pack = Number(line.pack) || 1;
+    const boxesConsumed = qty * (unit === 'case' ? caseSize : 1);
+    rows.push({
+      kind: 'order',
+      orderId: o.id, customer: o.customer, deliveryDate: o.deliveryDate,
+      submittedAt: o.submittedAt, qty, unit, eaches: qty * pack,
+      boxesConsumed, delta: -boxesConsumed, // stock change (negative = out)
+      date: o.deliveryDate, status: o.status, processed: o.processed,
+    });
+  }
+  // PO receipts as POSITIVE entries on their received date (stock coming in).
+  for (const rc of (receipts || [])) {
+    const boxes = Number(rc.qtyReceived) || 0;
+    if (boxes <= 0 || !rc.receivedDate) continue;
+    rows.push({
+      kind: 'po',
+      poRef: rc.reference || rc.supplier || 'PO',
+      supplier: rc.supplier || '', deliveryDate: rc.receivedDate, date: rc.receivedDate,
+      qty: boxes, unit: 'box', boxesConsumed: -boxes, delta: boxes, // positive = in
+      status: 'submitted',
+    });
+  }
+  // Manual stock changes (physical counts, direct edits, inventory redo) —
+  // these are AUTHORITATIVE: the recorded oldStock/newStock is a known-true
+  // snapshot, so the running total resets to it instead of being reversed
+  // through like an order/PO delta would be.
+  for (const m of (manualLog || [])) {
+    if (!m.changedAt) continue;
+    const d = String(m.changedAt).slice(0, 10);
+    const hasOld = m.oldStock != null && Number.isFinite(Number(m.oldStock));
+    rows.push({
+      kind: 'manual',
+      isRealBaseline: !!m.isRealBaseline,
+      synthetic: !!m.synthetic,
+      date: d, deliveryDate: d, changedAt: m.changedAt,
+      oldStock: hasOld ? Number(m.oldStock) : null, newStock: Number(m.newStock),
+      delta: hasOld ? Number(m.newStock) - Number(m.oldStock) : null,
+      changedBy: m.changedBy, reason: m.reason || 'Stock edit',
+      status: 'submitted',
+    });
+  }
+  // Sort by date (newest first); same-day entries break ties by whichever
+  // timestamp is available (manual edits and orders have one; PO receipts
+  // only have a business date, so they sort just after a same-day manual
+  // edit — consistent with the backend now counting a same-day receipt as
+  // happening at/after a same-day baseline).
+  const sortKey = r => r.changedAt || r.submittedAt || (r.date ? `${r.date}T12:00:00` : '');
+  rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || sortKey(b).localeCompare(sortKey(a)) || ((b.orderId || 0) - (a.orderId || 0)));
+  const today = todayISODate();
+  // Split at today: entries dated <= today have already happened (affect current
+  // on-hand); entries dated > today are future (haven't happened yet).
+  // Past (newest first): the most recent past entry leaves on-hand at
+  // currentStock; each older entry = current − its delta (reverse the change) —
+  // EXCEPT a manual entry backed by a REAL baseline (a genuine physical count
+  // or direct stock edit), which is a known-true snapshot: it shows its own
+  // recorded newStock, and everything older than it continues from its
+  // recorded oldStock instead of an accumulated reversal. A manual log entry
+  // with no matching baseline (e.g. the bulk "Inventory redo" tool, which
+  // logs a change but doesn't reset the backend's actual calculation) is NOT
+  // a real reset point — treating it as one would show a jump that doesn't
+  // match how on-hand is actually computed, so it's reversed like any other
+  // delta instead. A real baseline with no known "before" value (a
+  // synthetic row, or a baseline whose own before-value wasn't recorded) is
+  // the earliest known-true point — nothing older than it can be reliably
+  // computed, so everything before it shows as unknown rather than a
+  // fabricated number.
+  let afterPast = Number(currentStock) || 0;
+  for (const r of rows) {
+    if (r.status === 'pending') { r.stockAfter = null; continue; }
+    if ((r.date || '') > today) continue;
+    if (r.kind === 'manual' && !r.isRealBaseline) { r.stockAfter = null; continue; }
+    if (afterPast == null) { r.stockAfter = null; continue; }
+    if (r.kind === 'manual' && r.isRealBaseline) {
+      r.stockAfter = r.newStock;
+      afterPast = r.oldStock; // null when unknown — stops the walk here
+    } else {
+      r.stockAfter = afterPast;
+      afterPast = afterPast - r.delta; // before this entry = after − its change
+    }
+  }
+  // Future (oldest-future first): each future entry moves on-hand from current.
+  const futures = rows.filter(r => r.status !== 'pending' && (r.date || '') > today)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.orderId || 0) - (b.orderId || 0)));
+  let futAfter = Number(currentStock) || 0;
+  for (const r of futures) {
+    futAfter = futAfter + r.delta; // stock after this future entry happens
+    r.stockAfter = futAfter;
+  }
+  const orderRows = rows.filter(r => r.kind === 'order' && r.status !== 'pending');
+  const consumedBoxes = orderRows.reduce((s, r) => s + r.boxesConsumed, 0);
+  const consumedEaches = orderRows.reduce((s, r) => s + (r.eaches || 0), 0);
+  const pendingBoxes = rows.filter(r => r.kind === 'order' && r.status === 'pending').reduce((s, r) => s + r.boxesConsumed, 0);
+  return { rows, consumedBoxes, consumedEaches, pendingBoxes, caseSize };
+}
+
 // Build a printable invoice that matches the Hawken Group template, using the
 // same data as the TP export (customer bill-to/ship-to, PO, line items with
 // cases/eaches/price, UPCs, totals, 0.5% sales tax).
@@ -1337,47 +1449,127 @@ function ThSort({ field, label, sortField, sortDir, onClick, thStyle, align = 'l
 
 // Simple searchable on-hand/available list for Taiyo warehouse staff —
 // read-only, no receiving/editing here, just "how much of this do we have."
-function WarehouseInventoryTab({ items, S }) {
+function WarehouseInventoryTab({ items, orders, S }) {
   const [q, setQ] = useState('');
+  const [brand, setBrand] = useState('All');
+  const [openId, setOpenId] = useState(null);
+  const [historyData, setHistoryData] = useState({}); // itemId -> { log, purchaseOrders } | 'loading' | 'error'
+
+  const brands = useMemo(() => {
+    const set = new Set(items.map(it => it.brand).filter(Boolean));
+    return ['All', ...[...set].sort((a, b) => a.localeCompare(b))];
+  }, [items]);
+
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    const base = query
-      ? items.filter(it =>
-          (it.name || '').toLowerCase().includes(query) ||
-          (it.brand || '').toLowerCase().includes(query) ||
-          (it.id || '').toLowerCase().includes(query)
-        )
-      : items;
+    let base = brand !== 'All' ? items.filter(it => it.brand === brand) : items;
+    if (query) {
+      base = base.filter(it =>
+        (it.name || '').toLowerCase().includes(query) ||
+        (it.brand || '').toLowerCase().includes(query) ||
+        (it.id || '').toLowerCase().includes(query)
+      );
+    }
     return [...base].sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || (a.name || '').localeCompare(b.name || ''));
-  }, [items, q]);
+  }, [items, q, brand]);
+
+  async function toggleOpen(it) {
+    if (openId === it.id) { setOpenId(null); return; }
+    setOpenId(it.id);
+    if (!historyData[it.id]) {
+      setHistoryData(prev => ({ ...prev, [it.id]: 'loading' }));
+      try {
+        const data = await apiGet(`/items/${encodeURIComponent(it.id)}/stock-log`);
+        setHistoryData(prev => ({ ...prev, [it.id]: data }));
+      } catch {
+        setHistoryData(prev => ({ ...prev, [it.id]: 'error' }));
+      }
+    }
+  }
+
+  // Describe one history row in plain language for this simpler warehouse view.
+  function describeRow(r) {
+    if (r.kind === 'order') return `Shipped — ${r.customer || 'order #' + r.orderId}`;
+    if (r.kind === 'po') return `Received — ${r.poRef}${r.supplier ? ' · ' + r.supplier : ''}`;
+    return r.reason || 'Stock edit';
+  }
 
   return (
     <div>
-      <input
-        style={{ ...S.search, marginBottom: 14 }}
-        placeholder="Search item, brand, or SKU…"
-        value={q}
-        onChange={e => setQ(e.target.value)}
-      />
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        <input
+          style={{ ...S.search, marginBottom: 0, flex: 1 }}
+          placeholder="Search item, brand, or SKU…"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+        />
+        <select style={{ ...S.search, marginBottom: 0, width: 200 }} value={brand} onChange={e => setBrand(e.target.value)}>
+          {brands.map(b => <option key={b} value={b}>{b === 'All' ? 'All brands' : b}</option>)}
+        </select>
+      </div>
       {filtered.length === 0 ? (
-        <div style={{ padding: 30, color: '#8A8F87', fontStyle: 'italic' }}>{q ? `No items match "${q}".` : 'No items.'}</div>
+        <div style={{ padding: 30, color: '#8A8F87', fontStyle: 'italic' }}>{q || brand !== 'All' ? 'No items match.' : 'No items.'}</div>
       ) : (
         <table style={S.table}>
           <thead><tr>
+            <th style={S.th}></th>
             <th style={S.th}>Item</th>
             <th style={S.th}>Brand</th>
             <th style={{ ...S.th, textAlign: 'right' }}>On Hand</th>
             <th style={{ ...S.th, textAlign: 'right' }}>Available</th>
           </tr></thead>
           <tbody>
-            {filtered.map(it => (
-              <tr key={it.id}>
-                <td style={S.td}><strong style={{ color: '#2B5D50' }}>{displayCode(it.id)}</strong> {it.name}</td>
-                <td style={S.td}>{it.brand}</td>
-                <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{it.onHand}</td>
-                <td style={{ ...S.td, textAlign: 'right', color: '#5B6058' }}>{it.available}</td>
-              </tr>
-            ))}
+            {filtered.map(it => {
+              const isOpen = openId === it.id;
+              const hist = historyData[it.id];
+              return (
+                <React.Fragment key={it.id}>
+                  <tr style={{ cursor: 'pointer' }} onClick={() => toggleOpen(it)}>
+                    <td style={S.td}><ChevronRight size={14} color="#8A8F87" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} /></td>
+                    <td style={S.td}><strong style={{ color: '#2B5D50' }}>{displayCode(it.id)}</strong> {it.name}</td>
+                    <td style={S.td}>{it.brand}</td>
+                    <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{it.onHand}</td>
+                    <td style={{ ...S.td, textAlign: 'right', color: '#5B6058' }}>{it.available}</td>
+                  </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 0, borderBottom: '1px solid #EFEDE3' }}>
+                        {hist === 'loading' && <div style={{ padding: '12px 20px', color: '#8A8F87' }}>Loading history…</div>}
+                        {hist === 'error' && <div style={{ padding: '12px 20px', color: '#B5493B' }}>Couldn't load history.</div>}
+                        {hist && hist !== 'loading' && hist !== 'error' && (() => {
+                          const built = buildItemHistory(it.id, it.onHand, hist.purchaseOrders, hist.log, items, orders);
+                          const rows = built.rows.slice(0, 30); // most recent 30 — this is a quick-reference view, not the full ledger
+                          return rows.length === 0 ? (
+                            <div style={{ padding: '12px 20px', color: '#8A8F87', fontStyle: 'italic' }}>No history yet.</div>
+                          ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                              <thead><tr style={{ background: '#FBFAF6' }}>
+                                <th style={{ ...S.th, padding: '6px 20px' }}>Date</th>
+                                <th style={{ ...S.th, padding: '6px 14px' }}>What happened</th>
+                                <th style={{ ...S.th, padding: '6px 14px', textAlign: 'right' }}>Change</th>
+                                <th style={{ ...S.th, padding: '6px 20px', textAlign: 'right' }}>Stock After</th>
+                              </tr></thead>
+                              <tbody>
+                                {rows.map((r, i) => (
+                                  <tr key={i}>
+                                    <td style={{ ...S.td, padding: '6px 20px' }}>{formatDate(r.deliveryDate || r.date)}</td>
+                                    <td style={{ ...S.td, padding: '6px 14px' }}>{describeRow(r)}</td>
+                                    <td style={{ ...S.td, padding: '6px 14px', textAlign: 'right', color: r.delta > 0 ? '#2B5D50' : r.delta < 0 ? '#B5493B' : '#8A8F87', fontWeight: 700 }}>
+                                      {r.delta == null ? '—' : (r.delta > 0 ? `+${r.delta}` : r.delta)}
+                                    </td>
+                                    <td style={{ ...S.td, padding: '6px 20px', textAlign: 'right', fontWeight: 700 }}>{r.stockAfter == null ? '—' : r.stockAfter}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -1700,7 +1892,7 @@ function WarehousePage() {
           <button onClick={() => setTab('out')} style={{ ...S.tab, ...(tab === 'out' ? S.tabActive : {}) }}>Taiyo Out ({podDocs.length})</button>
           <button onClick={() => setTab('inventory')} style={{ ...S.tab, ...(tab === 'inventory' ? S.tabActive : {}) }}>Inventory ({items.length})</button>
         </div>
-        {tab === 'inventory' && <WarehouseInventoryTab items={items} S={S} />}
+        {tab === 'inventory' && <WarehouseInventoryTab items={items} orders={orders} S={S} />}
         {tab !== 'out' && tab !== 'inventory' && (
         <>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
@@ -6962,116 +7154,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   // quantity (cases + eaches) and status for each — used by the expandable
   // per-item order history on the Inventory page to help confirm stock.
   function orderHistoryFor(itemId, currentStock = 0, receipts = [], manualLog = []) {
-    // The item's case size (boxes per case). Stock is in BOXES.
-    const it = items.find(i => i.id === itemId);
-    const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
-    const rows = [];
-    for (const o of orders) {
-      const line = (o.lines || []).find(l => l.id === itemId);
-      if (!line) continue;
-      const qty = Number(line.qty) || 0;
-      const unit = line.unit || 'box';
-      const pack = Number(line.pack) || 1;
-      const boxesConsumed = qty * (unit === 'case' ? caseSize : 1);
-      rows.push({
-        kind: 'order',
-        orderId: o.id, customer: o.customer, deliveryDate: o.deliveryDate,
-        submittedAt: o.submittedAt, qty, unit, eaches: qty * pack,
-        boxesConsumed, delta: -boxesConsumed, // stock change (negative = out)
-        date: o.deliveryDate, status: o.status, processed: o.processed,
-      });
-    }
-    // PO receipts as POSITIVE entries on their received date (stock coming in).
-    for (const rc of (receipts || [])) {
-      const boxes = Number(rc.qtyReceived) || 0;
-      if (boxes <= 0 || !rc.receivedDate) continue;
-      rows.push({
-        kind: 'po',
-        poRef: rc.reference || rc.supplier || 'PO',
-        supplier: rc.supplier || '', deliveryDate: rc.receivedDate, date: rc.receivedDate,
-        qty: boxes, unit: 'box', boxesConsumed: -boxes, delta: boxes, // positive = in
-        status: 'submitted',
-      });
-    }
-    // Manual stock changes (physical counts, direct edits, inventory redo) —
-    // these are AUTHORITATIVE: the recorded oldStock/newStock is a known-true
-    // snapshot, so the running total resets to it instead of being reversed
-    // through like an order/PO delta would be.
-    for (const m of (manualLog || [])) {
-      if (!m.changedAt) continue;
-      const d = String(m.changedAt).slice(0, 10);
-      const hasOld = m.oldStock != null && Number.isFinite(Number(m.oldStock));
-      rows.push({
-        kind: 'manual',
-        isRealBaseline: !!m.isRealBaseline,
-        synthetic: !!m.synthetic,
-        date: d, deliveryDate: d, changedAt: m.changedAt,
-        oldStock: hasOld ? Number(m.oldStock) : null, newStock: Number(m.newStock),
-        delta: hasOld ? Number(m.newStock) - Number(m.oldStock) : null,
-        changedBy: m.changedBy, reason: m.reason || 'Stock edit',
-        status: 'submitted',
-      });
-    }
-    // Sort by date (newest first); same-day entries break ties by whichever
-    // timestamp is available (manual edits and orders have one; PO receipts
-    // only have a business date, so they sort just after a same-day manual
-    // edit — consistent with the backend now counting a same-day receipt as
-    // happening at/after a same-day baseline).
-    const sortKey = r => r.changedAt || r.submittedAt || (r.date ? `${r.date}T12:00:00` : '');
-    rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || sortKey(b).localeCompare(sortKey(a)) || ((b.orderId || 0) - (a.orderId || 0)));
-    const today = todayISODate();
-    // Split at today: entries dated <= today have already happened (affect current
-    // on-hand); entries dated > today are future (haven't happened yet).
-    // Past (newest first): the most recent past entry leaves on-hand at
-    // currentStock; each older entry = current − its delta (reverse the change) —
-    // EXCEPT a manual entry backed by a REAL baseline (a genuine physical count
-    // or direct stock edit), which is a known-true snapshot: it shows its own
-    // recorded newStock, and everything older than it continues from its
-    // recorded oldStock instead of an accumulated reversal. A manual log entry
-    // with no matching baseline (e.g. the bulk "Inventory redo" tool, which
-    // logs a change but doesn't reset the backend's actual calculation) is NOT
-    // a real reset point — treating it as one would show a jump that doesn't
-    // match how on-hand is actually computed, so it's reversed like any other
-    // delta instead. A real baseline with no known "before" value (a
-    // synthetic row, or a baseline whose own before-value wasn't recorded) is
-    // the earliest known-true point — nothing older than it can be reliably
-    // computed, so everything before it shows as unknown rather than a
-    // fabricated number.
-    let afterPast = Number(currentStock) || 0;
-    for (const r of rows) {
-      if (r.status === 'pending') { r.stockAfter = null; continue; }
-      if ((r.date || '') > today) continue;
-      // A manual entry that ISN'T a real baseline (bulk "Inventory redo", ad
-      // hoc adjustments) never actually fed into the backend's on-hand
-      // calculation -- computeStock() only ever uses baselines, PO receipts,
-      // and order shipments, so a bulk-correction's own recorded delta has no
-      // real relationship to the running total. Reversing through it as if it
-      // did would corrupt every row older than it. Show it purely as a
-      // historical record (its own logged before/after), without it
-      // participating in the chain at all.
-      if (r.kind === 'manual' && !r.isRealBaseline) { r.stockAfter = null; continue; }
-      if (afterPast == null) { r.stockAfter = null; continue; }
-      if (r.kind === 'manual' && r.isRealBaseline) {
-        r.stockAfter = r.newStock;
-        afterPast = r.oldStock; // null when unknown — stops the walk here
-      } else {
-        r.stockAfter = afterPast;
-        afterPast = afterPast - r.delta; // before this entry = after − its change
-      }
-    }
-    // Future (oldest-future first): each future entry moves on-hand from current.
-    const futures = rows.filter(r => r.status !== 'pending' && (r.date || '') > today)
-      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || ((a.orderId || 0) - (b.orderId || 0)));
-    let futAfter = Number(currentStock) || 0;
-    for (const r of futures) {
-      futAfter = futAfter + r.delta; // stock after this future entry happens
-      r.stockAfter = futAfter;
-    }
-    const orderRows = rows.filter(r => r.kind === 'order' && r.status !== 'pending');
-    const consumedBoxes = orderRows.reduce((s, r) => s + r.boxesConsumed, 0);
-    const consumedEaches = orderRows.reduce((s, r) => s + (r.eaches || 0), 0);
-    const pendingBoxes = rows.filter(r => r.kind === 'order' && r.status === 'pending').reduce((s, r) => s + r.boxesConsumed, 0);
-    return { rows, consumedBoxes, consumedEaches, pendingBoxes, caseSize };
+    return buildItemHistory(itemId, currentStock, receipts, manualLog, items, orders);
   }
   // Active items only, for the edit modal's brand grid / item cards.
   const activeItemsForEdit = useMemo(() => items.filter(i => i.active), [items]);
