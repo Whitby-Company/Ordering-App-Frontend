@@ -10913,98 +10913,6 @@ function PurchaseOrderForm({ items, onBack, onSaved }) {
 }
 
 // View one PO and receive stock (partial or all).
-// Inline editor for correcting a PO line's total received-so-far (in cases,
-// matching how the "Receive" column already accepts entries), even after
-// the PO is fully received. Saves via PATCH .../lines/:lineId, which applies
-// the resulting on-hand adjustment immediately.
-function ReceivedQtyCorrector({ line, cs, poId, onSaved }) {
-  const currentCases = cs > 0 ? line.qtyReceived / cs : line.qtyReceived;
-  const [value, setValue] = useState(String(currentCases));
-  const [saving, setSaving] = useState(false);
-  const [focused, setFocused] = useState(false);
-  useEffect(() => { if (!focused) setValue(String(currentCases)); }, [currentCases, focused]);
-
-  async function save() {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n < 0) { setValue(String(currentCases)); return; }
-    const boxes = cs > 0 ? Math.round(n * cs) : Math.round(n);
-    if (boxes === line.qtyReceived) return;
-    if (!window.confirm(`Correct received qty to ${n} case${n === 1 ? '' : 's'} (${boxes} box${boxes === 1 ? '' : 'es'})? This updates on-hand inventory immediately.`)) {
-      setValue(String(currentCases));
-      return;
-    }
-    setSaving(true);
-    try {
-      await apiPatch(`/purchase-orders/${poId}/lines/${line.id}`, { qtyReceived: boxes, changedBy: getSubmitterName() || undefined });
-      await onSaved();
-    } catch (err) {
-      window.alert(err.message || 'Could not save this correction.');
-      setValue(String(currentCases));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-      <input
-        style={{ ...poStyles.input, width: 52, textAlign: 'right', fontWeight: 700 }}
-        value={value}
-        onFocus={() => setFocused(true)}
-        onChange={e => setValue(e.target.value.replace(/[^0-9.]/g, ''))}
-        onBlur={() => { setFocused(false); save(); }}
-        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-        disabled={saving}
-        title="Correct the total received so far for this line"
-      />
-      <span style={{ fontSize: 11, color: '#8A8F87' }}>cs</span>
-      {saving && <Loader2 size={12} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
-    </span>
-  );
-}
-
-// Inline editor for correcting a line's short or damaged quantity after the
-// fact (e.g. reclassifying some of what was "missing" as actually
-// "damaged" once that's discovered). Neither touches items.stock.
-function ShortDamagedCorrector({ line, field, poId, onSaved }) {
-  const current = field === 'qtyShort' ? line.qtyShort : line.qtyDamaged;
-  const [value, setValue] = useState(String(current || 0));
-  const [saving, setSaving] = useState(false);
-  const [focused, setFocused] = useState(false);
-  useEffect(() => { if (!focused) setValue(String(current || 0)); }, [current, focused]);
-
-  async function save() {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n < 0) { setValue(String(current || 0)); return; }
-    if (n === (current || 0)) return;
-    setSaving(true);
-    try {
-      await apiPatch(`/purchase-orders/${poId}/lines/${line.id}`, { [field]: n, changedBy: getSubmitterName() || undefined });
-      await onSaved();
-    } catch (err) {
-      window.alert(err.message || 'Could not save this correction.');
-      setValue(String(current || 0));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-      <input
-        style={{ ...poStyles.input, width: 40, textAlign: 'right', padding: '3px 5px' }}
-        value={value}
-        onFocus={() => setFocused(true)}
-        onChange={e => setValue(e.target.value.replace(/[^0-9]/g, ''))}
-        onBlur={() => { setFocused(false); save(); }}
-        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-        disabled={saving}
-      />
-      {saving && <Loader2 size={11} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
-    </span>
-  );
-}
-
 function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   const [po, setPo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -11017,6 +10925,15 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   const [editExpected, setEditExpected] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [saveErr, setSaveErr] = useState('');
+  // Line-level editing (Received/Short/Damaged): values stay read-only text
+  // until "Edit" is pressed, then become inputs holding a local draft only —
+  // nothing is sent until the person reviews a preview of every change and
+  // explicitly confirms it.
+  const [linesEditing, setLinesEditing] = useState(false);
+  const [lineDrafts, setLineDrafts] = useState({}); // lineId -> { qtyReceivedCs, qtyShort, qtyDamaged } (strings)
+  const [linesPreview, setLinesPreview] = useState(null); // [{lineId, item, changes: [{label, from, to}]}] or null
+  const [linesSaving, setLinesSaving] = useState(false);
+  const [linesSaveErr, setLinesSaveErr] = useState('');
 
   async function load() {
     setLoading(true);
@@ -11094,6 +11011,86 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
     finally { setBusy(false); }
   }
 
+  function caseSizeForItem(itemId) {
+    const it = items.find(x => x.id === itemId);
+    return it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 0;
+  }
+  function startLinesEdit() {
+    const drafts = {};
+    for (const l of po.lines) {
+      const cs = caseSizeForItem(l.itemId);
+      const recvCs = cs > 0 ? l.qtyReceived / cs : l.qtyReceived;
+      drafts[l.id] = {
+        qtyReceivedCs: String(recvCs),
+        qtyShort: String(l.qtyShort || 0),
+        qtyDamaged: String(l.qtyDamaged || 0),
+      };
+    }
+    setLineDrafts(drafts);
+    setLinesEditing(true);
+    setLinesSaveErr('');
+  }
+  function cancelLinesEdit() {
+    setLinesEditing(false);
+    setLineDrafts({});
+    setLinesPreview(null);
+    setLinesSaveErr('');
+  }
+  function setLineDraft(lineId, field, value) {
+    setLineDrafts(prev => ({ ...prev, [lineId]: { ...prev[lineId], [field]: value } }));
+  }
+  // Compare drafts against the PO's real current values; only lines with an
+  // actual difference are included, one entry per changed field.
+  function computeLinesChanges() {
+    const changes = [];
+    for (const l of po.lines) {
+      const d = lineDrafts[l.id];
+      if (!d) continue;
+      const cs = caseSizeForItem(l.itemId);
+      const newReceivedBoxes = Math.round((Number(d.qtyReceivedCs) || 0) * (cs > 0 ? cs : 1));
+      const newShort = Number(d.qtyShort) || 0;
+      const newDamaged = Number(d.qtyDamaged) || 0;
+      const lineChanges = [];
+      if (newReceivedBoxes !== l.qtyReceived) {
+        const fromCs = cs > 0 ? l.qtyReceived / cs : l.qtyReceived;
+        lineChanges.push({ field: 'qtyReceived', label: 'Received', from: `${fromCs} cs`, to: `${d.qtyReceivedCs} cs`, value: newReceivedBoxes });
+      }
+      if (newShort !== (l.qtyShort || 0)) {
+        lineChanges.push({ field: 'qtyShort', label: 'Short', from: String(l.qtyShort || 0), to: String(newShort), value: newShort });
+      }
+      if (newDamaged !== (l.qtyDamaged || 0)) {
+        lineChanges.push({ field: 'qtyDamaged', label: 'Damaged', from: String(l.qtyDamaged || 0), to: String(newDamaged), value: newDamaged });
+      }
+      if (lineChanges.length > 0) changes.push({ lineId: l.id, item: l.item, changes: lineChanges });
+    }
+    return changes;
+  }
+  function reviewLinesChanges() {
+    const changes = computeLinesChanges();
+    if (changes.length === 0) { cancelLinesEdit(); return; } // nothing changed — just exit
+    setLinesPreview(changes);
+  }
+  async function confirmLinesChanges() {
+    setLinesSaving(true);
+    setLinesSaveErr('');
+    try {
+      const who = getSubmitterName() || undefined;
+      for (const lineChange of linesPreview) {
+        const body = { changedBy: who };
+        for (const c of lineChange.changes) body[c.field] = c.value;
+        await apiPatch(`/purchase-orders/${poId}/lines/${lineChange.lineId}`, body);
+      }
+      setLinesPreview(null);
+      setLinesEditing(false);
+      setLineDrafts({});
+      await load(); await onChanged();
+    } catch (err) {
+      setLinesSaveErr(err.message || 'Could not save these changes.');
+    } finally {
+      setLinesSaving(false);
+    }
+  }
+
   if (loading) return <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div>;
   if (!po) return <div><button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button><div style={{ padding: 20 }}>Not found.</div></div>;
 
@@ -11131,6 +11128,38 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
           )}
         </div>
       )}
+      {po.status !== 'cancelled' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          {!linesEditing ? (
+            <button style={officeStyles.smallBtn} onClick={startLinesEdit}>✎ Edit received / short / damaged</button>
+          ) : !linesPreview ? (
+            <>
+              <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={reviewLinesChanges}>Done editing</button>
+              <button style={officeStyles.smallBtn} onClick={cancelLinesEdit}>Cancel</button>
+            </>
+          ) : null}
+        </div>
+      )}
+      {linesPreview && (
+        <div style={{ marginBottom: 14, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 10, padding: 16, maxWidth: 560 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Review changes before saving</div>
+          {linesPreview.map(lc => (
+            <div key={lc.lineId} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{lc.item}</div>
+              {lc.changes.map(c => (
+                <div key={c.field} style={{ fontSize: 13, color: '#5B6058', marginLeft: 8 }}>
+                  {c.label}: <span style={{ color: '#8A8F87' }}>{c.from}</span> → <strong style={{ color: '#14181F' }}>{c.to}</strong>
+                </div>
+              ))}
+            </div>
+          ))}
+          {linesSaveErr && <div style={{ color: '#B5493B', fontSize: 12.5, marginTop: 8 }}>{linesSaveErr}</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={confirmLinesChanges} disabled={linesSaving}>{linesSaving ? 'Saving…' : 'Confirm changes'}</button>
+            <button style={officeStyles.smallBtn} onClick={() => setLinesPreview(null)} disabled={linesSaving}>Keep editing</button>
+          </div>
+        </div>
+      )}
       <div style={officeStyles.tableCard}>
         <table style={officeStyles.table}>
           <thead><tr>
@@ -11159,16 +11188,41 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
                   <td style={officeStyles.td}><strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(l.itemId)}</strong>{l.item}{cs > 0 ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {cs}/cs</span> : null}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyOrdered)}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>
-                    {po.status === 'cancelled'
-                      ? boxCs(l.qtyReceived)
-                      : <ReceivedQtyCorrector line={l} cs={cs} poId={po.id} onSaved={load} />}
+                    {po.status === 'cancelled' || !linesEditing || linesPreview ? (
+                      boxCs(l.qtyReceived)
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                        <input
+                          style={{ ...poStyles.input, width: 52, textAlign: 'right', fontWeight: 700 }}
+                          value={lineDrafts[l.id] ? lineDrafts[l.id].qtyReceivedCs : ''}
+                          onChange={e => setLineDraft(l.id, 'qtyReceivedCs', e.target.value.replace(/[^0-9.]/g, ''))}
+                        />
+                        <span style={{ fontSize: 11, color: '#8A8F87' }}>cs</span>
+                      </span>
+                    )}
                   </td>
                   <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: out > 0 ? '#B5793B' : '#8A8F87' }}>{boxCs(out)}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right', color: l.qtyShort > 0 ? '#B5793B' : '#B9BDB2' }}>
-                    {po.status === 'cancelled' ? (l.qtyShort || '—') : <ShortDamagedCorrector line={l} field="qtyShort" poId={po.id} onSaved={load} />}
+                    {po.status === 'cancelled' || !linesEditing || linesPreview ? (
+                      l.qtyShort || '—'
+                    ) : (
+                      <input
+                        style={{ ...poStyles.input, width: 44, textAlign: 'right' }}
+                        value={lineDrafts[l.id] ? lineDrafts[l.id].qtyShort : ''}
+                        onChange={e => setLineDraft(l.id, 'qtyShort', e.target.value.replace(/[^0-9]/g, ''))}
+                      />
+                    )}
                   </td>
                   <td style={{ ...officeStyles.td, textAlign: 'right', color: l.qtyDamaged > 0 ? '#B5493B' : '#B9BDB2' }}>
-                    {po.status === 'cancelled' ? (l.qtyDamaged || '—') : <ShortDamagedCorrector line={l} field="qtyDamaged" poId={po.id} onSaved={load} />}
+                    {po.status === 'cancelled' || !linesEditing || linesPreview ? (
+                      l.qtyDamaged || '—'
+                    ) : (
+                      <input
+                        style={{ ...poStyles.input, width: 44, textAlign: 'right' }}
+                        value={lineDrafts[l.id] ? lineDrafts[l.id].qtyDamaged : ''}
+                        onChange={e => setLineDraft(l.id, 'qtyDamaged', e.target.value.replace(/[^0-9]/g, ''))}
+                      />
+                    )}
                   </td>
                   {po.status !== 'received' && po.status !== 'cancelled' && (
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>
