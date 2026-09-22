@@ -11096,7 +11096,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   if (loading) return <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div>;
   if (!po) return <div><button style={repStyles.backBtn} onClick={onBack}>← Purchasing</button><div style={{ padding: 20 }}>Not found.</div></div>;
 
-  const outstanding = po.lines.reduce((s, l) => s + (l.qtyOrdered - l.qtyReceived), 0);
+  const outstanding = po.lines.reduce((s, l) => s + (l.qtyOrdered - l.qtyReceived - (l.qtyShort || 0) - (l.qtyDamaged || 0)), 0);
 
   return (
     <div>
@@ -11143,7 +11143,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
           </tr></thead>
           <tbody>
             {po.lines.map(l => {
-              const out = l.qtyOrdered - l.qtyReceived;
+              const out = l.qtyOrdered - l.qtyReceived - (l.qtyShort || 0) - (l.qtyDamaged || 0);
               const it = items.find(x => x.id === l.itemId);
               const cs = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 0;
               const inCs = (boxes) => cs > 0 ? ((boxes / cs) % 1 === 0 ? boxes / cs : (boxes / cs).toFixed(1)) : null;
