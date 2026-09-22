@@ -6602,7 +6602,17 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                       {formatDateTime(o.submittedAt)}
                       {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {String(o.submittedBy).split(/\s*,\s*|\s+per\s+/i)[0].trim()}</div>}
                     </td>
-                    <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
+                    <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>
+                      {o.customer}
+                      {o.lines.some(l => l.requestedQty != null && l.requestedQty !== l.qty) && (
+                        <span
+                          style={{ marginLeft: 6, display: 'inline-block', fontSize: 10, fontWeight: 700, color: '#B5493B', background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 20, padding: '1px 7px' }}
+                          title="One or more items shipped less than requested due to stock — expand to see how many"
+                        >
+                          short shipped
+                        </span>
+                      )}
+                    </td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? (o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>) : <PoNumberCell order={o} customer={allCustList.find(c => c.id === o.customerId)} onSaved={onRefresh} />}</td>
@@ -6699,8 +6709,8 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                                 <td style={{ ...officeStyles.subTd, textAlign: 'right' }}>
                                   {l.qty}
                                   {l.requestedQty != null && l.requestedQty !== l.qty && (
-                                    <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#B5493B' }} title={`${l.requestedQty} requested, only ${l.qty} shipped`}>
-                                      ({l.requestedQty} requested)
+                                    <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#B5493B' }} title={`${l.requestedQty} requested, only ${l.qty} shipped — if the warehouse finds more, it can go back up to ${l.requestedQty}`}>
+                                      shipping {l.qty} of {l.requestedQty}
                                     </span>
                                   )}
                                 </td>
