@@ -1335,6 +1335,56 @@ function ThSort({ field, label, sortField, sortDir, onClick, thStyle, align = 'l
   );
 }
 
+// Simple searchable on-hand/available list for Taiyo warehouse staff —
+// read-only, no receiving/editing here, just "how much of this do we have."
+function WarehouseInventoryTab({ items, S }) {
+  const [q, setQ] = useState('');
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    const base = query
+      ? items.filter(it =>
+          (it.name || '').toLowerCase().includes(query) ||
+          (it.brand || '').toLowerCase().includes(query) ||
+          (it.id || '').toLowerCase().includes(query)
+        )
+      : items;
+    return [...base].sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || (a.name || '').localeCompare(b.name || ''));
+  }, [items, q]);
+
+  return (
+    <div>
+      <input
+        style={{ ...S.search, marginBottom: 14 }}
+        placeholder="Search item, brand, or SKU…"
+        value={q}
+        onChange={e => setQ(e.target.value)}
+      />
+      {filtered.length === 0 ? (
+        <div style={{ padding: 30, color: '#8A8F87', fontStyle: 'italic' }}>{q ? `No items match "${q}".` : 'No items.'}</div>
+      ) : (
+        <table style={S.table}>
+          <thead><tr>
+            <th style={S.th}>Item</th>
+            <th style={S.th}>Brand</th>
+            <th style={{ ...S.th, textAlign: 'right' }}>On Hand</th>
+            <th style={{ ...S.th, textAlign: 'right' }}>Available</th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(it => (
+              <tr key={it.id}>
+                <td style={S.td}><strong style={{ color: '#2B5D50' }}>{displayCode(it.id)}</strong> {it.name}</td>
+                <td style={S.td}>{it.brand}</td>
+                <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{it.onHand}</td>
+                <td style={{ ...S.td, textAlign: 'right', color: '#5B6058' }}>{it.available}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function WarehousePage() {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -1632,8 +1682,10 @@ function WarehousePage() {
           <button onClick={() => setTab('current')} style={{ ...S.tab, ...(tab === 'current' ? S.tabActive : {}) }}>Taiyo In ({currentCount})</button>
           <button onClick={() => setTab('storage')} style={{ ...S.tab, ...(tab === 'storage' ? S.tabActive : {}) }}>Taiyo Storage ({storageCount})</button>
           <button onClick={() => setTab('out')} style={{ ...S.tab, ...(tab === 'out' ? S.tabActive : {}) }}>Taiyo Out ({podDocs.length})</button>
+          <button onClick={() => setTab('inventory')} style={{ ...S.tab, ...(tab === 'inventory' ? S.tabActive : {}) }}>Inventory ({items.length})</button>
         </div>
-        {tab !== 'out' && (
+        {tab === 'inventory' && <WarehouseInventoryTab items={items} S={S} />}
+        {tab !== 'out' && tab !== 'inventory' && (
         <>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
           <input style={{ ...S.search, marginBottom: 0, flex: 1 }} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
