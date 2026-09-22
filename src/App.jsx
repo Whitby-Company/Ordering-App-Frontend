@@ -1479,6 +1479,7 @@ function WarehousePage() {
     catch (err) { window.alert(err.message || 'Could not remove this document.'); }
   }
 
+  const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const tomorrowISO = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -1550,6 +1551,21 @@ function WarehousePage() {
     };
     return { recent, months: monthKeys.map(k => ({ key: k, label: monthLabel(k), orders: olderByMonth[k] })) };
   }, [list, tab]);
+
+  // For the Current (Taiyo In) tab: split into Today, Tomorrow, and
+  // everything else, so the two nearest delivery dates are always visible
+  // as their own sections rather than mixed into one long sorted list.
+  const currentGroups = useMemo(() => {
+    if (tab !== 'current') return null;
+    const today = [], tomorrow = [], later = [];
+    for (const o of list) {
+      const d = o.deliveryDate || '';
+      if (d === todayISO) today.push(o);
+      else if (d === tomorrowISO) tomorrow.push(o);
+      else later.push(o);
+    }
+    return { today, tomorrow, later };
+  }, [list, tab, todayISO, tomorrowISO]);
 
   const storageCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && o.taiyoStored).length, [orders]);
   const currentCount = useMemo(() => (orders || []).filter(o => o.status !== 'pending' && !o.voided && !o.taiyoStored).length, [orders]);
@@ -1689,23 +1705,41 @@ function WarehousePage() {
         <>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
           <input style={{ ...S.search, marginBottom: 0, flex: 1 }} placeholder="Search by customer, invoice #, PO, or date…" value={q} onChange={e => setQ(e.target.value)} />
-          {tab === 'current' && (
-            <button
-              onClick={() => setQ(q === tomorrowISO ? '' : tomorrowISO)}
-              style={{ ...S.tab, whiteSpace: 'nowrap', ...(q === tomorrowISO ? S.tabActive : {}) }}
-            >
-              Tomorrow
-            </button>
-          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-          <button
-            style={{ ...S.moveBtn, ...(list.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}) }}
-            onClick={() => setSelectedIds(new Set(list.map(o => o.id)))}
-            disabled={list.length === 0}
-          >
-            Select all shown ({list.length})
-          </button>
+          {tab === 'current' ? (
+            <>
+              <button
+                style={{ ...S.moveBtn, ...(currentGroups.today.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}) }}
+                onClick={() => setSelectedIds(new Set(currentGroups.today.map(o => o.id)))}
+                disabled={currentGroups.today.length === 0}
+              >
+                Select today ({currentGroups.today.length})
+              </button>
+              <button
+                style={{ ...S.moveBtn, ...(currentGroups.tomorrow.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}) }}
+                onClick={() => setSelectedIds(new Set(currentGroups.tomorrow.map(o => o.id)))}
+                disabled={currentGroups.tomorrow.length === 0}
+              >
+                Select tomorrow ({currentGroups.tomorrow.length})
+              </button>
+              <button
+                style={{ ...S.moveBtn, ...(list.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}) }}
+                onClick={() => setSelectedIds(new Set(list.map(o => o.id)))}
+                disabled={list.length === 0}
+              >
+                Select all shown ({list.length})
+              </button>
+            </>
+          ) : (
+            <button
+              style={{ ...S.moveBtn, ...(list.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}) }}
+              onClick={() => setSelectedIds(new Set(list.map(o => o.id)))}
+              disabled={list.length === 0}
+            >
+              Select all shown ({list.length})
+            </button>
+          )}
           <button
             style={{ ...S.viewBtn, ...(selectedIds.size === 0 || batchBusy ? { opacity: 0.5, cursor: 'default' } : {}) }}
             onClick={printSelected}
@@ -1768,6 +1802,35 @@ function WarehousePage() {
                       {openMonths[mo.key] && mo.orders.map(o => <InvoiceRow key={o.id} o={o} />)}
                     </React.Fragment>
                   ))}
+                </>
+              ) : tab === 'current' ? (
+                <>
+                  {currentGroups.today.length > 0 && (
+                    <>
+                      <tr style={{ background: '#E9F0EC' }}>
+                        <td style={{ ...S.td, fontWeight: 800, color: '#2B5D50' }} colSpan={8}>📅 Today ({currentGroups.today.length})</td>
+                      </tr>
+                      {currentGroups.today.map(o => <InvoiceRow key={o.id} o={o} />)}
+                    </>
+                  )}
+                  {currentGroups.tomorrow.length > 0 && (
+                    <>
+                      <tr style={{ background: '#F5E9C6' }}>
+                        <td style={{ ...S.td, fontWeight: 800, color: '#8A6D1B' }} colSpan={8}>📅 Tomorrow ({currentGroups.tomorrow.length})</td>
+                      </tr>
+                      {currentGroups.tomorrow.map(o => <InvoiceRow key={o.id} o={o} />)}
+                    </>
+                  )}
+                  {currentGroups.later.length > 0 && (
+                    <>
+                      {(currentGroups.today.length > 0 || currentGroups.tomorrow.length > 0) && (
+                        <tr style={{ background: '#EDEBE3' }}>
+                          <td style={{ ...S.td, fontWeight: 800, color: '#5B6058' }} colSpan={8}>Upcoming ({currentGroups.later.length})</td>
+                        </tr>
+                      )}
+                      {currentGroups.later.map(o => <InvoiceRow key={o.id} o={o} />)}
+                    </>
+                  )}
                 </>
               ) : (
                 list.map(o => <InvoiceRow key={o.id} o={o} />)
