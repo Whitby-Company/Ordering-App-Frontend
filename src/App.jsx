@@ -10962,6 +10962,48 @@ function ReceivedQtyCorrector({ line, cs, poId, onSaved }) {
   );
 }
 
+// Inline editor for correcting a line's short or damaged quantity after the
+// fact (e.g. reclassifying some of what was "missing" as actually
+// "damaged" once that's discovered). Neither touches items.stock.
+function ShortDamagedCorrector({ line, field, poId, onSaved }) {
+  const current = field === 'qtyShort' ? line.qtyShort : line.qtyDamaged;
+  const [value, setValue] = useState(String(current || 0));
+  const [saving, setSaving] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setValue(String(current || 0)); }, [current, focused]);
+
+  async function save() {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) { setValue(String(current || 0)); return; }
+    if (n === (current || 0)) return;
+    setSaving(true);
+    try {
+      await apiPatch(`/purchase-orders/${poId}/lines/${line.id}`, { [field]: n, changedBy: getSubmitterName() || undefined });
+      await onSaved();
+    } catch (err) {
+      window.alert(err.message || 'Could not save this correction.');
+      setValue(String(current || 0));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      <input
+        style={{ ...poStyles.input, width: 40, textAlign: 'right', padding: '3px 5px' }}
+        value={value}
+        onFocus={() => setFocused(true)}
+        onChange={e => setValue(e.target.value.replace(/[^0-9]/g, ''))}
+        onBlur={() => { setFocused(false); save(); }}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+        disabled={saving}
+      />
+      {saving && <Loader2 size={11} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
+    </span>
+  );
+}
+
 function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   const [po, setPo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -11028,12 +11070,27 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
     try { await apiPatch(`/purchase-orders/${poId}`, { status: 'cancelled' }); await onChanged(); onBack(); }
     catch { /* ignore */ } finally { setBusy(false); }
   }
-  async function closeShort() {
-    const out = po ? po.lines.reduce((s, l) => s + (l.qtyOrdered - l.qtyReceived), 0) : 0;
-    if (!window.confirm(`Close this PO short? The ${out} outstanding box(es) will be recorded as short/damaged and the PO marked done. Stock stays as received.`)) return;
+  const [closingShort, setClosingShort] = useState(false);
+  const [damagedInputs, setDamagedInputs] = useState({});
+  function startCloseShort() {
+    const init = {};
+    for (const l of po.lines) {
+      const out = l.qtyOrdered - l.qtyReceived - (l.qtyShort || 0) - (l.qtyDamaged || 0);
+      if (out > 0) init[l.id] = '0';
+    }
+    setDamagedInputs(init);
+    setClosingShort(true);
+  }
+  async function confirmCloseShort() {
     setBusy(true);
-    try { await apiPost(`/purchase-orders/${poId}/close-short`, {}); await load(); await onChanged(); }
-    catch { /* ignore */ } finally { setBusy(false); }
+    try {
+      const damaged = {};
+      for (const [lineId, v] of Object.entries(damagedInputs)) damaged[lineId] = Number(v) || 0;
+      await apiPost(`/purchase-orders/${poId}/close-short`, { damaged });
+      setClosingShort(false);
+      await load(); await onChanged();
+    } catch (err) { window.alert(err.message || 'Could not close this PO.'); }
+    finally { setBusy(false); }
   }
 
   if (loading) return <div style={{ padding: 30, color: '#8A8F87' }}>Loading…</div>;
@@ -11080,7 +11137,8 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (cs · bx)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (cs · bx)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Outstanding</th>
-            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Short/dmg</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Short</th>
+            <th style={{ ...officeStyles.th, textAlign: 'right' }}>Damaged</th>
             {po.status !== 'received' && po.status !== 'cancelled' && <th style={{ ...officeStyles.th, textAlign: 'right', width: 180 }}>Receive (enter cases)</th>}
           </tr></thead>
           <tbody>
@@ -11105,7 +11163,12 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
                       : <ReceivedQtyCorrector line={l} cs={cs} poId={po.id} onSaved={load} />}
                   </td>
                   <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: out > 0 ? '#B5793B' : '#8A8F87' }}>{boxCs(out)}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right', color: l.qtyShort > 0 ? '#B5493B' : '#B9BDB2', fontWeight: l.qtyShort > 0 ? 700 : 400 }}>{l.qtyShort > 0 ? boxCs(l.qtyShort) : '—'}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', color: l.qtyShort > 0 ? '#B5793B' : '#B9BDB2' }}>
+                    {po.status === 'cancelled' ? (l.qtyShort || '—') : <ShortDamagedCorrector line={l} field="qtyShort" poId={po.id} onSaved={load} />}
+                  </td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', color: l.qtyDamaged > 0 ? '#B5493B' : '#B9BDB2' }}>
+                    {po.status === 'cancelled' ? (l.qtyDamaged || '—') : <ShortDamagedCorrector line={l} field="qtyDamaged" poId={po.id} onSaved={load} />}
+                  </td>
                   {po.status !== 'received' && po.status !== 'cancelled' && (
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                       {out > 0 ? (
@@ -11142,8 +11205,42 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
           </label>
           <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#F7F8F4' }} onClick={() => receive(false)} disabled={busy || Object.values(recv).every(v => !Number(v))}>Receive entered</button>
           <button style={officeStyles.smallBtn} onClick={() => receive(true)} disabled={busy}>Receive all ({outstanding})</button>
-          <button style={{ ...officeStyles.smallBtn, color: '#B5493B', borderColor: '#E6C6B4' }} onClick={closeShort} disabled={busy} title="Mark the PO done and record the outstanding quantity as short/damaged">Close short ({outstanding})</button>
+          <button style={{ ...officeStyles.smallBtn, color: '#B5493B', borderColor: '#E6C6B4' }} onClick={startCloseShort} disabled={busy} title="Mark the PO done and record the outstanding quantity as short and/or damaged">Close short ({outstanding})</button>
           <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Enter how many <b>cases</b> arrived — items with inners auto-convert to boxes. Stock counts toward on-hand as of the received date.</span>
+        </div>
+      )}
+      {closingShort && (
+        <div style={{ marginTop: 14, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 10, padding: 16, maxWidth: 560 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Close this PO short</div>
+          <div style={{ fontSize: 12.5, color: '#5B6058', marginBottom: 12 }}>
+            For each item, enter how many of the outstanding quantity were <b>damaged</b> — the rest is recorded as genuinely missing (short). Leave at 0 if none were damaged.
+          </div>
+          {Object.keys(damagedInputs).map(lineId => {
+            const l = po.lines.find(x => String(x.id) === String(lineId));
+            if (!l) return null;
+            const out = l.qtyOrdered - l.qtyReceived - (l.qtyShort || 0) - (l.qtyDamaged || 0);
+            return (
+              <div key={lineId} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <span style={{ flex: 1, fontSize: 13 }}>{l.item} <span style={{ color: '#8A8F87' }}>(outstanding {out})</span></span>
+                <label style={{ fontSize: 12, color: '#5B6058', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Damaged:
+                  <input
+                    style={{ ...poStyles.input, width: 56, textAlign: 'right' }}
+                    value={damagedInputs[lineId]}
+                    onChange={e => setDamagedInputs(prev => ({ ...prev, [lineId]: e.target.value.replace(/[^0-9]/g, '') }))}
+                    inputMode="numeric"
+                  />
+                </label>
+                <span style={{ fontSize: 12, color: '#8A8F87', width: 90 }}>
+                  short: {Math.max(0, out - (Number(damagedInputs[lineId]) || 0))}
+                </span>
+              </div>
+            );
+          })}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button style={{ ...officeStyles.smallBtn, background: '#B5493B', color: '#fff' }} onClick={confirmCloseShort} disabled={busy}>Confirm — close PO</button>
+            <button style={officeStyles.smallBtn} onClick={() => setClosingShort(false)} disabled={busy}>Cancel</button>
+          </div>
         </div>
       )}
     </div>
