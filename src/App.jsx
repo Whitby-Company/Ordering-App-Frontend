@@ -5288,12 +5288,6 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
             Purchasing
           </button>
           <button
-            style={{ ...officeStyles.navBtn, ...(section === 'pricechecks' ? officeStyles.navBtnActive : {}) }}
-            onClick={() => setSection('pricechecks')}
-          >
-            Price Checks
-          </button>
-          <button
             style={{ ...officeStyles.navBtn, ...(section === 'taiyoout' ? officeStyles.navBtnActive : {}) }}
             onClick={() => setSection('taiyoout')}
           >
@@ -5339,7 +5333,6 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
         {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
-        {section === 'pricechecks' && <OfficePriceChecks />}
         {section === 'taiyoout' && <OfficePodUploads />}
       </div>
     </div>
@@ -8670,6 +8663,7 @@ const REPORT_LIST = [
   { id: 'taiyo', name: 'Taiyo owed (warehouse partner)', desc: 'Monthly report of Taiyo-owned items sold, with boxes/cases and amount owed at Taiyo pricing.' },
   { id: 'taiyo-fee', name: 'Taiyo 6%', desc: 'Total net cost of everything sold in a period, by invoice, and the 6% handling fee owed to Taiyo on it.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
+  { id: 'pricechecks', name: 'Price Checks', desc: 'Competitive retail prices scanned in the field, grouped by store.' },
   // Add more reports here as they\u2019re built.
 ];
 // Format a date value from a QuickBooks/Excel export. Handles Excel serial-date
@@ -11270,7 +11264,7 @@ const poStyles = {
 // Office view of price checks logged from the mobile Price Check tab —
 // grouped by retail location (store), each entry showing the item, prices,
 // and the date/time the check was actually completed.
-function OfficePriceChecks() {
+function OfficePriceChecks({ onBack } = {}) {
   const [checks, setChecks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -11328,6 +11322,7 @@ function OfficePriceChecks() {
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
         <div style={officeStyles.sectionTitle}>Price Checks</div>
         <input
           style={officeStyles.search}
@@ -11576,6 +11571,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
   if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
+  if (active === 'pricechecks') return <OfficePriceChecks onBack={() => setActive(null)} />;
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
