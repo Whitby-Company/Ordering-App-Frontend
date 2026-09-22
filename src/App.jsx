@@ -6352,7 +6352,11 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   const unprocessedCount = useMemo(() => orders.filter(o => !o.processed).length, [orders]);
   const notExportedCount = useMemo(() => orders.filter(o => o.status !== "pending" && !o.exported && !o.voided).length, [orders]);
 
-  const readyOrders = useMemo(() => orders.filter(o => o.readyForImport && !o.exported), [orders]);
+  // Anything the person has checked "ready" gets included, even if it was
+  // already exported before — re-checking an already-exported order (e.g.
+  // because the first file never actually made it into QuickBooks) should
+  // put it back in the next download, not silently exclude it.
+  const readyOrders = useMemo(() => orders.filter(o => o.readyForImport), [orders]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = orders;
