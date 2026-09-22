@@ -11164,6 +11164,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
         <table style={officeStyles.table}>
           <thead><tr>
             <th style={officeStyles.th}>Item</th>
+            <th style={officeStyles.th}>Pack</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (cs · bx)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (cs · bx)</th>
             <th style={{ ...officeStyles.th, textAlign: 'right' }}>Outstanding</th>
@@ -11186,6 +11187,7 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
               return (
                 <tr key={l.id}>
                   <td style={officeStyles.td}><strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(l.itemId)}</strong>{l.item}{cs > 0 ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {cs}/cs</span> : null}</td>
+                  <td style={{ ...officeStyles.td, color: '#5B6058' }}>{it ? (it.packLabel || it.pack || '—') : '—'}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyOrdered)}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>
                     {po.status === 'cancelled' || !linesEditing || linesPreview ? (
