@@ -10912,6 +10912,56 @@ function PurchaseOrderForm({ items, onBack, onSaved }) {
 }
 
 // View one PO and receive stock (partial or all).
+// Inline editor for correcting a PO line's total received-so-far (in cases,
+// matching how the "Receive" column already accepts entries), even after
+// the PO is fully received. Saves via PATCH .../lines/:lineId, which applies
+// the resulting on-hand adjustment immediately.
+function ReceivedQtyCorrector({ line, cs, poId, onSaved }) {
+  const currentCases = cs > 0 ? line.qtyReceived / cs : line.qtyReceived;
+  const [value, setValue] = useState(String(currentCases));
+  const [saving, setSaving] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setValue(String(currentCases)); }, [currentCases, focused]);
+
+  async function save() {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) { setValue(String(currentCases)); return; }
+    const boxes = cs > 0 ? Math.round(n * cs) : Math.round(n);
+    if (boxes === line.qtyReceived) return;
+    if (!window.confirm(`Correct received qty to ${n} case${n === 1 ? '' : 's'} (${boxes} box${boxes === 1 ? '' : 'es'})? This updates on-hand inventory immediately.`)) {
+      setValue(String(currentCases));
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiPatch(`/purchase-orders/${poId}/lines/${line.id}`, { qtyReceived: boxes, changedBy: getSubmitterName() || undefined });
+      await onSaved();
+    } catch (err) {
+      window.alert(err.message || 'Could not save this correction.');
+      setValue(String(currentCases));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+      <input
+        style={{ ...poStyles.input, width: 52, textAlign: 'right', fontWeight: 700 }}
+        value={value}
+        onFocus={() => setFocused(true)}
+        onChange={e => setValue(e.target.value.replace(/[^0-9.]/g, ''))}
+        onBlur={() => { setFocused(false); save(); }}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+        disabled={saving}
+        title="Correct the total received so far for this line"
+      />
+      <span style={{ fontSize: 11, color: '#8A8F87' }}>cs</span>
+      {saving && <Loader2 size={12} color="#8A8F87" style={{ animation: 'spin 0.8s linear infinite' }} />}
+    </span>
+  );
+}
+
 function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   const [po, setPo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -11049,7 +11099,11 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
                 <tr key={l.id}>
                   <td style={officeStyles.td}><strong style={{ color: '#2B5D50', marginRight: 6 }}>{displayCode(l.itemId)}</strong>{l.item}{cs > 0 ? <span style={{ color: '#8A8F87', fontSize: 11 }}> · {cs}/cs</span> : null}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyOrdered)}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{boxCs(l.qtyReceived)}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>
+                    {po.status === 'cancelled'
+                      ? boxCs(l.qtyReceived)
+                      : <ReceivedQtyCorrector line={l} cs={cs} poId={po.id} onSaved={load} />}
+                  </td>
                   <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: out > 0 ? '#B5793B' : '#8A8F87' }}>{boxCs(out)}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right', color: l.qtyShort > 0 ? '#B5493B' : '#B9BDB2', fontWeight: l.qtyShort > 0 ? 700 : 400 }}>{l.qtyShort > 0 ? boxCs(l.qtyShort) : '—'}</td>
                   {po.status !== 'received' && po.status !== 'cancelled' && (
