@@ -6738,7 +6738,14 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         Number(e.oldStock) !== Number(e.newStock)
       ).map(e => ({
         ...e,
-        isRealBaseline: baselineKeys.has(`${String(e.changedAt).slice(0, 10)}|${Number(e.newStock)}`),
+        // A real stock_baseline row (physical count / direct edit) is one
+        // reliable kind of hard-reset point. A PO receiving correction is
+        // another: its old/new stock are read fresh from the item right
+        // before and after the change, so — unlike the bulk "Inventory
+        // redo" tool, which just logs a delta with no guarantee it matches
+        // the backend's actual calculation — it's just as trustworthy as a
+        // real baseline for continuing the running total from.
+        isRealBaseline: baselineKeys.has(`${String(e.changedAt).slice(0, 10)}|${Number(e.newStock)}`) || /^Corrected received qty on PO/i.test(e.reason || ''),
       }));
       // Some real baselines have NO matching log entry at all (e.g. set via a
       // path that only logs when the computed on-hand actually differed from
