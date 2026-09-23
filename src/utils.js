@@ -7,10 +7,13 @@ export function formatDate(iso) {
   const date = new Date(y, m - 1, d);
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
-// Today's date as ISO yyyy-mm-dd (local).
+// Today's date as ISO yyyy-mm-dd, in Hawaii time specifically (not whatever
+// time zone the device happens to be set to) — the business runs in Hawaii,
+// so "today" for order dates, the stock ledger, and everything else should
+// mean Hawaii's today even if someone's device is misconfigured or they're
+// checking the app while traveling elsewhere.
 export function todayISODate() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Honolulu', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 // ISO yyyy-mm-dd -> mm/dd/yy (2-digit year) for the compact date field.
 export function formatDateMMDDYY(iso) {

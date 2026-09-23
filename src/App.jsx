@@ -1709,12 +1709,12 @@ function WarehousePage() {
     catch (err) { window.alert(err.message || 'Could not remove this document.'); }
   }
 
-  const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayISO = useMemo(() => todayISODate(), []);
   const tomorrowISO = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
-  }, []);
+    const [y, m, d] = todayISO.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + 1); // plain calendar arithmetic on the HST date, not a time-zone-sensitive Date
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  }, [todayISO]);
 
   const orderTotal = (o) => {
     const sub = (o.lines || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0) * (Number(l.pack) || 1), 0);
@@ -4386,8 +4386,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                 if (day === null) return <div key={idx} />;
                 const iso = toISO(calendarMonth.year, calendarMonth.month, day);
                 const isSelected = iso === deliveryDate;
-                const todayISO = toISO(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-                const isToday = iso === todayISO;
+                const isToday = iso === todayISODate();
                 return (
                   <button
                     key={idx}
@@ -7258,7 +7257,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       Price: i.price, Stock: i.stock, Active: i.active ? 'yes' : 'no',
     }));
     const name = brand === 'All' ? 'inventory' : brand.replace(/[^a-z0-9]+/gi, '_');
-    downloadTextFile(`${name}-${new Date().toISOString().slice(0, 10)}.csv`, toCSV(rows, headers));
+    downloadTextFile(`${name}-${todayISODate()}.csv`, toCSV(rows, headers));
   }
 
   function triggerImport() {
