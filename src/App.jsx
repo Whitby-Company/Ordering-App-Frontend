@@ -164,6 +164,29 @@ function useHideSeasonal() {
   }, []);
   return [on, update];
 }
+// Persisted "print order notes on the invoice" preference, shared across all
+// screens — off by default, since notes are often internal shorthand not
+// meant for the customer-facing document. printInvoice() reads this directly
+// (it's a plain function, not a component) so every call site respects it
+// without each one needing to be individually updated.
+const SHOW_NOTES_ON_INVOICE_KEY = 'showNotesOnInvoice';
+function getShowNotesOnInvoice() {
+  try { return localStorage.getItem(SHOW_NOTES_ON_INVOICE_KEY) === '1'; } catch { return false; }
+}
+function useShowNotesOnInvoice() {
+  const [on, setOn] = useState(getShowNotesOnInvoice);
+  useEffect(() => {
+    const h = () => setOn(getShowNotesOnInvoice());
+    window.addEventListener('show-notes-on-invoice-changed', h);
+    return () => window.removeEventListener('show-notes-on-invoice-changed', h);
+  }, []);
+  const update = useCallback((next) => {
+    try { localStorage.setItem(SHOW_NOTES_ON_INVOICE_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    setOn(next);
+    window.dispatchEvent(new Event('show-notes-on-invoice-changed'));
+  }, []);
+  return [on, update];
+}
 // Persisted "print in inventory (warehouse) order" preference — when on, all
 // Print/Invoice output sorts items by the inventory print sequence.
 const PRINT_INV_ORDER_KEY = 'printInventoryOrder';
@@ -1042,7 +1065,8 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '<table class="addrs"><tr>' +
     '<td><div class="addr-wrap"><div class="addr-vlbl">BILL TO</div><div class="addr-body">' + (billBlock || '&nbsp;') + '</div></div></td>' +
     '<td class="shipcol"><div class="addr-wrap"><div class="addr-vlbl">SHIP TO</div><div class="addr-body">' + (shipBlock || '&nbsp;') + '</div></div></td></tr></table>' +
-    '<div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">' + (esc(poNumber) || '&nbsp;') + '</td></tr></table></div>';
+    '<div class="pobox"><table><tr><td class="lbl">PO #:</td><td class="val">' + (esc(poNumber) || '&nbsp;') + '</td></tr></table></div>' +
+    (getShowNotesOnInvoice() && order.notes ? '<div class="notesbox"><span class="notes-lbl">Notes:</span> ' + esc(order.notes) + '</div>' : '');
 
   const TOT =
     '<table class="totals"><tr>' +
@@ -1107,6 +1131,8 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
     '.pobox table { border-collapse: collapse; }' +
     '.pobox td.lbl { border: 1px solid #000; font-weight: bold; padding: 8px 18px; font-size: 15px; text-align: center; }' +
     '.pobox td.val { border: 1px solid #000; padding: 8px 90px; font-size: 17px; font-weight: bold; text-align: center; }' +
+    '.notesbox { margin: 0 0 14px; padding: 8px 12px; border: 1px solid #000; font-size: 13px; white-space: pre-wrap; }' +
+    '.notes-lbl { font-weight: bold; }' +
     '.colhdr th { border-bottom: 1px solid #000; text-align: left; font-size: 13px; padding: 4px 4px 3px; font-weight: normal; }' +
     '.colhdr th.r { text-align: right; } .colhdr th.ctr { text-align: center; }' +
     'tbody td { padding: 2px 4px; font-size: 12.5px; vertical-align: middle; line-height: 1.2; }' +
@@ -6356,6 +6382,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   const allCustList = (customersAll && customersAll.length) ? customersAll : customers;
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
+  const [showNotesOnInvoice, setShowNotesOnInvoice] = useShowNotesOnInvoice();
   const [openId, setOpenId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [iifBusyId, setIifBusyId] = useState(null);
@@ -6674,6 +6701,10 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        <label style={officeStyles.checkboxLabel} title="When on, an order's notes print on its invoice below the PO # box">
+          <input type="checkbox" checked={showNotesOnInvoice} onChange={e => setShowNotesOnInvoice(e.target.checked)} />
+          Show notes on invoice
+        </label>
         {activeScope && (
           <button
             style={{ ...officeStyles.primarySmallBtn, ...(batchExportable.length === 0 || batchBusy ? officeStyles.smallBtnDisabled : {}) }}
