@@ -5690,7 +5690,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
-        {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} />}
+        {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
         {section === 'taiyoout' && <OfficePodUploads />}
       </div>
@@ -7022,6 +7022,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [counts, setCounts] = useState({}); // itemId -> typed count
   const [countBusy, setCountBusy] = useState(false);
   const [countSaved, setCountSaved] = useState({}); // itemId -> true after saved
+  // After a manual stock edit (physical count, return/rejection put back into
+  // inventory, etc.), see if any short-shipped order for this item can now
+  // ship more. Accumulates across a counting session rather than replacing.
+  const [fulfillableAlerts, setFulfillableAlerts] = useState([]);
   async function applyCount(item) {
     const v = counts[item.id];
     const baseOnHand = item.onHand != null ? item.onHand : item.stock;
@@ -7031,6 +7035,12 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       await apiPatch(`/items/${encodeURIComponent(item.id)}`, { stock: Number(v), reason: 'Physical count', changedBy: getSubmitterName() || undefined });
       setCountSaved(s => ({ ...s, [item.id]: true }));
       await onRefresh();
+      if (Number(v) > baseOnHand) {
+        try {
+          const { flagged } = await apiGet(`/orders/short-shipped-fulfillable?itemIds=${encodeURIComponent(item.id)}`);
+          if (flagged && flagged.length) setFulfillableAlerts(prev => [...prev, ...flagged]);
+        } catch { /* non-critical */ }
+      }
     } catch { /* ignore */ }
     finally { setCountBusy(false); }
   }
@@ -7554,6 +7564,21 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         )}
         <div style={officeStyles.countPill}>{filtered.length} item{filtered.length === 1 ? '' : 's'}</div>
       </div>
+
+      {fulfillableAlerts.length > 0 && (
+        <div style={{ marginBottom: 14, background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 10, padding: 14, maxWidth: 640 }}>
+          <div style={{ fontWeight: 700, fontSize: 13.5, color: '#2B5D50', marginBottom: 6 }}>
+            This stock can cover {fulfillableAlerts.length} previously short-shipped order{fulfillableAlerts.length === 1 ? '' : 's'}:
+          </div>
+          {fulfillableAlerts.map((f, i) => (
+            <div key={i} style={{ fontSize: 12.5, color: '#5B6058', marginBottom: 2 }}>
+              #{f.invoiceNumber} · {f.customer} · {f.itemName}: can now ship +{f.fulfillableNow} more
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 6 }}>See "Orders that can now ship more" in Reports, or edit each order directly to adjust it.</div>
+          <button style={{ ...officeStyles.smallBtn, marginTop: 8 }} onClick={() => setFulfillableAlerts([])}>Dismiss</button>
+        </div>
+      )}
 
       {importResult && (
         <div style={importResult.error ? officeStyles.importBannerError : officeStyles.importBanner}>
@@ -8933,6 +8958,7 @@ const REPORT_LIST = [
   { id: 'taiyo-fee', name: 'Taiyo 6%', desc: 'Total net cost of everything sold in a period, by invoice, and the 6% handling fee owed to Taiyo on it.' },
   { id: 'sales-by-person', name: 'Sales by person', desc: 'Total order dollars submitted by each person, over a date range you choose.' },
   { id: 'pricechecks', name: 'Price Checks', desc: 'Competitive retail prices scanned in the field, grouped by store.' },
+  { id: 'fulfillable-shortfalls', name: 'Orders that can now ship more', desc: "Short-shipped orders (not yet delivered/processed) where the item has stock available again — from a PO, a count, or a return." },
   // Add more reports here as they\u2019re built.
 ];
 // Format a date value from a QuickBooks/Excel export. Handles Excel serial-date
@@ -9443,6 +9469,83 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// Short-shipped orders (not yet delivered/processed) where the item has
+// stock available again to (at least partially) fulfill the original ask —
+// whether that stock came from a PO receipt, a physical count, or a retail
+// return/rejection put back into inventory.
+function FulfillableShortfallsReport({ onBack, onEditOrder = null, orders = [] }) {
+  const [flagged, setFlagged] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function run() {
+    setBusy(true); setErr('');
+    try { setFlagged((await apiGet('/orders/short-shipped-fulfillable')).flagged); }
+    catch (e) { setErr(e.message || 'Could not run this check.'); }
+    finally { setBusy(false); }
+  }
+  useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <button style={repStyles.backBtn} onClick={onBack}>← Reports</button>
+        <div style={officeStyles.sectionTitle}>Orders that can now ship more</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
+        Orders that were short-shipped for lack of stock, where the item now has enough available again to (at least partially) cover the original ask — from a PO coming in, a physical count, or a retail return/rejection put back into inventory. Only orders not yet delivered or processed are checked, since those are the ones still realistically actionable. When more than one such order needs the same item, the one due soonest gets first claim on the available stock.
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={run} disabled={busy}>{busy ? 'Checking…' : '↻ Refresh'}</button>
+      </div>
+      {err && <div style={{ color: '#B5493B', padding: 8 }}>{err}</div>}
+      {flagged && (
+        <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead><tr>
+              <th style={repStyles.th}>Invoice</th>
+              <th style={repStyles.th}>Delivery</th>
+              <th style={repStyles.th}>Customer</th>
+              <th style={repStyles.th}>Item</th>
+              <th style={{ ...repStyles.th, textAlign: 'right' }}>Shipping now</th>
+              <th style={{ ...repStyles.th, textAlign: 'right' }}>Originally asked</th>
+              <th style={{ ...repStyles.th, textAlign: 'right' }}>Can ship now</th>
+              <th style={repStyles.th}></th>
+            </tr></thead>
+            <tbody>
+              {flagged.map((f, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                  <td style={repStyles.tdItem}>#{f.invoiceNumber}</td>
+                  <td style={repStyles.tdItem}>{formatDate(f.deliveryDate)}</td>
+                  <td style={repStyles.tdItem}>{f.customer}</td>
+                  <td style={repStyles.tdItem}>{f.brand} — {f.itemName}</td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{f.qty}</td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{f.requestedQty}</td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: '#2B5D50' }}>
+                    +{f.fulfillableNow}{f.fulfillableNow < f.shortfall ? ' (partial)' : ''}
+                  </td>
+                  <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                    {onEditOrder && (
+                      <button style={officeStyles.smallBtn} onClick={() => {
+                        const full = orders.find(o => o.id === f.orderId);
+                        if (full) onEditOrder(full);
+                        else window.alert("Couldn't find this order — try refreshing the page.");
+                      }}>Edit order</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {flagged.length === 0 && (
+                <tr><td colSpan={8} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>Nothing to flag right now.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -11218,6 +11321,9 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
   const [editExpected, setEditExpected] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [saveErr, setSaveErr] = useState('');
+  // After receiving stock, check whether any short-shipped order (not yet
+  // delivered/processed) for an item on this PO can now ship more.
+  const [fulfillableAlert, setFulfillableAlert] = useState(null); // null = not checked; [] = checked, nothing to flag; [...] = flagged
   // Line-level editing (Received/Short/Damaged): values stay read-only text
   // until "Edit" is pressed, then become inputs holding a local draft only —
   // nothing is sent until the person reviews a preview of every change and
@@ -11272,6 +11378,15 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
       await apiPost(`/purchase-orders/${poId}/receive`, body);
       setRecv({});
       await load(); await onChanged();
+      // Now that stock came in, see if any short-shipped order for an item
+      // on this PO can ship more.
+      try {
+        const itemIds = [...new Set((po.lines || []).map(l => l.itemId))];
+        if (itemIds.length) {
+          const { flagged } = await apiGet(`/orders/short-shipped-fulfillable?itemIds=${itemIds.map(encodeURIComponent).join(',')}`);
+          setFulfillableAlert(flagged || []);
+        }
+      } catch { /* non-critical — don't block on this */ }
     } catch { /* ignore */ }
     finally { setBusy(false); }
   }
@@ -11557,6 +11672,20 @@ function PurchaseOrderDetail({ poId, items, onBack, onChanged }) {
           <button style={officeStyles.smallBtn} onClick={() => receive(true)} disabled={busy}>Receive all ({outstanding})</button>
           <button style={{ ...officeStyles.smallBtn, color: '#B5493B', borderColor: '#E6C6B4' }} onClick={startCloseShort} disabled={busy} title="Mark the PO done and record the outstanding quantity as short and/or damaged">Close short ({outstanding})</button>
           <span style={{ fontSize: 12.5, color: '#8A8F87' }}>Enter how many <b>cases</b> arrived — items with inners auto-convert to boxes. Stock counts toward on-hand as of the received date.</span>
+        </div>
+      )}
+      {fulfillableAlert && fulfillableAlert.length > 0 && (
+        <div style={{ marginTop: 14, background: '#EAF1EE', border: '1px solid #C4DDD2', borderRadius: 10, padding: 14, maxWidth: 640 }}>
+          <div style={{ fontWeight: 700, fontSize: 13.5, color: '#2B5D50', marginBottom: 6 }}>
+            This stock can cover {fulfillableAlert.length} previously short-shipped order{fulfillableAlert.length === 1 ? '' : 's'}:
+          </div>
+          {fulfillableAlert.map((f, i) => (
+            <div key={i} style={{ fontSize: 12.5, color: '#5B6058', marginBottom: 2 }}>
+              #{f.invoiceNumber} · {f.customer} · {f.itemName}: can now ship +{f.fulfillableNow} more
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: '#8A8F87', marginTop: 6 }}>See "Orders that can now ship more" in Reports, or edit each order directly to adjust it.</div>
+          <button style={{ ...officeStyles.smallBtn, marginTop: 8 }} onClick={() => setFulfillableAlert(null)}>Dismiss</button>
         </div>
       )}
       {closingShort && (
@@ -11905,7 +12034,7 @@ function StockChangesReport({ onBack }) {
   );
 }
 
-function OfficeReports({ items = [], customers = [], orders = [], printSequence = [], onRefresh = async () => {} } = {}) {
+function OfficeReports({ items = [], customers = [], orders = [], printSequence = [], onRefresh = async () => {}, onEditOrder = null } = {}) {
   const [active, setActive] = useState(null);
   if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
   if (active === 'margin') return <MarginReport onBack={() => setActive(null)} />;
@@ -11921,6 +12050,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   if (active === 'pricechecks') return <OfficePriceChecks onBack={() => setActive(null)} />;
+  if (active === 'fulfillable-shortfalls') return <FulfillableShortfallsReport onBack={() => setActive(null)} onEditOrder={onEditOrder} orders={orders} />;
   return (
     <div>
       <div style={officeStyles.sectionHeader}>
