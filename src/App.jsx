@@ -3273,14 +3273,23 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // if it will definitely ship) — it splits into what will actually ship
   // (qty, capped to what's available) and what was requested (requestedQty,
   // the full ask), so nothing is lost and it's visible on the order. Applies
-  // on desktop too: office staff can already see an item's stock/out-of-stock
-  // status right on the row, so a typed amount beyond that is a deliberate
-  // choice worth tracking the same way, not a reason to skip it. Exception:
-  // a non-inventory order's lines never actually draw from tracked stock at
-  // all, so there's nothing to cap against — the full typed amount always
-  // "ships" as far as this order is concerned.
+  // on desktop too, for a TODAY-or-earlier delivery date: office staff can
+  // already see an item's stock/out-of-stock status right on the row, so a
+  // typed amount beyond what's available right now is a genuine, live
+  // shortfall worth tracking the same way, not a reason to skip it.
+  // Exceptions:
+  // - A non-inventory order's lines never actually draw from tracked stock
+  //   at all, so there's nothing to cap against — the full typed amount
+  //   always "ships" as far as this order is concerned.
+  // - A desktop order for a FUTURE delivery date isn't a live shortfall —
+  //   stock may well arrive (a PO, a return) before that date — so it isn't
+  //   capped or split; the full typed amount is simply what's ordered, and
+  //   on-hand can go negative rather than losing the real ask. Mobile always
+  //   caps regardless of date, since a mobile order is placed by someone
+  //   without the same visibility into what's coming.
   function splitQty(id, requested) {
     if (nonInventory) return { qty: requested, requestedQty: undefined };
+    if (desktop && deliveryDate > todayISODate()) return { qty: requested, requestedQty: undefined };
     const item = itemById[id];
     const maxQty = Math.max(0, (item && item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0));
     const shippable = Math.min(requested, maxQty);
