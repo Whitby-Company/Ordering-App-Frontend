@@ -9348,6 +9348,7 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
   const [showCosts, setShowCosts] = useState(false);
   const [costFilter, setCostFilter] = useState('all'); // 'all' | 'missing'
   const [costQuery, setCostQuery] = useState('');
+  const [invoiceQuery, setInvoiceQuery] = useState('');
 
   const activeItems = useMemo(() => items.filter(i => i.active !== 0), [items]);
   const costRows = useMemo(() => {
@@ -9388,6 +9389,20 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
       setExcludeBusyId(null);
     }
   }
+
+  // Search only narrows which rows are VISIBLE in the table (e.g. to find and
+  // exclude a specific invoice more easily) -- it never changes the grand
+  // totals above, which always reflect the whole period.
+  const shownInvoices = useMemo(() => {
+    if (!data) return [];
+    const q = invoiceQuery.trim().toLowerCase();
+    if (!q) return data.invoices;
+    return data.invoices.filter(inv =>
+      String(inv.invoiceNumber).includes(q) ||
+      (inv.poNumber || '').toLowerCase().includes(q) ||
+      (inv.customer || '').toLowerCase().includes(q)
+    );
+  }, [data, invoiceQuery]);
 
   function exportCsv() {
     if (!data) return;
@@ -9441,21 +9456,33 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
             </div>
           )}
 
+          <div style={{ marginBottom: 10 }}>
+            <input
+              style={{ ...fld, width: 280 }}
+              placeholder="Search invoice #, PO #, or customer…"
+              value={invoiceQuery}
+              onChange={e => setInvoiceQuery(e.target.value)}
+            />
+            {invoiceQuery && <button style={{ ...officeStyles.smallBtn, marginLeft: 8 }} onClick={() => setInvoiceQuery('')}>Clear</button>}
+          </div>
+
           <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead><tr>
-                <th style={repStyles.th}>Invoice</th>
-                <th style={repStyles.th}>Delivery</th>
-                <th style={repStyles.th}>Customer</th>
-                <th style={{ ...repStyles.th, textAlign: 'right' }}>Net cost</th>
-                <th style={{ ...repStyles.th, textAlign: 'right' }}>Fee owed (6%)</th>
-                <th style={repStyles.th}></th>
+                <th style={{ ...repStyles.th, textAlign: 'center' }}>Invoice</th>
+                <th style={{ ...repStyles.th, textAlign: 'center' }}>Delivery</th>
+                <th style={{ ...repStyles.th, textAlign: 'center' }}>PO #</th>
+                <th style={{ ...repStyles.th, textAlign: 'center' }}>Customer</th>
+                <th style={{ ...repStyles.th, textAlign: 'center' }}>Net cost</th>
+                <th style={{ ...repStyles.th, textAlign: 'center' }}>Fee owed (6%)</th>
+                <th style={{ ...repStyles.th, textAlign: 'center' }}></th>
               </tr></thead>
               <tbody>
-                {data.invoices.map(inv => (
+                {shownInvoices.map(inv => (
                   <tr key={inv.orderId} style={{ borderBottom: '1px solid #EFEDE3', opacity: inv.taiyoFeeExcluded ? 0.55 : 1 }}>
                     <td style={repStyles.tdItem}>#{inv.invoiceNumber}</td>
                     <td style={repStyles.tdItem}>{formatDate(inv.deliveryDate)}</td>
+                    <td style={repStyles.tdItem}>{inv.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                     <td style={repStyles.tdItem}>{inv.customer}</td>
                     <td style={{ ...repStyles.tdItem, textAlign: 'right', textDecoration: inv.taiyoFeeExcluded ? 'line-through' : 'none' }}>{formatMoney(inv.netCostTotal)}</td>
                     <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: inv.taiyoFeeExcluded ? '#8A8F87' : '#2B5D50', textDecoration: inv.taiyoFeeExcluded ? 'line-through' : 'none' }}>{formatMoney(inv.feeOwed)}</td>
@@ -9472,7 +9499,10 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
                   </tr>
                 ))}
                 {data.invoices.length === 0 && (
-                  <tr><td colSpan={6} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>No invoices in this period.</td></tr>
+                  <tr><td colSpan={7} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>No invoices in this period.</td></tr>
+                )}
+                {data.invoices.length > 0 && shownInvoices.length === 0 && (
+                  <tr><td colSpan={7} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>No invoices match "{invoiceQuery}".</td></tr>
                 )}
               </tbody>
             </table>
