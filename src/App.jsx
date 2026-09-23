@@ -3181,14 +3181,14 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     return map;
   }, [items, isEdit, editOrder]);
 
-  // On mobile, ordering more than what's actually available right now doesn't
-  // silently cap (losing track of what was really wanted) or go through
-  // unlimited (as if it will definitely ship) — it splits into what will
-  // actually ship (qty, capped to what's available) and what was requested
-  // (requestedQty, the full ask), so nothing is lost and it's visible on the
-  // order. Desktop keeps ordering ahead of today's availability exactly as
-  // before (no cap, no split) since that's normal there — a future-dated
-  // order against stock that hasn't arrived yet isn't a shortfall.
+  // Ordering more than what's actually available right now doesn't silently
+  // cap (losing track of what was really wanted) or go through unlimited (as
+  // if it will definitely ship) — it splits into what will actually ship
+  // (qty, capped to what's available) and what was requested (requestedQty,
+  // the full ask), so nothing is lost and it's visible on the order. Applies
+  // on desktop too: office staff can already see an item's stock/out-of-stock
+  // status right on the row, so a typed amount beyond that is a deliberate
+  // choice worth tracking the same way, not a reason to skip it.
   function splitQty(id, requested) {
     const item = itemById[id];
     const maxQty = Math.max(0, (item && item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0));
@@ -3202,14 +3202,6 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     const requested = Math.max(0, qty);
     if (requested === 0) {
       setOrder(prev => prev.filter(o => o.id !== id));
-      return;
-    }
-    if (desktop) {
-      setOrder(prev => {
-        const exists = prev.find(o => o.id === id);
-        if (exists) return prev.map(o => (o.id === id ? { ...o, qty: requested, requestedQty: undefined } : o));
-        return [...prev, { id, qty: requested }];
-      });
       return;
     }
     const split = splitQty(id, requested);
@@ -3227,14 +3219,6 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     const item = itemById[id];
     if (!item) return;
     const requested = Math.max(0, qty);
-    if (desktop) {
-      setOrder(prev => {
-        const exists = prev.find(o => o.id === id);
-        if (!exists) return [...prev, { id, qty: requested }];
-        return prev.map(o => (o.id === id ? { ...o, qty: requested, requestedQty: undefined } : o));
-      });
-      return;
-    }
     const split = splitQty(id, requested);
     setOrder(prev => {
       const exists = prev.find(o => o.id === id);
@@ -10026,9 +10010,9 @@ function InvoiceMatchReport({ onBack, items = [], customers = [], orders: allOrd
       if (codeKey in qbByCode && Math.abs(qbByCode[codeKey] - curEaches) >= 0.001) {
         const newQty = Math.round((qbByCode[codeKey] / pack) * 1000) / 1000; // eaches -> unit qty
         changes++;
-        return { itemId: l.id, qty: newQty, unit: l.unit, price: l.price };
+        return { itemId: l.id, qty: newQty, requestedQty: l.requestedQty, unit: l.unit, price: l.price };
       }
-      return { itemId: l.id, qty: l.qty, unit: l.unit, price: l.price };
+      return { itemId: l.id, qty: l.qty, requestedQty: l.requestedQty, unit: l.unit, price: l.price };
     });
     if (!changes) { setErr('Nothing to change — app already matches QB on quantities.'); return; }
     if (!window.confirm(`Update ${changes} line(s) on order #${o.orderId} to match QuickBooks quantities? This changes the order and its stock.`)) return;
