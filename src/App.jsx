@@ -6909,7 +6909,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                     </td>
                     <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>
                       {o.customer}
-                      {o.nonInventory && (
+                      {!!o.nonInventory && (
                         <span
                           style={{ marginLeft: 6, display: 'inline-block', fontSize: 10, fontWeight: 700, color: '#8A6D1B', background: '#FBF3D9', border: '1px solid #E6D896', borderRadius: 20, padding: '1px 7px' }}
                           title="This order's stock is never physically received into the warehouse (e.g. drop-shipped) — it doesn't consume from or reduce on-hand/available"
