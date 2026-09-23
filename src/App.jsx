@@ -1005,14 +1005,19 @@ function printInvoice(order, customer, printSequence, items = [], opts = {}) {
       '<td class="c-price">' + money(priceShown) + '</td>' +
       '<td class="c-total">' + money(lineTotal(l, l.qty)) + '</td>' +
     '</tr>';
-    // Shipper "Contains below" sub-lines (from the item's `contains` list).
+    // Shipper "Contains below" sub-lines (from the item's `contains` list) —
+    // each listed quantity is defined per single box of the parent item, so
+    // when more than one box ships on this line, the printed contents scale
+    // up with it (e.g. 8ea of a flavor per tower, 2 towers ordered -> 16ea).
     const contains = (itemById[l.id] && itemById[l.id].contains) || [];
     if (Array.isArray(contains) && contains.length) {
+      const boxesOfParent = zeroQty ? 0 : (isCase ? cases * csForEach : cases);
       const leadEmpty = '<td></td><td></td>' + (allCases ? '' : '<td></td>');
       row += '<tr class="containrow">' + leadEmpty +
         '<td class="c-desc"><div class="contains-lbl">Contains below:</div></td><td></td><td></td><td></td><td></td></tr>';
       for (const x of contains) {
-        const label = (x.qty ? x.qty + 'ea ' : '') + esc(x.name || '');
+        const totalQty = (Number(x.qty) || 0) * boxesOfParent;
+        const label = (totalQty ? totalQty + 'ea ' : '') + esc(x.name || '');
         const bc = hideUpc ? '' : barcodeSVG(x.upc);
         const upcCellC = hideUpc ? esc(x.upc || '') : (bc ? '<div class="barcode">' + bc + '</div>' : esc(x.upc || ''));
         row += '<tr class="containrow">' +
