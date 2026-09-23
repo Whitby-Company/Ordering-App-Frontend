@@ -2942,6 +2942,11 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   }, []);
   // Effective per-each price for an item at a given unit for the selected customer.
   const [allCases, setAllCases] = useState(false);
+  // Non-inventory: this order's lines never actually get physically received
+  // into tracked stock (e.g. drop-shipped straight to the customer), so
+  // quantities on it shouldn't be capped by — or count against — on-hand/
+  // available at all. The invoice itself is unaffected either way.
+  const [nonInventory, setNonInventory] = useState(isEdit ? !!editOrder.nonInventory : false);
   const priceOf = React.useCallback((item, unit, orderAllCases) => {
     // Prices are per-EACH by default (even for case-unit lines). Only when
     // the WHOLE order (every line actually being shipped) is in case units
@@ -3270,8 +3275,12 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // the full ask), so nothing is lost and it's visible on the order. Applies
   // on desktop too: office staff can already see an item's stock/out-of-stock
   // status right on the row, so a typed amount beyond that is a deliberate
-  // choice worth tracking the same way, not a reason to skip it.
+  // choice worth tracking the same way, not a reason to skip it. Exception:
+  // a non-inventory order's lines never actually draw from tracked stock at
+  // all, so there's nothing to cap against — the full typed amount always
+  // "ships" as far as this order is concerned.
   function splitQty(id, requested) {
+    if (nonInventory) return { qty: requested, requestedQty: undefined };
     const item = itemById[id];
     const maxQty = Math.max(0, (item && item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0));
     const shippable = Math.min(requested, maxQty);
@@ -3439,6 +3448,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
         lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, requestedQty: l.requestedQty, unit: l.unit, price: l.price })),
         poNumber: poEdited ? (poNumber || null) : null,
         invoiceNumber: invEdited ? (invNumber || null) : null,
+        nonInventory,
       });
       await onOrderSubmitted();
       if (onClose) onClose();
@@ -3536,6 +3546,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, requestedQty: l.requestedQty, unit: l.unit, price: l.price })),
       poNumber: poEdited ? (poNumber || null) : null,
       invoiceNumber: invEdited ? (invNumber || null) : null,
+      nonInventory,
       force,
     });
     try {
@@ -3857,6 +3868,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             title="Order this whole order in cases (items with a case size). Items without a case size stay as boxes."
           >
             {allCases ? 'All cases ✓' : 'All cases'}
+          </button>
+        )}
+        {desktop && (
+          <button
+            style={{ ...styles.allItemsChip, ...(nonInventory ? styles.allItemsChipOn : {}) }}
+            onClick={() => setNonInventory(v => !v)}
+            title="For orders whose stock is never actually received into the warehouse (e.g. drop-shipped straight to the customer) — quantities on this order won't be capped by, or reduce, on-hand/available stock. The invoice itself is unaffected."
+          >
+            {nonInventory ? 'Non-inventory ✓' : 'Non-inventory'}
           </button>
         )}
       </div>
@@ -6877,7 +6897,17 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
                       {formatDateTime(o.submittedAt)}
                       {o.submittedBy && <div style={{ fontSize: 11, color: '#8A8F87' }}>by {String(o.submittedBy).split(/\s*,\s*|\s+per\s+/i)[0].trim()}</div>}
                     </td>
-                    <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>{o.customer}</td>
+                    <td style={{ ...officeStyles.td, fontWeight: 700 }} onClick={() => setOpenId(isOpen ? null : o.id)}>
+                      {o.customer}
+                      {o.nonInventory && (
+                        <span
+                          style={{ marginLeft: 6, display: 'inline-block', fontSize: 10, fontWeight: 700, color: '#8A6D1B', background: '#FBF3D9', border: '1px solid #E6D896', borderRadius: 20, padding: '1px 7px' }}
+                          title="This order's stock is never physically received into the warehouse (e.g. drop-shipped) — it doesn't consume from or reduce on-hand/available"
+                        >
+                          non-inventory
+                        </span>
+                      )}
+                    </td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? <span style={{ color: '#B9BDB2' }}>—</span> : <InvoiceNumberCell order={o} onSaved={onRefresh} />}</td>
                     <td style={officeStyles.td} onClick={() => setOpenId(isOpen ? null : o.id)}>{formatDate(o.deliveryDate)}</td>
                     <td style={officeStyles.td}>{o.status === 'pending' ? (o.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>) : <PoNumberCell order={o} customer={allCustList.find(c => c.id === o.customerId)} onSaved={onRefresh} />}</td>
