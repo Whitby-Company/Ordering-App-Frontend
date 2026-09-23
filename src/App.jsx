@@ -5706,7 +5706,16 @@ function parseWhitbyPO(text) {
   const dateM = flat.match(/ORDER DATE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   const supM = flat.match(/Representing:?\s*([A-Za-z0-9 .&]+?)\s+(?:Hawken|Bill|Ship|P\.?O\.?)/i);
   const rows = [];
-  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z][0-9A-Za-z*.\-\/]{1,14})\s+(\d+(?:\/[\d.]+)+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?=\s|$)/g;
+  // The amount column is sometimes "** MP **" (market price, typically paired
+  // with a 0 qty placeholder line) instead of a dollar figure. Accepting that
+  // as an alternative right where a number would go matters a lot: without
+  // it, that line has no valid place for the lazy description group to stop,
+  // so the regex is forced to keep expanding across the NEXT line's item
+  // code, pack, and description too, swallowing that next line whole and
+  // silently discarding its quantity. With the alternative in place, every
+  // line -- MP or normal -- has a nearby, valid stopping point right after
+  // its own price, so no line can bleed into the next one.
+  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z][0-9A-Za-z*.\-\/]{1,14})\s+(\d+(?:\/[\d.]+)+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+(?:([\d,]+\.\d{2})|\*+\s*MP\s*\*+)(?=\s|$)/g;
   let m;
   while ((m = lineRe.exec(flat)) !== null) {
     const [, qty, code, pack, desc, price] = m;
