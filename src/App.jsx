@@ -694,43 +694,62 @@ function buildItemHistory(itemId, currentStock = 0, receipts = [], manualLog = [
       status: 'submitted',
     });
   }
-  // Sort by date (newest first); same-day entries break ties by whichever
-  // timestamp is available (manual edits and orders have one; PO receipts
-  // only have a business date, so they sort just after a same-day manual
-  // edit — consistent with the backend now counting a same-day receipt as
-  // happening at/after a same-day baseline).
-  const sortKey = r => r.changedAt || r.submittedAt || (r.date ? `${r.date}T12:00:00` : '');
-  rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || sortKey(b).localeCompare(sortKey(a)) || ((b.orderId || 0) - (a.orderId || 0)));
   const today = todayISODate();
-  // Split at today: entries dated <= today have already happened (affect current
-  // on-hand); entries dated > today are future (haven't happened yet).
-  // Past (newest first): the most recent past entry leaves on-hand at
-  // currentStock; each older entry = current − its delta (reverse the change) —
-  // EXCEPT a manual entry backed by a REAL baseline (a genuine physical count
-  // or direct stock edit), which is a known-true snapshot: it shows its own
-  // recorded newStock, and everything older than it continues from its
-  // recorded oldStock instead of an accumulated reversal. A manual log entry
-  // with no matching baseline (e.g. the bulk "Inventory redo" tool, which
-  // logs a change but doesn't reset the backend's actual calculation) is NOT
-  // a real reset point — treating it as one would show a jump that doesn't
-  // match how on-hand is actually computed, so it's reversed like any other
-  // delta instead. A real baseline with no known "before" value (a
-  // synthetic row, or a baseline whose own before-value wasn't recorded) is
-  // the earliest known-true point — nothing older than it can be reliably
-  // computed, so everything before it shows as unknown rather than a
-  // fabricated number.
-  let afterPast = Number(currentStock) || 0;
-  for (const r of rows) {
-    if (r.status === 'pending') { r.stockAfter = null; continue; }
-    if ((r.date || '') > today) continue;
-    if (r.kind === 'manual' && !r.isRealBaseline) { r.stockAfter = null; continue; }
-    if (afterPast == null) { r.stockAfter = null; continue; }
-    if (r.kind === 'manual' && r.isRealBaseline) {
-      r.stockAfter = r.newStock;
-      afterPast = r.oldStock; // null when unknown — stops the walk here
-    } else {
+  // Find the latest real baseline (a genuine physical count or direct stock
+  // edit) — matching the backend's own computeStock(), which always anchors
+  // to the single most recent baseline, regardless of what's older.
+  const baselineRows = rows.filter(r => r.kind === 'manual' && r.isRealBaseline);
+  const sortKey = r => r.changedAt || r.submittedAt || (r.date ? `${r.date}T12:00:00` : '');
+  baselineRows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || sortKey(b).localeCompare(sortKey(a)));
+  const baseline = baselineRows[0] || null;
+
+  let onHandMismatch = false;
+  let computedOnHand = null;
+  if (baseline) {
+    // Forward from the baseline: the events themselves are the source of
+    // truth here, not the cached on-hand — so replay every receipt/shipment
+    // dated on/after the baseline, oldest first, the same way the backend's
+    // computeStock() does, and see where it actually lands.
+    const baseDate = baseline.date;
+    const chain = rows.filter(r => {
+      if (r.status === 'pending') return false;
+      if ((r.date || '') > today) return false; // future handled separately below
+      if (r === baseline) return false;
+      if ((r.date || '') < baseDate) return false; // older than the baseline: not part of the active chain
+      if (r.kind === 'manual' && !r.isRealBaseline) return false; // doesn't feed the real calculation
+      return true;
+    }).sort((a, b) => (a.date || '').localeCompare(b.date || '') || sortKey(a).localeCompare(sortKey(b)) || ((a.orderId || 0) - (b.orderId || 0)));
+    let running = Number(baseline.newStock) || 0;
+    baseline.stockAfter = running;
+    for (const r of chain) {
+      running += r.delta;
+      r.stockAfter = running;
+    }
+    computedOnHand = running;
+    onHandMismatch = Math.round(computedOnHand) !== Math.round(Number(currentStock) || 0);
+    // Anything older than the baseline (or a non-baseline manual edit) isn't
+    // part of the active chain — shown for the record, not computed.
+    for (const r of rows) {
+      if (r.stockAfter !== undefined) continue;
+      if (r.status === 'pending') { r.stockAfter = null; continue; }
+      if ((r.date || '') > today) continue; // future rows handled below
+      r.stockAfter = null;
+    }
+  } else {
+    // No real baseline exists for this item at all — there's no trustworthy
+    // anchor to compute forward from (the legacy fallback baseline is itself
+    // just the cached on-hand, which can drift for exactly this kind of
+    // item). Fall back to walking backward from today's cached value, same
+    // as before, but the missing-baseline flag below calls this out so it
+    // reads as "treat with caution" rather than a confirmed-correct number.
+    let afterPast = Number(currentStock) || 0;
+    for (const r of rows) {
+      if (r.status === 'pending') { r.stockAfter = null; continue; }
+      if ((r.date || '') > today) continue;
+      if (r.kind === 'manual' && !r.isRealBaseline) { r.stockAfter = null; continue; }
+      if (afterPast == null) { r.stockAfter = null; continue; }
       r.stockAfter = afterPast;
-      afterPast = afterPast - r.delta; // before this entry = after − its change
+      afterPast = afterPast - r.delta;
     }
   }
   // Future (oldest-future first): each future entry moves on-hand from current.
@@ -745,7 +764,12 @@ function buildItemHistory(itemId, currentStock = 0, receipts = [], manualLog = [
   const consumedBoxes = orderRows.reduce((s, r) => s + r.boxesConsumed, 0);
   const consumedEaches = orderRows.reduce((s, r) => s + (r.eaches || 0), 0);
   const pendingBoxes = rows.filter(r => r.kind === 'order' && r.status === 'pending').reduce((s, r) => s + r.boxesConsumed, 0);
-  return { rows, consumedBoxes, consumedEaches, pendingBoxes, caseSize };
+  // Newest-first for display, regardless of which direction the walk above went.
+  rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || sortKey(b).localeCompare(sortKey(a)) || ((b.orderId || 0) - (a.orderId || 0)));
+  return {
+    rows, consumedBoxes, consumedEaches, pendingBoxes, caseSize,
+    hasBaseline: !!baseline, computedOnHand, onHandMismatch,
+  };
 }
 
 // Build a printable invoice that matches the Hawken Group template, using the
@@ -1539,29 +1563,43 @@ function WarehouseInventoryTab({ items, orders, S }) {
                         {hist && hist !== 'loading' && hist !== 'error' && (() => {
                           const built = buildItemHistory(it.id, it.onHand, hist.purchaseOrders, hist.log, items, orders);
                           const rows = built.rows.slice(0, 30); // most recent 30 — this is a quick-reference view, not the full ledger
-                          return rows.length === 0 ? (
-                            <div style={{ padding: '12px 20px', color: '#8A8F87', fontStyle: 'italic' }}>No history yet.</div>
-                          ) : (
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                              <thead><tr style={{ background: '#FBFAF6' }}>
-                                <th style={{ ...S.th, padding: '6px 20px' }}>Date</th>
-                                <th style={{ ...S.th, padding: '6px 14px' }}>What happened</th>
-                                <th style={{ ...S.th, padding: '6px 14px', textAlign: 'right' }}>Change</th>
-                                <th style={{ ...S.th, padding: '6px 20px', textAlign: 'right' }}>Stock After</th>
-                              </tr></thead>
-                              <tbody>
-                                {rows.map((r, i) => (
-                                  <tr key={i}>
-                                    <td style={{ ...S.td, padding: '6px 20px' }}>{formatDate(r.deliveryDate || r.date)}</td>
-                                    <td style={{ ...S.td, padding: '6px 14px' }}>{describeRow(r)}</td>
-                                    <td style={{ ...S.td, padding: '6px 14px', textAlign: 'right', color: r.delta > 0 ? '#2B5D50' : r.delta < 0 ? '#B5493B' : '#8A8F87', fontWeight: 700 }}>
-                                      {r.delta == null ? '—' : (r.delta > 0 ? `+${r.delta}` : r.delta)}
-                                    </td>
-                                    <td style={{ ...S.td, padding: '6px 20px', textAlign: 'right', fontWeight: 700 }}>{r.stockAfter == null ? '—' : r.stockAfter}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          return (
+                            <div style={{ padding: '10px 20px 14px' }}>
+                              {built.onHandMismatch && (
+                                <div style={{ background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: '#B5493B', fontWeight: 700 }}>
+                                  ⚠ On-hand doesn't match its own history — the ledger computes {built.computedOnHand}, but stock shows {it.onHand}. Worth checking this item.
+                                </div>
+                              )}
+                              {!built.hasBaseline && (
+                                <div style={{ background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: '#8A6D1B' }}>
+                                  No physical count has ever been logged for this item — treat its history with extra caution.
+                                </div>
+                              )}
+                              {rows.length === 0 ? (
+                                <div style={{ color: '#8A8F87', fontStyle: 'italic' }}>No history yet.</div>
+                              ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                  <thead><tr style={{ background: '#FBFAF6' }}>
+                                    <th style={{ ...S.th, padding: '6px 0' }}>Date</th>
+                                    <th style={{ ...S.th, padding: '6px 14px' }}>What happened</th>
+                                    <th style={{ ...S.th, padding: '6px 14px', textAlign: 'right' }}>Change</th>
+                                    <th style={{ ...S.th, padding: '6px 0', textAlign: 'right' }}>Stock After</th>
+                                  </tr></thead>
+                                  <tbody>
+                                    {rows.map((r, i) => (
+                                      <tr key={i}>
+                                        <td style={{ ...S.td, padding: '6px 0' }}>{formatDate(r.deliveryDate || r.date)}</td>
+                                        <td style={{ ...S.td, padding: '6px 14px' }}>{describeRow(r)}</td>
+                                        <td style={{ ...S.td, padding: '6px 14px', textAlign: 'right', color: r.delta > 0 ? '#2B5D50' : r.delta < 0 ? '#B5493B' : '#8A8F87', fontWeight: 700 }}>
+                                          {r.delta == null ? '—' : (r.delta > 0 ? `+${r.delta}` : r.delta)}
+                                        </td>
+                                        <td style={{ ...S.td, padding: '6px 0', textAlign: 'right', fontWeight: 700 }}>{r.stockAfter == null ? '—' : r.stockAfter}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
                           );
                         })()}
                       </td>
@@ -7760,6 +7798,16 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                         <div style={officeStyles.itemHistoryEmpty}>This item hasn't been on any orders yet.</div>
                       ) : (
                         <div style={officeStyles.itemHistoryWrap}>
+                          {hist.onHandMismatch && (
+                            <div style={{ background: '#FBEEE7', border: '1px solid #E6C6B4', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: '#B5493B', fontWeight: 700 }}>
+                              ⚠ On-hand doesn't match its own history — the ledger computes {hist.computedOnHand}, but stock shows {anchorStock}. Worth checking this item.
+                            </div>
+                          )}
+                          {!hist.hasBaseline && (
+                            <div style={{ background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 13, color: '#8A6D1B' }}>
+                              No physical count has ever been logged for this item — its history can't be checked against a known-true starting point, so treat it with extra caution.
+                            </div>
+                          )}
                           <div style={officeStyles.itemHistorySummary}>
                             <span><strong>{hist.consumedBoxes}</strong> boxes out on submitted orders</span>
                             {hist.pendingBoxes > 0 && <span style={{ color: '#8A6D1B' }}>· {hist.pendingBoxes} boxes pending</span>}
