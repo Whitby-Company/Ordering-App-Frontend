@@ -722,7 +722,20 @@ function buildItemHistory(itemId, currentStock = 0, receipts = [], manualLog = [
   // edit) — matching the backend's own computeStock(), which always anchors
   // to the single most recent baseline, regardless of what's older.
   const baselineRows = rows.filter(r => r.kind === 'manual' && r.isRealBaseline);
-  const sortKey = r => r.changedAt || r.submittedAt || (r.date ? `${r.date}T12:00:00` : '');
+  // Same-day tie-break: rather than mixing timestamps that mean different
+  // things (a physical count's changedAt is when it was actually taken, but
+  // an order's submittedAt is when it was PLACED -- often days before its
+  // delivery date, and unrelated to when its stock effect actually happens
+  // on that date), rank by what KIND of event it is. A baseline/count is the
+  // day's starting truth (earliest); a PO receipt arrives next (midday); an
+  // order/shipment goes out last (latest) -- so a same-day count correctly
+  // shows beneath (older-positioned than) the order it precedes, with the
+  // running total reading in a sensible order top to bottom.
+  const sortKey = r => {
+    if (r.kind === 'manual') return `${r.date}T00:00:00.000`;
+    if (r.kind === 'po') return `${r.date}T12:00:00.000`;
+    return `${r.date}T18:00:00.000`;
+  };
   baselineRows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || sortKey(b).localeCompare(sortKey(a)));
   const baseline = baselineRows[0] || null;
 
