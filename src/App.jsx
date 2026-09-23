@@ -12168,7 +12168,7 @@ function StockChangesReport({ onBack }) {
 
 function OfficeReports({ items = [], customers = [], orders = [], printSequence = [], onRefresh = async () => {}, onEditOrder = null } = {}) {
   const [active, setActive] = useState(null);
-  if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} />;
+  if (active === 'sales-by-month') return <SalesByMonthReport onBack={() => setActive(null)} items={items} />;
   if (active === 'margin') return <MarginReport onBack={() => setActive(null)} />;
   if (active === 'order-margin') return <OrderMarginReport onBack={() => setActive(null)} />;
   if (active === 'stock-changes') return <StockChangesReport onBack={() => setActive(null)} />;
@@ -12210,7 +12210,7 @@ const reportPickStyles = {
 
 // Sales by month — pick a month range, choose the metric (dollars / quantity /
 // both), and see an items x months matrix with totals.
-function SalesByMonthReport({ onBack }) {
+function SalesByMonthReport({ onBack, items = [] }) {
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const sixAgo = (() => { const d = new Date(now.getFullYear(), now.getMonth() - 5, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
@@ -12218,14 +12218,21 @@ function SalesByMonthReport({ onBack }) {
   const [to, setTo] = useState(thisMonth);
   const [metric, setMetric] = useState('dollars'); // dollars | qty | both
   const [data, setData] = useState(null);
+  const [incomingDetail, setIncomingDetail] = useState({});
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+
+  const itemById = useMemo(() => { const m = {}; for (const it of items) m[it.id] = it; return m; }, [items]);
 
   async function run() {
     setLoading(true); setErr('');
     try {
-      const d = await apiGet(`/orders/sales-by-month?from=${from}&to=${to}`);
+      const [d, inc] = await Promise.all([
+        apiGet(`/orders/sales-by-month?from=${from}&to=${to}`),
+        apiGet('/purchase-orders/incoming-detail').catch(() => ({})),
+      ]);
       setData(d);
+      setIncomingDetail(inc || {});
     } catch (e) { setErr(e.message || 'Could not load the report'); }
     finally { setLoading(false); }
   }
@@ -12237,15 +12244,25 @@ function SalesByMonthReport({ onBack }) {
 
   function downloadCSV() {
     if (!data) return;
-    const cols = ['Item #', 'Item', 'Brand', ...data.months.map(monthLabel), 'Total'];
+    const cols = ['Item #', 'Item', 'Brand', 'On hand', 'Available', 'Incoming', 'Incoming date', ...data.months.map(monthLabel), 'Total', 'Avg/mo'];
     const lines = [cols];
     for (const it of data.items) {
-      const row = [displayCode(it.itemId), it.name, it.brand];
+      const stockIt = itemById[it.itemId];
+      const inc = incomingDetail[it.itemId];
+      const row = [
+        displayCode(it.itemId), it.name, it.brand,
+        stockIt && stockIt.onHand != null ? stockIt.onHand : '',
+        stockIt && stockIt.available != null ? stockIt.available : '',
+        inc ? inc.qty : '',
+        inc && inc.nextDate ? inc.nextDate : '',
+      ];
       for (const m of data.months) {
         const c = it.byMonth[m];
         row.push(metric === 'qty' ? (c ? c.qty : '') : (metric === 'both' ? (c ? `${c.qty} / $${c.dollars.toFixed(2)}` : '') : (c ? c.dollars.toFixed(2) : '')));
       }
+      const n = data.months.length || 1;
       row.push(metric === 'qty' ? it.totalQty : (metric === 'both' ? `${it.totalQty} / $${it.totalDollars.toFixed(2)}` : it.totalDollars.toFixed(2)));
+      row.push(metric === 'qty' ? Math.round(it.totalQty / n * 10) / 10 : (metric === 'both' ? `${Math.round(it.totalQty / n * 10) / 10} / $${(it.totalDollars / n).toFixed(2)}` : (it.totalDollars / n).toFixed(2)));
       lines.push(row);
     }
     const csv = lines.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -12255,6 +12272,7 @@ function SalesByMonthReport({ onBack }) {
   const grandByMonth = {};
   let grandTotalD = 0, grandTotalQ = 0;
   if (data) for (const it of data.items) { grandTotalD += it.totalDollars; grandTotalQ += it.totalQty; for (const m of data.months) { const c = it.byMonth[m]; if (c) { grandByMonth[m] = grandByMonth[m] || { qty: 0, dollars: 0 }; grandByMonth[m].qty += c.qty; grandByMonth[m].dollars += c.dollars; } } }
+  const numMonths = data ? (data.months.length || 1) : 1;
 
   const showD = metric !== 'qty', showQ = metric !== 'dollars';
   const cellText = c => {
@@ -12262,6 +12280,17 @@ function SalesByMonthReport({ onBack }) {
     if (metric === 'dollars') return cellDollars(c);
     if (metric === 'qty') return cellQty(c);
     return `${c.qty} · ${cellDollars(c)}`;
+  };
+  // Average per month across the selected range, same metric as the monthly cells.
+  const avgText = (totalQty, totalDollars) => {
+    if (metric === 'qty') return Math.round(totalQty / numMonths * 10) / 10;
+    if (metric === 'dollars') return `$${(totalDollars / numMonths).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    return `${Math.round(totalQty / numMonths * 10) / 10} · $${(totalDollars / numMonths).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  };
+  const incomingText = itemId => {
+    const inc = incomingDetail[itemId];
+    if (!inc || !inc.qty) return '';
+    return inc.nextDate ? `${inc.qty} · ${formatDate(inc.nextDate)}` : String(inc.qty);
   };
 
   return (
@@ -12292,37 +12321,51 @@ function SalesByMonthReport({ onBack }) {
             <thead>
               <tr>
                 <th style={{ ...repStyles.th, textAlign: 'left', position: 'sticky', left: 0, background: '#F0EEE4' }}>Item</th>
+                <th style={repStyles.th} title="Current on-hand stock">On hand</th>
+                <th style={repStyles.th} title="On-hand minus what's already committed to future orders">Available</th>
+                <th style={repStyles.th} title="Stock on open purchase orders, and the soonest expected date">Incoming</th>
                 {data.months.map(m => <th key={m} style={repStyles.th}>{monthLabel(m)}</th>)}
                 <th style={{ ...repStyles.th, fontWeight: 800 }}>Total</th>
+                <th style={{ ...repStyles.th, fontWeight: 800 }} title={`Average per month across the ${numMonths}-month range selected`}>Avg/mo</th>
               </tr>
             </thead>
             <tbody>
-              {data.items.map(it => (
+              {data.items.map(it => {
+                const stockIt = itemById[it.itemId];
+                return (
                 <tr key={it.itemId}>
                   <td style={{ ...repStyles.tdItem, position: 'sticky', left: 0, background: '#FFFFFF' }}>
                     <span style={{ color: '#2B5D50', fontWeight: 700, marginRight: 6, fontFamily: "'JetBrains Mono', monospace" }}>{displayCode(it.itemId)}</span>
                     {it.name}
                   </td>
+                  <td style={repStyles.tdNum}>{stockIt && stockIt.onHand != null ? stockIt.onHand : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                  <td style={repStyles.tdNum}>{stockIt && stockIt.available != null ? stockIt.available : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                  <td style={repStyles.tdNum}>{incomingText(it.itemId) || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                   {data.months.map(m => <td key={m} style={repStyles.tdNum}>{cellText(it.byMonth[m])}</td>)}
                   <td style={{ ...repStyles.tdNum, fontWeight: 800 }}>
                     {metric === 'qty' ? it.totalQty : metric === 'both' ? `${it.totalQty} · $${it.totalDollars.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${it.totalDollars.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
                   </td>
+                  <td style={{ ...repStyles.tdNum, fontWeight: 800, color: '#2B5D50' }}>{avgText(it.totalQty, it.totalDollars)}</td>
                 </tr>
-              ))}
+              );})}
               {data.items.length === 0 && (
-                <tr><td colSpan={data.months.length + 2} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No sales in this period.</td></tr>
+                <tr><td colSpan={data.months.length + 5} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No sales in this period.</td></tr>
               )}
             </tbody>
             {data.items.length > 0 && (
               <tfoot>
                 <tr>
                   <td style={{ ...repStyles.tfoot, textAlign: 'left', position: 'sticky', left: 0, background: '#14181F' }}>Grand total</td>
+                  <td style={repStyles.tfoot}></td>
+                  <td style={repStyles.tfoot}></td>
+                  <td style={repStyles.tfoot}></td>
                   {data.months.map(m => (
                     <td key={m} style={repStyles.tfoot}>
                       {grandByMonth[m] ? (metric === 'qty' ? grandByMonth[m].qty : metric === 'both' ? `${grandByMonth[m].qty} · $${Math.round(grandByMonth[m].dollars).toLocaleString()}` : `$${Math.round(grandByMonth[m].dollars).toLocaleString()}`) : ''}
                     </td>
                   ))}
                   <td style={repStyles.tfoot}>{metric === 'qty' ? grandTotalQ : metric === 'both' ? `${grandTotalQ} · $${Math.round(grandTotalD).toLocaleString()}` : `$${Math.round(grandTotalD).toLocaleString()}`}</td>
+                  <td style={repStyles.tfoot}>{avgText(grandTotalQ, grandTotalD)}</td>
                 </tr>
               </tfoot>
             )}
