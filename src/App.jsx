@@ -12217,6 +12217,7 @@ function SalesByMonthReport({ onBack, items = [] }) {
   const [from, setFrom] = useState(sixAgo);
   const [to, setTo] = useState(thisMonth);
   const [metric, setMetric] = useState('dollars'); // dollars | qty | both
+  const [brand, setBrand] = useState('All');
   const [data, setData] = useState(null);
   const [incomingDetail, setIncomingDetail] = useState({});
   const [loading, setLoading] = useState(false);
@@ -12237,6 +12238,21 @@ function SalesByMonthReport({ onBack, items = [] }) {
     finally { setLoading(false); }
   }
   useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
+  // Reset a brand filter that no longer applies after re-running for a
+  // different period (e.g. a brand with no sales in the new range).
+  useEffect(() => {
+    if (data && brand !== 'All' && !data.items.some(it => it.brand === brand)) setBrand('All');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const brandList = useMemo(() => {
+    if (!data) return [];
+    return [...new Set(data.items.map(it => it.brand).filter(Boolean))].sort();
+  }, [data]);
+  const shownItems = useMemo(() => {
+    if (!data) return [];
+    return brand === 'All' ? data.items : data.items.filter(it => it.brand === brand);
+  }, [data, brand]);
 
   const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }); };
   const cellDollars = c => c ? `$${c.dollars.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '';
@@ -12246,7 +12262,7 @@ function SalesByMonthReport({ onBack, items = [] }) {
     if (!data) return;
     const cols = ['Item #', 'Item', 'Brand', 'On hand', 'Available', 'Incoming', 'Incoming date', ...data.months.map(monthLabel), 'Total', 'Avg/mo'];
     const lines = [cols];
-    for (const it of data.items) {
+    for (const it of shownItems) {
       const stockIt = itemById[it.itemId];
       const inc = incomingDetail[it.itemId];
       const row = [
@@ -12271,7 +12287,7 @@ function SalesByMonthReport({ onBack, items = [] }) {
 
   const grandByMonth = {};
   let grandTotalD = 0, grandTotalQ = 0;
-  if (data) for (const it of data.items) { grandTotalD += it.totalDollars; grandTotalQ += it.totalQty; for (const m of data.months) { const c = it.byMonth[m]; if (c) { grandByMonth[m] = grandByMonth[m] || { qty: 0, dollars: 0 }; grandByMonth[m].qty += c.qty; grandByMonth[m].dollars += c.dollars; } } }
+  if (data) for (const it of shownItems) { grandTotalD += it.totalDollars; grandTotalQ += it.totalQty; for (const m of data.months) { const c = it.byMonth[m]; if (c) { grandByMonth[m] = grandByMonth[m] || { qty: 0, dollars: 0 }; grandByMonth[m].qty += c.qty; grandByMonth[m].dollars += c.dollars; } } }
   const numMonths = data ? (data.months.length || 1) : 1;
 
   const showD = metric !== 'qty', showQ = metric !== 'dollars';
@@ -12311,8 +12327,14 @@ function SalesByMonthReport({ onBack, items = [] }) {
             <button key={id} style={{ ...repStyles.metricBtn, ...(metric === id ? repStyles.metricBtnOn : {}) }} onClick={() => setMetric(id)}>{label}</button>
           ))}
         </div>
+        <label style={repStyles.ctrlLabel}>Brand
+          <select style={repStyles.monthInput} value={brand} onChange={e => setBrand(e.target.value)}>
+            <option value="All">All brands</option>
+            {brandList.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
         <button style={officeStyles.smallBtn} onClick={run} disabled={loading}>{loading ? 'Loading…' : 'Run'}</button>
-        <button style={officeStyles.smallBtn} onClick={downloadCSV} disabled={!data || !data.items.length}>Download CSV</button>
+        <button style={officeStyles.smallBtn} onClick={downloadCSV} disabled={!data || !shownItems.length}>Download CSV</button>
       </div>
       {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 8 }}>{err}</div>}
       {data && (
@@ -12330,7 +12352,7 @@ function SalesByMonthReport({ onBack, items = [] }) {
               </tr>
             </thead>
             <tbody>
-              {data.items.map(it => {
+              {shownItems.map(it => {
                 const stockIt = itemById[it.itemId];
                 return (
                 <tr key={it.itemId}>
@@ -12348,11 +12370,11 @@ function SalesByMonthReport({ onBack, items = [] }) {
                   <td style={{ ...repStyles.tdNum, fontWeight: 800, color: '#2B5D50' }}>{avgText(it.totalQty, it.totalDollars)}</td>
                 </tr>
               );})}
-              {data.items.length === 0 && (
-                <tr><td colSpan={data.months.length + 5} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>No sales in this period.</td></tr>
+              {shownItems.length === 0 && (
+                <tr><td colSpan={data.months.length + 5} style={{ ...repStyles.tdItem, color: '#8A8F87', fontStyle: 'italic' }}>{brand === 'All' ? 'No sales in this period.' : `No sales for ${brand} in this period.`}</td></tr>
               )}
             </tbody>
-            {data.items.length > 0 && (
+            {shownItems.length > 0 && (
               <tfoot>
                 <tr>
                   <td style={{ ...repStyles.tfoot, textAlign: 'left', position: 'sticky', left: 0, background: '#14181F' }}>Grand total</td>
