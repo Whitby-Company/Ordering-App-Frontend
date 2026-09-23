@@ -9287,12 +9287,25 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
   }
   useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
 
+  const [excludeBusyId, setExcludeBusyId] = useState(null);
+  async function toggleExcluded(inv) {
+    setExcludeBusyId(inv.orderId);
+    try {
+      await apiPost('/orders/set-taiyo-fee-excluded', { ids: [inv.orderId], excluded: !inv.taiyoFeeExcluded });
+      await run();
+    } catch (e) {
+      window.alert(e.message || 'Could not update this invoice.');
+    } finally {
+      setExcludeBusyId(null);
+    }
+  }
+
   function exportCsv() {
     if (!data) return;
-    const head = ['Invoice #', 'Delivery date', 'PO#', 'Customer', 'Net cost', 'Fee owed (6%)'];
+    const head = ['Invoice #', 'Delivery date', 'PO#', 'Customer', 'Net cost', 'Fee owed (6%)', 'Excluded from total'];
     const lines = [head.join(',')];
-    for (const inv of data.invoices) lines.push([inv.invoiceNumber, inv.deliveryDate, csvEscape(inv.poNumber || ''), csvEscape(inv.customer), inv.netCostTotal.toFixed(2), inv.feeOwed.toFixed(2)].join(','));
-    lines.push(['', '', '', 'GRAND TOTAL', data.grandNetCost.toFixed(2), data.grandFeeOwed.toFixed(2)].join(','));
+    for (const inv of data.invoices) lines.push([inv.invoiceNumber, inv.deliveryDate, csvEscape(inv.poNumber || ''), csvEscape(inv.customer), inv.netCostTotal.toFixed(2), inv.feeOwed.toFixed(2), inv.taiyoFeeExcluded ? 'yes' : ''].join(','));
+    lines.push(['', '', '', 'GRAND TOTAL', data.grandNetCost.toFixed(2), data.grandFeeOwed.toFixed(2), ''].join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `taiyo-fee_${from}_${to}.csv`; a.click();
@@ -9307,7 +9320,7 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
         <div style={officeStyles.sectionTitle}>Taiyo 6%</div>
       </div>
       <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 12, maxWidth: 720 }}>
-        6% of the net cost of everything sold in the period (by delivery date), totaled per invoice. Net cost is entered PER BOX. Set an item's net cost in the Items tab (Edit → Taiyo net cost (box)) to include it here — for now this applies to every item; a way to exclude specific items can be added later.
+        6% of the net cost of everything sold in the period (by delivery date), totaled per invoice. Net cost is entered PER BOX. Set an item's net cost in the Items tab (Edit → Taiyo net cost (box)) to include it here. Use "Exclude" on an invoice (e.g. one that was never stored at Taiyo's warehouse) to leave its fee out of the totals — it still shows here for the record, just struck through.
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
@@ -9347,19 +9360,30 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
                 <th style={repStyles.th}>Customer</th>
                 <th style={{ ...repStyles.th, textAlign: 'right' }}>Net cost</th>
                 <th style={{ ...repStyles.th, textAlign: 'right' }}>Fee owed (6%)</th>
+                <th style={repStyles.th}></th>
               </tr></thead>
               <tbody>
                 {data.invoices.map(inv => (
-                  <tr key={inv.orderId} style={{ borderBottom: '1px solid #EFEDE3' }}>
+                  <tr key={inv.orderId} style={{ borderBottom: '1px solid #EFEDE3', opacity: inv.taiyoFeeExcluded ? 0.55 : 1 }}>
                     <td style={repStyles.tdItem}>#{inv.invoiceNumber}</td>
                     <td style={repStyles.tdItem}>{formatDate(inv.deliveryDate)}</td>
                     <td style={repStyles.tdItem}>{inv.customer}</td>
-                    <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>{formatMoney(inv.netCostTotal)}</td>
-                    <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: '#2B5D50' }}>{formatMoney(inv.feeOwed)}</td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right', textDecoration: inv.taiyoFeeExcluded ? 'line-through' : 'none' }}>{formatMoney(inv.netCostTotal)}</td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: inv.taiyoFeeExcluded ? '#8A8F87' : '#2B5D50', textDecoration: inv.taiyoFeeExcluded ? 'line-through' : 'none' }}>{formatMoney(inv.feeOwed)}</td>
+                    <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                      <button
+                        style={{ ...officeStyles.smallBtn, padding: '3px 9px', fontSize: 11.5, ...(inv.taiyoFeeExcluded ? {} : { color: '#B5493B' }) }}
+                        onClick={() => toggleExcluded(inv)}
+                        disabled={excludeBusyId === inv.orderId}
+                        title={inv.taiyoFeeExcluded ? "Include this invoice's fee in the totals again" : "Exclude this invoice from the fee owed — e.g. it was never stored at Taiyo's warehouse. Still shown here for the record."}
+                      >
+                        {excludeBusyId === inv.orderId ? '…' : (inv.taiyoFeeExcluded ? 'Excluded — include' : 'Exclude')}
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {data.invoices.length === 0 && (
-                  <tr><td colSpan={5} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>No invoices in this period.</td></tr>
+                  <tr><td colSpan={6} style={{ ...repStyles.tdItem, textAlign: 'center', color: '#8A8F87' }}>No invoices in this period.</td></tr>
                 )}
               </tbody>
             </table>
