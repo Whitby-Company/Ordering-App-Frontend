@@ -7279,7 +7279,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       const updates = rows
         .map(r => ({ id: r[skuKey], stock: stockKey ? r[stockKey] : undefined, price: priceKey ? r[priceKey] : undefined }))
         .filter(u => u.id);
-      const result = await apiPost('/items/bulk-update', { updates });
+      const result = await apiPost('/items/bulk-update', { updates, changedBy: getSubmitterName() || undefined });
       setImportResult(result);
       await onRefresh();
     } catch (err) {
