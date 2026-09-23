@@ -7067,8 +7067,9 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [missingCaseOnly, setMissingCaseOnly] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
-  // so the shown stock is what's physically in the warehouse today.
-  const [todaysView, setTodaysView] = useState(false);
+  // so the shown stock is what's physically in the warehouse today. Defaults
+  // on, since that's the number staff want to see first when checking stock.
+  const [todaysView, setTodaysView] = useState(true);
   const [countMode, setCountMode] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [counts, setCounts] = useState({}); // itemId -> typed count
