@@ -11181,6 +11181,17 @@ function OfficePurchasing({ items, onRefresh }) {
   const [statusFilter, setStatusFilter] = useState('open');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [sortField, setSortField] = useState('expectedDate');
+  const [sortDir, setSortDir] = useState('desc');
+
+  function handleSortClick(field) {
+    if (field === sortField) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -11204,8 +11215,34 @@ function OfficePurchasing({ items, onRefresh }) {
         (p.orderDate && (p.orderDate.includes(q) || formatDate(p.orderDate).toLowerCase().includes(q) || (typedDate && p.orderDate === typedDate)))
       );
     }
-    return list;
-  }, [pos, statusFilter, query]);
+    // Sortable by any header. Text fields compare case-insensitively; a blank
+    // value always sorts to the end regardless of direction, so switching
+    // direction re-orders what actually has a value instead of just moving
+    // the blanks from one end to the other.
+    const getVal = (p, field) => {
+      switch (field) {
+        case 'po': return (p.reference || `#${p.id}`).toLowerCase();
+        case 'supplier': return (p.supplier || '').toLowerCase();
+        case 'expectedDate': return p.expectedDate || '';
+        case 'itemCount': return p.itemCount;
+        case 'ordered': return p.totalOrdered;
+        case 'received': return p.totalReceived;
+        case 'lastReceivedDate': return p.lastReceivedDate || '';
+        case 'status': return p.status || '';
+        default: return '';
+      }
+    };
+    const sorted = list.slice().sort((a, b) => {
+      const av = getVal(a, sortField), bv = getVal(b, sortField);
+      const aBlank = av === '' || av == null, bBlank = bv === '' || bv == null;
+      if (aBlank !== bBlank) return aBlank ? 1 : -1; // blanks always last
+      let cmp;
+      if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+      else cmp = String(av).localeCompare(String(bv));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [pos, statusFilter, query, sortField, sortDir]);
 
   if (view === 'new') return <PurchaseOrderForm items={items} onBack={() => setView('list')} onSaved={async () => { setView('list'); await load(); }} />;
   if (view === 'detail' && selId != null) return <PurchaseOrderDetail poId={selId} items={items} onBack={() => { setView('list'); setSelId(null); }} onChanged={async () => { await load(); await onRefresh(); }} />;
@@ -11240,13 +11277,14 @@ function OfficePurchasing({ items, onRefresh }) {
         <div style={officeStyles.tableCard}>
           <table style={officeStyles.table}>
             <thead><tr>
-              <th style={officeStyles.th}>PO #</th>
-              <th style={officeStyles.th}>Supplier</th>
-              <th style={officeStyles.th}>Expected</th>
-              <th style={{ ...officeStyles.th, textAlign: 'center' }}>Items</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Ordered (cs · inner)</th>
-              <th style={{ ...officeStyles.th, textAlign: 'right' }}>Received (cs · inner)</th>
-              <th style={{ ...officeStyles.th, textAlign: 'center' }}>Status</th>
+              <SortableTh field="po" label="PO #" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="supplier" label="Supplier" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="expectedDate" label="Expected" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="itemCount" label="Items" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
+              <SortableTh field="ordered" label="Ordered (cs · inner)" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              <SortableTh field="received" label="Received (cs · inner)" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="right" />
+              <SortableTh field="lastReceivedDate" label="Received date" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} />
+              <SortableTh field="status" label="Status" sortField={sortField} sortDir={sortDir} onClick={handleSortClick} align="center" />
             </tr></thead>
             <tbody>
               {shown.map(p => (
@@ -11258,11 +11296,12 @@ function OfficePurchasing({ items, onRefresh }) {
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}>{p.itemCount}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalOrderedCases > 0 ? <><strong>{p.totalOrderedCases} cs</strong><span style={{ color: '#8A8F87', fontSize: 11 }}> · {p.totalOrdered} inner</span></> : <><strong>{p.totalOrdered} cs</strong></>}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.totalReceivedCases > 0 ? <><strong>{p.totalReceivedCases} cs</strong><span style={{ color: '#8A8F87', fontSize: 11 }}> · {p.totalReceived} inner</span></> : <><strong>{p.totalReceived} cs</strong></>}</td>
+                    <td style={officeStyles.td}>{p.lastReceivedDate ? formatDate(p.lastReceivedDate) : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'center' }}><span style={statusChip(p.status)}>{p.status}</span></td>
                   </tr>
                   {p.notes && (
                     <tr onClick={() => { setSelId(p.id); setView('detail'); }} style={{ cursor: 'pointer' }}>
-                      <td colSpan={7} style={{ padding: '0 16px 8px', borderBottom: '1px solid #EFEDE3' }}>
+                      <td colSpan={8} style={{ padding: '0 16px 8px', borderBottom: '1px solid #EFEDE3' }}>
                         <div style={{ fontSize: 12.5, color: '#5B6058', background: '#FBFAF6', border: '1px solid #EAE8DD', borderRadius: 6, padding: '6px 12px' }}>
                           <span style={{ fontWeight: 700 }}>📝</span> {p.notes}
                         </div>
@@ -11271,7 +11310,7 @@ function OfficePurchasing({ items, onRefresh }) {
                   )}
                 </React.Fragment>
               ))}
-              {shown.length === 0 && <tr><td colSpan={7} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>{query ? `No purchase orders match "${query}".` : 'No purchase orders.'}</td></tr>}
+              {shown.length === 0 && <tr><td colSpan={8} style={{ ...officeStyles.td, color: '#8A8F87', fontStyle: 'italic' }}>{query ? `No purchase orders match "${query}".` : 'No purchase orders.'}</td></tr>}
             </tbody>
           </table>
         </div>
