@@ -2946,7 +2946,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   // into tracked stock (e.g. drop-shipped straight to the customer), so
   // quantities on it shouldn't be capped by — or count against — on-hand/
   // available at all. The invoice itself is unaffected either way.
-  const [nonInventory, setNonInventory] = useState(isEdit ? !!editOrder.nonInventory : false);
+  const [nonInventory, setNonInventory] = useState(isEdit ? !!editOrder.nonInventory : !!savedDraft.nonInventory);
   const priceOf = React.useCallback((item, unit, orderAllCases) => {
     // Prices are per-EACH by default (even for case-unit lines). Only when
     // the WHOLE order (every line actually being shipped) is in case units
@@ -3049,12 +3049,12 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     if (isEdit) return;
     try {
       if (customerId || deliveryDate || order.length > 0 || notes) {
-        localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order, notes, priceOverrides }));
+        localStorage.setItem('orderDraft', JSON.stringify({ customerId, deliveryDate, order, notes, priceOverrides, nonInventory }));
       } else {
         localStorage.removeItem('orderDraft');
       }
     } catch { /* localStorage unavailable — draft just won't persist */ }
-  }, [customerId, deliveryDate, order, notes, priceOverrides, isEdit]);
+  }, [customerId, deliveryDate, order, notes, priceOverrides, nonInventory, isEdit]);
 
   function goBackToBrands() {
     setScreen('brands');
@@ -5597,6 +5597,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
       order: (o.lines || []).map(l => ({ id: l.id, qty: l.qty, unit: l.unit || undefined })),
       notes: o.notes || '',
       priceOverrides: Object.fromEntries((o.lines || []).map(l => [l.id, String(l.price)])),
+      nonInventory: !!o.nonInventory,
     };
     try { localStorage.setItem('orderDraft', JSON.stringify(draft)); } catch { /* ignore */ }
     setEditingOrder(null);
