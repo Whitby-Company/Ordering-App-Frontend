@@ -7314,8 +7314,11 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   // "Today's inventory": add back eaches committed to FUTURE-delivery orders,
   // so the shown stock is what's physically in the warehouse today. Defaults
-  // on, since that's the number staff want to see first when checking stock.
-  const [todaysView, setTodaysView] = useState(true);
+  // on for the Inventory view, since that's the number staff want to see
+  // first when checking stock -- but not for Items, where the raw on-hand
+  // (matching what's cached/reported elsewhere) is the more useful default
+  // when managing the catalog itself.
+  const [todaysView, setTodaysView] = useState(!isItems);
   const [countMode, setCountMode] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [counts, setCounts] = useState({}); // itemId -> typed count
