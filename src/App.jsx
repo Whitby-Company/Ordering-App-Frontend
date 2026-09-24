@@ -5827,6 +5827,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
   // coming back later starts a fresh order.
   useEffect(() => { if (section !== 'neworder' && editingOrder) setEditingOrder(null); }, [section]); // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshing, setRefreshing] = useState(false);
+  const [dataMenuOpen, setDataMenuOpen] = useState(false);
   // Badge counts only submitted-but-new orders (real work to process). Pending
   // drafts still appear in the Orders tab but don't inflate this "to-do" count.
   const activeOrderCount = useMemo(() => orders.filter(o => o.status !== 'pending' && !o.processed).length, [orders]);
@@ -5878,24 +5879,40 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
           >
             Inventory
           </button>
-          <button
-            style={{ ...officeStyles.navBtn, ...(section === 'items' ? officeStyles.navBtnActive : {}) }}
-            onClick={() => setSection('items')}
-          >
-            Items
-          </button>
-          <button
-            style={{ ...officeStyles.navBtn, ...(section === 'customers' ? officeStyles.navBtnActive : {}) }}
-            onClick={() => setSection('customers')}
-          >
-            Customers
-          </button>
-          <button
-            style={{ ...officeStyles.navBtn, ...(section === 'catalogs' ? officeStyles.navBtnActive : {}) }}
-            onClick={() => setSection('catalogs')}
-          >
-            Catalogs
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(['items', 'customers', 'catalogs'].includes(section) ? officeStyles.navBtnActive : {}) }}
+              onClick={() => setDataMenuOpen(o => !o)}
+            >
+              {section === 'customers' ? 'Customers' : section === 'catalogs' ? 'Catalogs' : 'Items'}
+              <ChevronDown size={14} style={{ transform: dataMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+            </button>
+            {dataMenuOpen && (
+              <>
+                <div style={officeStyles.navMenuOverlay} onClick={() => setDataMenuOpen(false)} />
+                <div style={officeStyles.navMenu}>
+                  <button
+                    style={{ ...officeStyles.navMenuItem, ...(section === 'items' ? officeStyles.navMenuItemActive : {}) }}
+                    onClick={() => { setSection('items'); setDataMenuOpen(false); }}
+                  >
+                    Items
+                  </button>
+                  <button
+                    style={{ ...officeStyles.navMenuItem, ...(section === 'customers' ? officeStyles.navMenuItemActive : {}) }}
+                    onClick={() => { setSection('customers'); setDataMenuOpen(false); }}
+                  >
+                    Customers
+                  </button>
+                  <button
+                    style={{ ...officeStyles.navMenuItem, ...(section === 'catalogs' ? officeStyles.navMenuItemActive : {}) }}
+                    onClick={() => { setSection('catalogs'); setDataMenuOpen(false); }}
+                  >
+                    Catalogs
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button
             style={{ ...officeStyles.navBtn, ...(section === 'reports' ? officeStyles.navBtnActive : {}) }}
             onClick={() => setSection('reports')}
@@ -13683,7 +13700,7 @@ const styles = {
 
 const officeStyles = {
   wrap: { flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
-  topBar: { display: 'flex', alignItems: 'center', gap: 12, rowGap: 8, flexWrap: 'wrap', background: '#14181F', padding: '14px 16px', position: 'sticky', top: 0, zIndex: 5 },
+  topBar: { display: 'flex', alignItems: 'center', gap: 12, rowGap: 8, flexWrap: 'wrap', background: '#14181F', padding: '14px 16px', position: 'sticky', top: 0, zIndex: 15 },
   brand: { display: 'flex', alignItems: 'center', gap: 8 },
   brandText: { color: '#EDEBE3', fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap' },
   nav: { display: 'flex', gap: 4, flex: 1 },
@@ -13691,6 +13708,11 @@ const officeStyles = {
   backNavBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', color: '#EDEBE3' },
   backNavBtnDisabled: { color: '#5A5F57', cursor: 'default' },
   navBtnActive: { background: '#2B5D50', color: '#F7F8F4' },
+  navBtnGroup: { display: 'inline-flex', alignItems: 'center', gap: 4 },
+  navMenuOverlay: { position: 'fixed', inset: 0, zIndex: 20 },
+  navMenu: { position: 'absolute', top: 'calc(100% + 4px)', left: 0, background: '#20242C', border: '1px solid #383D46', borderRadius: 8, padding: 4, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 140, zIndex: 20, boxShadow: '0 8px 20px rgba(0,0,0,0.35)' },
+  navMenuItem: { background: 'none', border: 'none', color: '#B7BCB2', fontSize: 13.5, fontWeight: 600, padding: '8px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' },
+  navMenuItemActive: { background: '#2B5D50', color: '#F7F8F4' },
   navBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', marginLeft: 6, borderRadius: 9, background: '#C98A2B', color: '#14181F', fontSize: 11, fontWeight: 800, verticalAlign: 'middle' },
   allCaughtUp: { display: 'flex', alignItems: 'center', gap: 8, background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 10, padding: '14px 16px', color: '#2B5D50', fontSize: 13.5, fontWeight: 600 },
   refreshBtn: { display: 'flex', alignItems: 'center', gap: 6, background: '#2A2E23', color: '#EDEBE3', border: '1px solid #3C4132', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
