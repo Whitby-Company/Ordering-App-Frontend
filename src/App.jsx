@@ -2389,6 +2389,65 @@ function MainApp() {
   );
 }
 
+// Small, universally-placed control for the device-level submitter name used
+// to attribute orders, physical counts, and price checks to whoever is using
+// this device. There's no shared header across the mobile tabs, and the only
+// other place this name was ever editable was buried in New Order's review
+// screen -- so anyone whose workflow doesn't touch that screen (e.g. someone
+// who only does physical counts or price checks) had no way to ever change
+// it. Dropped into each of those tabs' own headers instead.
+function SubmitterNameControl() {
+  const [submitterName, setSubmitterName] = useSubmitterName();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  function openModal() {
+    setDraft(submitterName || '');
+    setOpen(true);
+  }
+  function save() {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    setSubmitterName(trimmed);
+    setOpen(false);
+  }
+  return (
+    <>
+      <button style={styles.submitterHeaderLink} onClick={openModal}>
+        {submitterName ? <>{submitterName} · change</> : 'Set your name'}
+      </button>
+      {open && (
+        <div style={styles.sheetOverlay} onClick={() => setOpen(false)}>
+          <div style={styles.signInCard} onClick={e => e.stopPropagation()}>
+            <div style={styles.signInTitle}>Who's using this device?</div>
+            <div style={styles.signInSub}>This device will remember it and tag your counts, checks, and orders automatically.</div>
+            <input
+              autoFocus
+              style={styles.signInInput}
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') save(); }}
+              placeholder="Your name"
+              maxLength={60}
+            />
+            <button
+              style={{ ...styles.submitBtn, ...(draft.trim() ? {} : styles.submitBtnDisabled), marginTop: 12 }}
+              disabled={!draft.trim()}
+              onClick={save}
+            >
+              <Check size={16} color="#F7F8F4" /> Save
+            </button>
+            {submitterName && (
+              <button style={styles.signInClear} onClick={() => { setSubmitterName(''); setOpen(false); }}>
+                Sign out of this device
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function TabBar({ active, onChange }) {
   const tabs = [
     { id: 'order', label: 'New Order', icon: PlusCircle },
@@ -4699,6 +4758,7 @@ function InventoryTab({ items, orders, brandColors, printSequence = [] }) {
           <Boxes size={18} color="#EDEBE3" strokeWidth={2} />
           <span style={styles.headerTitle}>Inventory</span>
         </div>
+        <SubmitterNameControl />
         {lowStockTotal > 0 && (
           <button
             style={{ ...styles.lowStockBtn, ...(lowOnly ? styles.lowStockBtnActive : {}) }}
@@ -5217,6 +5277,7 @@ function PriceCheckTab({ items }) {
           <span style={styles.headerTitle}>Price Check</span>
         </div>
         <div style={{ fontSize: 12.5, color: '#B7BCB2', marginTop: 2 }}>Competitive pricing at retail accounts we don't service</div>
+        <SubmitterNameControl />
       </div>
 
       <div style={{ padding: '14px 16px 0' }}>
@@ -5351,6 +5412,7 @@ function OrdersTab({ orders, onSwitchToOffice, items, customers, printSequence, 
         <div style={styles.orderCountPill}>
           {orders.length} order{orders.length === 1 ? '' : 's'} logged
         </div>
+        <SubmitterNameControl />
       </div>
 
       <div style={styles.searchWrap}>
@@ -13461,6 +13523,7 @@ const styles = {
   discardBtn: { background: 'none', color: '#B5493B', border: '1px solid #E7C6C0', borderRadius: 10, padding: '11px 16px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   orderedByRow: { textAlign: 'center', fontSize: 12.5, color: '#5B6058', margin: '2px 0 10px' },
   orderedByLink: { background: 'none', border: 'none', color: '#2B5D50', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit', padding: 0, textDecoration: 'underline' },
+  submitterHeaderLink: { background: 'none', border: 'none', color: '#B7BCB2', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0, marginTop: 4, textAlign: 'left', textDecoration: 'underline' },
   signInCard: { background: '#F7F8F4', borderRadius: 16, padding: 22, width: '86%', maxWidth: 360, boxShadow: '0 12px 40px rgba(20,24,31,0.28)' },
   signInTitle: { fontSize: 17, fontWeight: 700, color: '#14181F', marginBottom: 6 },
   signInSub: { fontSize: 13, color: '#5B6058', lineHeight: 1.4, marginBottom: 14 },
