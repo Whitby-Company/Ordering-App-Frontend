@@ -4899,27 +4899,33 @@ function BarcodeScanner({ onDetected, onClose }) {
   onDetectedRef.current = onDetected;
   const [error, setError] = useState('');
   const [focusRing, setFocusRing] = useState(null); // {x, y} in pixels, for the tap-to-focus animation
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagText, setDiagText] = useState('Camera not ready yet.');
 
   // Re-applies focus, optionally aimed at a tapped point. `oneShot` requests
   // a single autofocus sweep right now, appropriate for a deliberate tap --
-  // some devices support 'single-shot' but not 'continuous' (or vice versa),
-  // so tap-to-focus tries single-shot first rather than only the mode the
-  // automatic on-load attempt uses; without this fallback, a device with no
-  // 'continuous' support would silently do nothing on every tap.
+  // some devices support 'single-shot' but not 'continuous' (or vice versa).
+  // pointsOfInterest is attempted independently of focusMode: some devices'
+  // getCapabilities() report is partial or unusual (especially brand-new
+  // camera hardware/driver combinations), so requiring focusMode to be
+  // present before trying anything at all could silently block a device
+  // that would have honored pointsOfInterest on its own.
   function applyFocus(point, oneShot) {
     try {
       const video = videoRef.current;
       const stream = video && video.srcObject;
       const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
-      const caps = track && track.getCapabilities && track.getCapabilities();
-      if (!track || !caps || !caps.focusMode) return;
-      const mode = (oneShot && caps.focusMode.includes('single-shot')) ? 'single-shot'
-        : caps.focusMode.includes('continuous') ? 'continuous'
-        : caps.focusMode.includes('single-shot') ? 'single-shot'
+      const caps = (track && track.getCapabilities && track.getCapabilities()) || {};
+      if (!track) return;
+      const focusModes = Array.isArray(caps.focusMode) ? caps.focusMode : [];
+      const mode = (oneShot && focusModes.includes('single-shot')) ? 'single-shot'
+        : focusModes.includes('continuous') ? 'continuous'
+        : focusModes.includes('single-shot') ? 'single-shot'
         : null;
-      if (!mode) return;
-      const advanced = { focusMode: mode };
+      const advanced = {};
+      if (mode) advanced.focusMode = mode;
       if (point && caps.pointsOfInterest) advanced.pointsOfInterest = [point];
+      if (Object.keys(advanced).length === 0) return; // nothing this device reports supporting is worth trying
       track.applyConstraints({ advanced: [advanced] }).catch(() => { /* device doesn't honor it post-hoc — ignore */ });
     } catch { /* getCapabilities/applyConstraints unsupported on this device — ignore */ }
   }
@@ -4929,15 +4935,48 @@ function BarcodeScanner({ onDetected, onClose }) {
   // reliably re-sharpen for a close-up barcode on its own. Pointer events
   // (rather than separate click/touch handlers) fire exactly once per tap
   // across mouse, touch, and pen with no synthesized-click double-fire or
-  // delay to worry about.
+  // delay to worry about. The ring shows unconditionally, before attempting
+  // the actual focus call, so a tap always visibly registers even on a
+  // device where the focus request itself turns out to be a no-op --
+  // otherwise "nothing happens" is impossible to tell apart from "the tap
+  // wasn't even received."
   function handleTapToFocus(e) {
     const video = videoRef.current;
     if (!video) return;
     const rect = video.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
-    applyFocus({ x: px / rect.width, y: py / rect.height }, true);
     setFocusRing({ x: px, y: py });
     setTimeout(() => setFocusRing(null), 700);
+    try { applyFocus({ x: px / rect.width, y: py / rect.height }, true); } catch { /* never let this block the visual feedback above */ }
+  }
+
+  // On-screen diagnostic: what this specific device's camera actually
+  // reports. Several rounds of focus fixes based on documented, common
+  // Android camera quirks haven't resolved a report of "won't tap to
+  // focus" -- rather than guess a fourth fix blind, this lets the person
+  // screenshot the real capabilities/settings their browser exposes.
+  function showDiagnostics() {
+    try {
+      const video = videoRef.current;
+      const stream = video && video.srcObject;
+      const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+      if (!track) { setDiagText('No active camera track.'); setDiagOpen(true); return; }
+      const settings = (track.getSettings && track.getSettings()) || {};
+      const caps = (track.getCapabilities && track.getCapabilities()) || {};
+      const lines = [
+        `Label: ${track.label || '(none)'}`,
+        `Resolution: ${settings.width || '?'}x${settings.height || '?'}`,
+        `Current focusMode: ${settings.focusMode != null ? settings.focusMode : '(not reported)'}`,
+        `Supported focusMode: ${Array.isArray(caps.focusMode) ? (caps.focusMode.join(', ') || '(empty list)') : '(not reported by this browser)'}`,
+        `pointsOfInterest supported: ${caps.pointsOfInterest ? 'yes' : 'no'}`,
+        `focusDistance range: ${caps.focusDistance ? `${caps.focusDistance.min}-${caps.focusDistance.max}` : '(not reported)'}`,
+      ];
+      setDiagText(lines.join('\n'));
+      setDiagOpen(true);
+    } catch (e) {
+      setDiagText('Could not read camera info: ' + (e && e.message ? e.message : String(e)));
+      setDiagOpen(true);
+    }
   }
 
   useEffect(() => {
@@ -5004,6 +5043,13 @@ function BarcodeScanner({ onDetected, onClose }) {
         <div style={{ position: 'absolute', bottom: 14, left: 0, right: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: 12.5, textShadow: '0 1px 3px rgba(0,0,0,0.8)', pointerEvents: 'none' }}>
           Blurry? Tap the barcode to refocus
         </div>
+        <button
+          onPointerUp={e => { e.stopPropagation(); showDiagnostics(); }}
+          style={{ position: 'absolute', top: 'calc(10px + env(safe-area-inset-top, 0px))', right: 10, width: 30, height: 30, borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.6)', background: 'rgba(0,0,0,0.35)', color: '#fff', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', lineHeight: '1' }}
+          title="Show camera info (for troubleshooting)"
+        >
+          i
+        </button>
         {focusRing && (
           <div style={{
             position: 'absolute', left: focusRing.x - 32, top: focusRing.y - 32, width: 64, height: 64,
@@ -5014,6 +5060,21 @@ function BarcodeScanner({ onDetected, onClose }) {
         {error && (
           <div style={{ position: 'absolute', top: 16, left: 16, right: 16, background: '#B5493B', color: '#fff', padding: 12, borderRadius: 8, fontSize: 13 }}>
             {error}
+          </div>
+        )}
+        {diagOpen && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onPointerUp={e => e.stopPropagation()}>
+            <div style={{ background: '#F7F8F4', borderRadius: 12, padding: 18, width: '100%', maxWidth: 340 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5, marginBottom: 8, color: '#14181F' }}>Camera info</div>
+              <div style={{ fontSize: 12, color: '#14181F', whiteSpace: 'pre-wrap', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5, marginBottom: 12 }}>{diagText}</div>
+              <div style={{ fontSize: 11.5, color: '#5B6058', marginBottom: 12 }}>Screenshot this and send it in if scanning still isn't working — it'll show exactly what your phone's camera supports.</div>
+              <button
+                onPointerUp={() => setDiagOpen(false)}
+                style={{ width: '100%', background: '#2B5D50', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         )}
       </div>
