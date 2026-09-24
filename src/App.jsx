@@ -6684,6 +6684,8 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   const [notExportedOnly, setNotExportedOnly] = useState(false);
   const [openHistMonths, setOpenHistMonths] = useState({}); // month key -> expanded (History scope)
   const [readyBusyId, setReadyBusyId] = useState(null);
+  const [dateFilter, setDateFilter] = useState(null); // 'YYYY-MM-DD' — jump to orders submitted on this day
+  const [dateCalOpen, setDateCalOpen] = useState(false);
 
   // Toggle the shared "ready for import" flag on an order (saved server-side so
   // a coworker can mark orders ready and you batch-import them later).
@@ -6899,6 +6901,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
     else list = list.filter(o => o.status !== 'pending');
     if (showUnprocessedOnly) list = list.filter(o => !o.processed);
     if (notExportedOnly) list = list.filter(o => !o.exported && !o.voided);
+    if (dateFilter) list = list.filter(o => (o.submittedAt || '').slice(0, 10) === dateFilter);
     if (q) {
       const qDigits = q.replace(/\D/g, '');
       const matchOrder = (o) => {
@@ -6939,14 +6942,14 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       if (va > vb) return 1 * dir;
       return (a.id - b.id) * dir; // stable tiebreak
     });
-  }, [orders, query, showUnprocessedOnly, notExportedOnly, sortField, sortDir, activeScope]);
+  }, [orders, query, showUnprocessedOnly, notExportedOnly, dateFilter, sortField, sortDir, activeScope]);
 
   // For the History scope (not the active queue): show orders from the past 30
   // days loose, and 30+ day-old orders grouped into collapsible month folders.
   // Produces a flat render list of { type:'order'|'month', ... }. Only applies
   // when not filtering/searching and sorted by date (so folders make sense).
   const displayRows = useMemo(() => {
-    const byMonth = !activeScope && !query && sortField === 'submittedAt';
+    const byMonth = !activeScope && !query && !dateFilter && sortField === 'submittedAt';
     if (!byMonth) return filtered.map(o => ({ type: 'order', o }));
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
     const cutoffISO = cutoff.toISOString().slice(0, 10);
@@ -6964,7 +6967,7 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
       if (openHistMonths[k]) for (const o of olderByMonth[k]) rows.push({ type: 'order', o });
     }
     return rows;
-  }, [filtered, activeScope, query, sortField, openHistMonths]);
+  }, [filtered, activeScope, query, dateFilter, sortField, openHistMonths]);
 
   function orderTotal(o) {
     const sub = o.lines.reduce((s, l) => s + lineTotal(l, l.qty), 0);
@@ -6989,6 +6992,34 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        {!activeScope && (
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              style={{ ...officeStyles.smallBtn, display: 'inline-flex', alignItems: 'center', gap: 6, ...(dateFilter ? { background: '#2B5D50', color: '#fff' } : {}) }}
+              onClick={() => setDateCalOpen(o => !o)}
+              title="Jump to orders submitted on a specific day"
+            >
+              <Calendar size={14} />
+              {dateFilter ? formatDate(dateFilter) : 'Date'}
+            </button>
+            {dateFilter && (
+              <button
+                style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: '#8A8F87', display: 'flex' }}
+                onClick={() => setDateFilter(null)}
+                title="Clear date filter"
+              >
+                <X size={14} />
+              </button>
+            )}
+            {dateCalOpen && (
+              <MiniCalendar
+                value={dateFilter}
+                onPick={iso => { setDateFilter(iso); setDateCalOpen(false); }}
+                onClose={() => setDateCalOpen(false)}
+              />
+            )}
+          </div>
+        )}
         <label style={officeStyles.checkboxLabel} title="When on, an order's notes print on its invoice below the PO # box">
           <input type="checkbox" checked={showNotesOnInvoice} onChange={e => setShowNotesOnInvoice(e.target.checked)} />
           Show notes on invoice
