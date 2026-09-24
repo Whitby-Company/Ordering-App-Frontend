@@ -4842,9 +4842,31 @@ function BarcodeScanner({ onDetected, onClose }) {
     let cancelled = false;
     const reader = new BrowserMultiFormatReader();
     readerRef.current = reader;
+    // facingMode alone leaves focus behavior up to the browser/device
+    // default. iOS/Safari's camera tends to autofocus continuously either
+    // way, but Android/Chrome varies a lot by device -- some default to a
+    // fixed or single-shot focus that never re-sharpens once aimed, which
+    // reads as "won't pick up the barcode." Requesting continuous autofocus
+    // explicitly up front covers browsers that honor it at getUserMedia
+    // time; the loadedmetadata listener below covers devices that only
+    // apply a focus constraint once the track already exists (decoding runs
+    // indefinitely here, so there's no "stream started" promise to await —
+    // the video element actually getting its stream is the real signal).
+    const video = videoRef.current;
+    function onLoadedMetadata() {
+      try {
+        const stream = video.srcObject;
+        const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+        const caps = track && track.getCapabilities && track.getCapabilities();
+        if (track && caps && caps.focusMode && caps.focusMode.includes('continuous')) {
+          track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => { /* device doesn't honor it post-hoc — ignore */ });
+        }
+      } catch { /* getCapabilities/applyConstraints unsupported on this device — ignore */ }
+    }
+    if (video) video.addEventListener('loadedmetadata', onLoadedMetadata);
     reader.decodeFromConstraints(
-      { video: { facingMode: 'environment' } },
-      videoRef.current,
+      { video: { facingMode: 'environment', advanced: [{ focusMode: 'continuous' }] } },
+      video,
       (result) => {
         if (result && !detectedRef.current && !cancelled) {
           detectedRef.current = true;
@@ -4861,6 +4883,7 @@ function BarcodeScanner({ onDetected, onClose }) {
     });
     return () => {
       cancelled = true;
+      if (video) video.removeEventListener('loadedmetadata', onLoadedMetadata);
       try { reader.reset(); } catch { /* ignore */ }
     };
   }, []);
