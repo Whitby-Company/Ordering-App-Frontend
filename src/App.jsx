@@ -4838,35 +4838,72 @@ function BarcodeScanner({ onDetected, onClose }) {
   const onDetectedRef = useRef(onDetected);
   onDetectedRef.current = onDetected;
   const [error, setError] = useState('');
+  const [focusRing, setFocusRing] = useState(null); // {x, y} in pixels, for the tap-to-focus animation
+
+  // Re-applies focus, optionally aimed at a tapped point. Shared by the
+  // automatic attempt (on stream start) and the manual tap-to-focus handler
+  // below, since Android Chrome's support for a device actually honoring
+  // this varies a lot -- some devices need it re-asserted, some need a
+  // point of interest to refocus somewhere other than the center, and some
+  // don't support it at all (in which case this just quietly does nothing).
+  function applyFocus(point) {
+    try {
+      const video = videoRef.current;
+      const stream = video && video.srcObject;
+      const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+      const caps = track && track.getCapabilities && track.getCapabilities();
+      if (!track || !caps || !caps.focusMode || !caps.focusMode.includes('continuous')) return;
+      const advanced = { focusMode: 'continuous' };
+      if (point && caps.pointsOfInterest) advanced.pointsOfInterest = [point];
+      track.applyConstraints({ advanced: [advanced] }).catch(() => { /* device doesn't honor it post-hoc — ignore */ });
+    } catch { /* getCapabilities/applyConstraints unsupported on this device — ignore */ }
+  }
+
+  // Tap the preview to manually re-trigger focus at that spot -- the
+  // standard fallback for phones whose continuous autofocus doesn't
+  // reliably re-sharpen for a close-up barcode on its own.
+  function handleTapToFocus(e) {
+    const video = videoRef.current;
+    if (!video) return;
+    const rect = video.getBoundingClientRect();
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    const px = t.clientX - rect.left, py = t.clientY - rect.top;
+    applyFocus({ x: px / rect.width, y: py / rect.height });
+    setFocusRing({ x: px, y: py });
+    setTimeout(() => setFocusRing(null), 700);
+  }
 
   useEffect(() => {
     let cancelled = false;
     const reader = new BrowserMultiFormatReader();
     readerRef.current = reader;
-    // facingMode alone leaves focus behavior up to the browser/device
-    // default. iOS/Safari's camera tends to autofocus continuously either
-    // way, but Android/Chrome varies a lot by device -- some default to a
-    // fixed or single-shot focus that never re-sharpens once aimed, which
-    // reads as "won't pick up the barcode." Requesting continuous autofocus
-    // explicitly up front covers browsers that honor it at getUserMedia
-    // time; the loadedmetadata listener below covers devices that only
-    // apply a focus constraint once the track already exists (decoding runs
-    // indefinitely here, so there's no "stream started" promise to await —
-    // the video element actually getting its stream is the real signal).
+    // facingMode alone leaves focus and resolution entirely up to the
+    // browser/device default. iOS/Safari's camera tends to autofocus
+    // continuously and picks a reasonably high resolution either way, but
+    // Android/Chrome varies a lot by device -- some default to a fixed or
+    // single-shot focus that never re-sharpens once aimed (reads as "won't
+    // pick up the barcode"), and some default to a low resolution that's
+    // too soft to resolve a barcode's fine lines even in perfect focus.
+    // Requesting continuous autofocus explicitly (both as a bare value and
+    // in "advanced", since device/browser support for either form varies)
+    // and a higher ideal resolution addresses both. The loadedmetadata
+    // listener below covers devices that only apply a focus constraint
+    // once the track already exists (decoding runs indefinitely here, so
+    // there's no "stream started" promise to await -- the video element
+    // actually getting its stream is the real signal).
     const video = videoRef.current;
-    function onLoadedMetadata() {
-      try {
-        const stream = video.srcObject;
-        const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
-        const caps = track && track.getCapabilities && track.getCapabilities();
-        if (track && caps && caps.focusMode && caps.focusMode.includes('continuous')) {
-          track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => { /* device doesn't honor it post-hoc — ignore */ });
-        }
-      } catch { /* getCapabilities/applyConstraints unsupported on this device — ignore */ }
-    }
+    function onLoadedMetadata() { applyFocus(); }
     if (video) video.addEventListener('loadedmetadata', onLoadedMetadata);
     reader.decodeFromConstraints(
-      { video: { facingMode: 'environment', advanced: [{ focusMode: 'continuous' }] } },
+      {
+        video: {
+          facingMode: 'environment',
+          focusMode: 'continuous',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          advanced: [{ focusMode: 'continuous' }],
+        },
+      },
       video,
       (result) => {
         if (result && !detectedRef.current && !cancelled) {
@@ -4891,18 +4928,29 @@ function BarcodeScanner({ onDetected, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+      <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }} onClick={handleTapToFocus} onTouchEnd={handleTapToFocus}>
         <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
-        <div style={{ position: 'absolute', top: '32%', left: '8%', right: '8%', bottom: '42%', border: '3px solid #6FBF9B', borderRadius: 10, boxShadow: '0 0 0 2000px rgba(0,0,0,0.45)' }} />
-        <div style={{ position: 'absolute', top: 'calc(32% - 34px)', left: 0, right: 0, textAlign: 'center', color: '#fff', fontSize: 14, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+        <div style={{ position: 'absolute', top: '32%', left: '8%', right: '8%', bottom: '42%', border: '3px solid #6FBF9B', borderRadius: 10, boxShadow: '0 0 0 2000px rgba(0,0,0,0.45)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: 'calc(32% - 34px)', left: 0, right: 0, textAlign: 'center', color: '#fff', fontSize: 14, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.8)', pointerEvents: 'none' }}>
           Hold the barcode inside the box
         </div>
+        <div style={{ position: 'absolute', bottom: 14, left: 0, right: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: 12.5, textShadow: '0 1px 3px rgba(0,0,0,0.8)', pointerEvents: 'none' }}>
+          Blurry? Tap the barcode to refocus
+        </div>
+        {focusRing && (
+          <div style={{
+            position: 'absolute', left: focusRing.x - 32, top: focusRing.y - 32, width: 64, height: 64,
+            borderRadius: '50%', border: '2px solid #6FBF9B', pointerEvents: 'none',
+            animation: 'focusRingPulse 0.7s ease-out',
+          }} />
+        )}
         {error && (
           <div style={{ position: 'absolute', top: 16, left: 16, right: 16, background: '#B5493B', color: '#fff', padding: 12, borderRadius: 8, fontSize: 13 }}>
             {error}
           </div>
         )}
       </div>
+      <style>{'@keyframes focusRingPulse { 0% { transform: scale(1.3); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }'}</style>
       <div style={{ padding: 16, paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))', background: '#14181F' }}>
         <button
           style={{ width: '100%', background: '#2B2E27', color: '#F7F8F4', border: 'none', borderRadius: 10, padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
