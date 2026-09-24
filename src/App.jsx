@@ -672,6 +672,7 @@ function buildItemHistory(itemId, currentStock = 0, receipts = [], manualLog = [
   const caseSize = it && Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
   const rows = [];
   for (const o of orders) {
+    if (o.nonInventory) continue; // never actually drew from tracked stock — matches computeStock()'s own exclusion
     const line = (o.lines || []).find(l => l.id === itemId);
     if (!line) continue;
     const qty = Number(line.qty) || 0;
@@ -7136,6 +7137,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
     const m = {};
     for (const o of orders) {
       if (o.status === 'pending') continue; // pending hasn't reserved stock
+      if (o.nonInventory) continue; // never actually drew from tracked stock
       if (!o.deliveryDate || o.deliveryDate <= today) continue; // only future deliveries
       for (const l of (o.lines || [])) {
         // Stock is in BOXES. A case line reserved qty × case_size boxes; a box
