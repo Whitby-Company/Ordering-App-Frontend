@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
-import { BrowserMultiFormatReader } from '@zxing/library';
+import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from '@zxing/library';
 import taiyoLogo from './assets/taiyo-logo.png';
 import { formatDate, todayISODate, hstDateOf, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal, fullPackLabel } from './utils.js';
 import {
@@ -4981,7 +4981,24 @@ function BarcodeScanner({ onDetected, onClose }) {
 
   useEffect(() => {
     let cancelled = false;
-    const reader = new BrowserMultiFormatReader();
+    // No hints at all still tries every format (1D + QR/DataMatrix/Aztec/
+    // PDF417), but spends decode time on 2D formats this scanner never
+    // needs -- retail product barcodes (what this is actually used for)
+    // are UPC/EAN/Code128, never QR or the other 2D formats. Scoping to
+    // just the formats that matter lets more frames get decoded per second
+    // by not wasting any of them on irrelevant formats. (DecodeHintType.
+    // TRY_HARDER looked like a reasonable further addition for more
+    // reliable decodes, but testing against a real generated barcode
+    // showed it actually breaks 1D decoding outright in this library
+    // version -- confirmed by isolating it: with TRY_HARDER, a barcode
+    // that decodes in ~1s without it never decoded at all in 30+s of
+    // testing. Deliberately not using it.)
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
+      BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.ITF, BarcodeFormat.CODABAR,
+    ]);
+    const reader = new BrowserMultiFormatReader(hints);
     readerRef.current = reader;
     // facingMode alone leaves focus and resolution entirely up to the
     // browser/device default. iOS/Safari's camera tends to autofocus
