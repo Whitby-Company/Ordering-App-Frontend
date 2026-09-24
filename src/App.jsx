@@ -3061,6 +3061,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [uploadOpen, setUploadOpen] = useState(false);
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
+  const [showNotesOnInvoice, setShowNotesOnInvoice] = useShowNotesOnInvoice();
   const [quickEntry, setQuickEntry] = useState(desktop); // grid entry: desktop only — the toggle to turn it on is desktop-only too, so mobile should never default into it (including when editing), or there'd be no way back out of it
   const [priceOverrides, setPriceOverrides] = useState(() => (savedDraft.priceOverrides && typeof savedDraft.priceOverrides === 'object') ? savedDraft.priceOverrides : {}); // itemId -> manual price/each override (only when user changes it, or copied exactly from a duplicated order)
   // Adopt the customer's "is distributor" default (unless manually toggled).
@@ -3928,6 +3929,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
             title="Print invoices/order sheets with items in inventory (warehouse pick) order"
           >
             {printInvOrder ? 'Inventory order ✓' : 'Inventory order'}
+          </button>
+        )}
+        {desktop && (
+          <button
+            style={{ ...styles.allItemsChip, ...(showNotesOnInvoice ? styles.allItemsChipOn : {}) }}
+            onClick={() => setShowNotesOnInvoice(!showNotesOnInvoice)}
+            title="When on, an order's notes print on its invoice below the PO # box"
+          >
+            {showNotesOnInvoice ? 'Notes on invoice ✓' : 'Notes on invoice'}
           </button>
         )}
         {desktop && customerId != null && (
@@ -6670,7 +6680,6 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
   const allCustList = (customersAll && customersAll.length) ? customersAll : customers;
   const activeScope = scope === 'active';
   const [query, setQuery] = useState('');
-  const [showNotesOnInvoice, setShowNotesOnInvoice] = useShowNotesOnInvoice();
   const [openId, setOpenId] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [iifBusyId, setIifBusyId] = useState(null);
@@ -7020,10 +7029,6 @@ function OfficeOrders({ orders, items, customers, customersAll, printSequence, b
             )}
           </div>
         )}
-        <label style={officeStyles.checkboxLabel} title="When on, an order's notes print on its invoice below the PO # box">
-          <input type="checkbox" checked={showNotesOnInvoice} onChange={e => setShowNotesOnInvoice(e.target.checked)} />
-          Show notes on invoice
-        </label>
         {activeScope && (
           <button
             style={{ ...officeStyles.primarySmallBtn, ...(batchExportable.length === 0 || batchBusy ? officeStyles.smallBtnDisabled : {}) }}
