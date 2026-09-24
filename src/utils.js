@@ -15,6 +15,17 @@ export function formatDate(iso) {
 export function todayISODate() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Honolulu', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
+// Like todayISODate, but for an arbitrary timestamp instead of "now" — the
+// Hawaii-time calendar date a UTC timestamp (e.g. a stock_log changedAt)
+// falls on. HST is UTC-10, so a timestamp in the first 10 hours of a UTC day
+// is still the previous day in Hawaii; naively slicing the ISO string's date
+// portion gives the wrong day for anything in that window, which matters
+// wherever a UTC timestamp's date needs to line up with a date the backend
+// stored in HST (e.g. a stock_baseline's as_of_date).
+export function hstDateOf(isoTimestamp) {
+  if (!isoTimestamp) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Honolulu', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(isoTimestamp));
+}
 // ISO yyyy-mm-dd -> mm/dd/yy (2-digit year) for the compact date field.
 export function formatDateMMDDYY(iso) {
   if (!iso) return '';

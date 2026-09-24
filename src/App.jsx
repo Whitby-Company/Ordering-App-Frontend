@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import JsBarcode from 'jsbarcode';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import taiyoLogo from './assets/taiyo-logo.png';
-import { formatDate, todayISODate, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal, fullPackLabel } from './utils.js';
+import { formatDate, todayISODate, hstDateOf, formatDateMMDDYY, parseTypedDate, formatDateTime, toISO, formatMoney, lineTotal, casePrice, displayCode, csvEscape, editDistance, fuzzyScore, isSeasonal, fullPackLabel } from './utils.js';
 import {
   Search, Plus, Minus, X, Check, ChevronDown, ChevronLeft, Package, User,
   ClipboardList, LayoutGrid, Calendar, ClipboardCheck, Boxes, PlusCircle,
@@ -705,7 +705,7 @@ function buildItemHistory(itemId, currentStock = 0, receipts = [], manualLog = [
   // through like an order/PO delta would be.
   for (const m of (manualLog || [])) {
     if (!m.changedAt) continue;
-    const d = String(m.changedAt).slice(0, 10);
+    const d = hstDateOf(m.changedAt);
     const hasOld = m.oldStock != null && Number.isFinite(Number(m.oldStock));
     rows.push({
       kind: 'manual',
@@ -7314,7 +7314,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
         // redo" tool, which just logs a delta with no guarantee it matches
         // the backend's actual calculation — it's just as trustworthy as a
         // real baseline for continuing the running total from.
-        isRealBaseline: baselineKeys.has(`${String(e.changedAt).slice(0, 10)}|${Number(e.newStock)}`) || /^Corrected received qty on PO/i.test(e.reason || ''),
+        isRealBaseline: baselineKeys.has(`${hstDateOf(e.changedAt)}|${Number(e.newStock)}`) || /^Corrected received qty on PO/i.test(e.reason || ''),
       }));
       // Some real baselines have NO matching log entry at all (e.g. set via a
       // path that only logs when the computed on-hand actually differed from
@@ -7322,7 +7322,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
       // the ledger would never hit its true reset point and would keep
       // reversing indefinitely through older orders/POs as if nothing ever
       // grounded it — so add one directly from the baseline itself.
-      const loggedKeys = new Set(manual.filter(m => m.isRealBaseline).map(m => `${String(m.changedAt).slice(0, 10)}|${Number(m.newStock)}`));
+      const loggedKeys = new Set(manual.filter(m => m.isRealBaseline).map(m => `${hstDateOf(m.changedAt)}|${Number(m.newStock)}`));
       const syntheticBaselines = baselines
         .filter(b => !loggedKeys.has(`${b.asOfDate}|${b.count}`))
         .map(b => ({
