@@ -3151,33 +3151,38 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const customerName = findCust(customerId)?.name
     || (isEdit && editOrder.customerId === customerId ? editOrder.customer : '')
     || '';
-  // Auto PO# = MMDDYY(delivery date)-<customer abbreviation>.
+  // Auto PO# = MMDDYY(today, when the order is being made)-<customer abbreviation>.
   const autoPo = useMemo(() => {
     // Fill in as soon as a customer is chosen. Uses TODAY's date (MMDDYY) plus
     // the customer's abbreviation when they have one.
     if (customerId == null) return '';
     const cust = findCust(customerId);
     const abbr = (cust && cust.abbreviation || '').trim();
-    const [y, m, d] = todayISODate().split('-');
+    const today = todayISODate();
+    const [y, m, d] = today.split('-');
     const mmddyy = `${m}${d}${y.slice(2)}`;
     const base = abbr ? `${mmddyy}-${abbr}` : mmddyy;
-    // If this store already has a SUBMITTED order for the same delivery date,
-    // this is a second invoice — make the PO unique by appending -1 (then -2…).
-    if (deliveryDate) {
-      const sameDay = (orders || []).filter(o =>
-        o.status !== 'pending' && !o.voided && o.customerId === customerId &&
-        o.deliveryDate === deliveryDate && (!isEdit || o.id !== editOrder.id)
-      );
-      if (sameDay.length > 0) {
-        // find the next free suffix so we don't collide with an existing -N
-        const usedPos = new Set(sameDay.map(o => (o.poNumber || '').trim()));
-        let n = sameDay.length;
-        while (usedPos.has(`${base}-${n}`)) n++;
-        return `${base}-${n}`;
-      }
+    // If this store already has another SUBMITTED order made TODAY -- the
+    // same basis this PO# base is actually built from, above -- this is a
+    // second invoice today, so make the PO unique by appending -1 (then
+    // -2…). Compared by submittedAt, not deliveryDate: two orders both made
+    // today can easily have different delivery dates, which would let their
+    // auto PO#s collide silently since delivery date was never what the
+    // base string was derived from. hstDateOf (not a raw slice of the UTC
+    // timestamp) keeps this consistent with today's own HST date.
+    const sameDay = (orders || []).filter(o =>
+      o.status !== 'pending' && !o.voided && o.customerId === customerId &&
+      hstDateOf(o.submittedAt) === today && (!isEdit || o.id !== editOrder.id)
+    );
+    if (sameDay.length > 0) {
+      // find the next free suffix so we don't collide with an existing -N
+      const usedPos = new Set(sameDay.map(o => (o.poNumber || '').trim()));
+      let n = sameDay.length;
+      while (usedPos.has(`${base}-${n}`)) n++;
+      return `${base}-${n}`;
     }
     return base;
-  }, [customers, customerId, deliveryDate, orders, isEdit, editOrder]);
+  }, [customers, customerId, orders, isEdit, editOrder]);
   const poValue = poEdited ? poNumber : autoPo;
   // Next invoice number = (highest existing order id + 1) + offset. In edit mode
   // it's the order's own number.
