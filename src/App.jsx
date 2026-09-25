@@ -5978,10 +5978,10 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
           </button>
           <div style={{ position: 'relative' }}>
             <button
-              style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(['items', 'customers', 'catalogs'].includes(section) ? officeStyles.navBtnActive : {}) }}
+              style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(['items', 'customers', 'catalogs', 'promos'].includes(section) ? officeStyles.navBtnActive : {}) }}
               onClick={() => setDataMenuOpen(o => !o)}
             >
-              {section === 'customers' ? 'Customers' : section === 'catalogs' ? 'Catalogs' : 'Items'}
+              {section === 'customers' ? 'Customers' : section === 'catalogs' ? 'Catalogs' : section === 'promos' ? 'Promos' : 'Items'}
               <ChevronDown size={14} style={{ transform: dataMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
             </button>
             {dataMenuOpen && (
@@ -6005,6 +6005,12 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
                     onClick={() => { setSection('catalogs'); setDataMenuOpen(false); }}
                   >
                     Catalogs
+                  </button>
+                  <button
+                    style={{ ...officeStyles.navMenuItem, ...(section === 'promos' ? officeStyles.navMenuItemActive : {}) }}
+                    onClick={() => { setSection('promos'); setDataMenuOpen(false); }}
+                  >
+                    Promos
                   </button>
                 </div>
               </>
@@ -6066,6 +6072,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'items' && <OfficeInventory mode="items" items={items} customers={activeCustomers} orders={orders} brandColors={brandColors} brandSettings={brandSettings} printSequence={printSequence} onRefresh={onRefresh} />}
         {section === 'customers' && <OfficeCustomers customers={customers} onRefresh={onRefresh} />}
         {section === 'catalogs' && <OfficeCatalogs customers={activeCustomers} items={items} onRefresh={onRefresh} />}
+        {section === 'promos' && <OfficePromos customers={activeCustomers} items={items} />}
         {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
         {section === 'taiyoout' && <OfficePodUploads />}
@@ -13154,6 +13161,286 @@ function BulkCatalogAddModal({ customers = [], items = [], onClose, onSaved }) {
           <button style={{ ...officeStyles.smallBtn, background: '#2B5D50', color: '#fff' }} onClick={save} disabled={busy}>{busy ? 'Adding…' : `Add to ${pickedCusts.size} store(s)`}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Simple searchable multi-select: type to filter, click a match to add it as
+// a chip, click the chip's x to remove. Used for both the item and customer
+// pickers in the promo editor below.
+function TagPicker({ options, selectedIds, onChange, placeholder }) {
+  const [query, setQuery] = useState('');
+  const selectedSet = new Set(selectedIds);
+  const matches = query.trim()
+    ? options.filter(o => !selectedSet.has(o.id) && o.label.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8)
+    : [];
+  const selectedOptions = selectedIds.map(id => options.find(o => o.id === id)).filter(Boolean);
+  return (
+    <div>
+      <div style={{ position: 'relative' }}>
+        <input
+          style={{ width: '100%', padding: '8px 10px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }}
+          placeholder={placeholder}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
+        {matches.length > 0 && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, marginTop: 4, maxHeight: 220, overflowY: 'auto', zIndex: 20, boxShadow: '0 6px 18px rgba(20,24,31,0.15)' }}>
+            {matches.map(o => (
+              <div
+                key={o.id}
+                style={{ padding: '8px 10px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #F0EEE6' }}
+                onMouseDown={e => { e.preventDefault(); onChange([...selectedIds, o.id]); setQuery(''); }}
+              >
+                {o.label}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {selectedOptions.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {selectedOptions.map(o => (
+            <span key={o.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 14, padding: '3px 6px 3px 10px', fontSize: 12.5 }}>
+              {o.label}
+              <button
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', color: '#5B6058' }}
+                onClick={() => onChange(selectedIds.filter(id => id !== o.id))}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function promoStatus(p) {
+  const today = todayISODate();
+  if (p.endDate < today) return 'expired';
+  if (p.startDate > today) return 'upcoming';
+  return 'active';
+}
+
+function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
+  const isEdit = !!promo;
+  const [name, setName] = useState(promo ? promo.name : '');
+  const [itemIds, setItemIds] = useState(promo ? promo.items.map(i => i.id) : []);
+  const [allCustomers, setAllCustomers] = useState(promo ? promo.appliesToAllCustomers : false);
+  const [customerIds, setCustomerIds] = useState(promo ? promo.customers.map(c => c.id) : []);
+  const [amountType, setAmountType] = useState(promo ? promo.amountType : 'flat_per_box');
+  const [amount, setAmount] = useState(promo ? String(promo.amount) : '');
+  const [startDate, setStartDate] = useState(promo ? promo.startDate : todayISODate());
+  const [endDate, setEndDate] = useState(promo ? promo.endDate : todayISODate());
+  const [notes, setNotes] = useState(promo ? (promo.notes || '') : '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const itemOptions = useMemo(() => items.map(i => ({ id: i.id, label: `${i.name}${i.brand ? ' · ' + i.brand : ''}` })), [items]);
+  const customerOptions = useMemo(() => customers.map(c => ({ id: c.id, label: c.name })), [customers]);
+
+  async function save() {
+    setErr('');
+    if (!name.trim()) { setErr('Give this promo a name.'); return; }
+    if (itemIds.length === 0) { setErr('Pick at least one item.'); return; }
+    if (!allCustomers && customerIds.length === 0) { setErr('Pick at least one customer, or mark this for all customers.'); return; }
+    if (!amount || isNaN(Number(amount))) { setErr('Enter a valid amount.'); return; }
+    if (endDate < startDate) { setErr('End date is before the start date.'); return; }
+    setSaving(true);
+    try {
+      const body = {
+        name: name.trim(), itemIds, appliesToAllCustomers: allCustomers, customerIds,
+        amountType, amount: Number(amount), startDate, endDate, notes: notes.trim() || null,
+        createdBy: getSubmitterName() || undefined,
+      };
+      if (isEdit) await apiPatch(`/promos/${promo.id}`, body);
+      else await apiPost('/promos', body);
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Could not save this promo.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
+      <div style={{ background: '#F7F8F4', borderRadius: 14, padding: 22, width: 520, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(20,24,31,0.28)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: '#14181F', marginBottom: 16 }}>{isEdit ? 'Edit promo' : 'New promo'}</div>
+
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>NAME</label>
+        <input style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Halloween scan-back, Storck" />
+
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>ITEMS</label>
+        <div style={{ marginBottom: 14 }}>
+          <TagPicker options={itemOptions} selectedIds={itemIds} onChange={setItemIds} placeholder="Search items to add…" />
+        </div>
+
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>CUSTOMERS</label>
+        <div style={{ display: 'flex', gap: 14, marginBottom: 8, fontSize: 13 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="radio" checked={allCustomers} onChange={() => setAllCustomers(true)} /> All customers
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="radio" checked={!allCustomers} onChange={() => setAllCustomers(false)} /> Specific customers
+          </label>
+        </div>
+        {!allCustomers && (
+          <div style={{ marginBottom: 14 }}>
+            <TagPicker options={customerOptions} selectedIds={customerIds} onChange={setCustomerIds} placeholder="Search customers to add…" />
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>AMOUNT</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select style={{ padding: '9px 8px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }} value={amountType} onChange={e => setAmountType(e.target.value)}>
+                <option value="flat_per_box">$/box</option>
+                <option value="percent">%</option>
+              </select>
+              <input style={{ flex: 1, minWidth: 0, padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit' }} type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>START DATE</label>
+            <input style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>END DATE</label>
+            <input style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          </div>
+        </div>
+
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>NOTES (OPTIONAL)</label>
+        <textarea style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', marginBottom: 14, minHeight: 60, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Vendor reference, terms, anything worth remembering about this deal" />
+
+        {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 12 }}>{err}</div>}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button style={{ ...officeStyles.smallBtn }} onClick={onClose} disabled={saving}>Cancel</button>
+          <button style={{ ...officeStyles.primarySmallBtn, opacity: saving ? 0.6 : 1 }} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save promo'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OfficePromos({ items, customers }) {
+  const [promos, setPromos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [editModal, setEditModal] = useState(null); // null = closed, {} = new, {...promo} = editing
+  const [deleteBusyId, setDeleteBusyId] = useState(null);
+
+  async function load() {
+    setLoading(true); setErr('');
+    try { setPromos(await apiGet('/promos')); }
+    catch (e) { setErr(e.message || 'Could not load promos.'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return promos.filter(p => {
+      if (statusFilter !== 'all' && promoStatus(p) !== statusFilter) return false;
+      if (q && !p.name.toLowerCase().includes(q) &&
+          !p.items.some(i => i.name.toLowerCase().includes(q)) &&
+          !p.customers.some(c => c.name.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [promos, query, statusFilter]);
+
+  async function handleDelete(p) {
+    if (!window.confirm(`Delete "${p.name}"? This can't be undone.`)) return;
+    setDeleteBusyId(p.id);
+    try { await apiDelete(`/promos/${p.id}`); await load(); }
+    catch (e) { window.alert(e.message || 'Could not delete this promo.'); }
+    finally { setDeleteBusyId(null); }
+  }
+
+  const statusBadge = (p) => {
+    const s = promoStatus(p);
+    if (s === 'active') return <span style={officeStyles.badgeProcessed}>Active</span>;
+    if (s === 'upcoming') return <span style={{ ...officeStyles.badgePending, color: '#8A6D1B', background: '#F5E9C6', border: '1px solid #E2CE8E' }}>Upcoming</span>;
+    return <span style={officeStyles.badgePending}>Expired</span>;
+  };
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Promos</div>
+        <input style={officeStyles.search} placeholder="Search by name, item, or customer…" value={query} onChange={e => setQuery(e.target.value)} />
+        <select style={{ padding: '8px 10px', border: '1px solid #E3E1D6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="upcoming">Upcoming</option>
+          <option value="expired">Expired</option>
+        </select>
+        <button style={officeStyles.primarySmallBtn} onClick={() => setEditModal({})}>+ New promo</button>
+      </div>
+
+      {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 12 }}>{err}</div>}
+      {loading ? (
+        <div style={{ color: '#8A8F87', fontSize: 13 }}>Loading…</div>
+      ) : (
+        <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Name</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Items</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Customers</th>
+                <th style={{ ...officeStyles.th, position: 'static', textAlign: 'right' }}>Amount</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Start</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>End</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Status</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(p => (
+                <tr key={p.id}>
+                  <td style={{ ...officeStyles.td, fontWeight: 700 }}>{p.name}{p.notes ? <div style={{ fontWeight: 400, fontSize: 11.5, color: '#8A8F87', marginTop: 2 }}>{p.notes}</div> : null}</td>
+                  <td style={officeStyles.td}>{p.items.map(i => i.name).join(', ')}</td>
+                  <td style={officeStyles.td}>{p.appliesToAllCustomers ? <span style={{ color: '#2B5D50', fontWeight: 600 }}>All customers</span> : p.customers.map(c => c.name).join(', ')}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.amountType === 'percent' ? `${p.amount}%` : formatMoney(p.amount) + '/box'}</td>
+                  <td style={officeStyles.td}>{formatDate(p.startDate)}</td>
+                  <td style={officeStyles.td}>{formatDate(p.endDate)}</td>
+                  <td style={officeStyles.td}>{statusBadge(p)}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button style={officeStyles.smallBtn} onClick={() => setEditModal(p)}>Edit</button>
+                    {' '}
+                    <button style={{ ...officeStyles.smallBtn, color: '#B5493B' }} onClick={() => handleDelete(p)} disabled={deleteBusyId === p.id}>{deleteBusyId === p.id ? '…' : 'Delete'}</button>
+                  </td>
+                </tr>
+              ))}
+              {shown.length === 0 && (
+                <tr><td colSpan={8} style={{ ...officeStyles.td, textAlign: 'center', color: '#8A8F87' }}>{promos.length === 0 ? 'No promos yet — add one to get started.' : 'No promos match your filters.'}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editModal && (
+        <PromoEditModal
+          promo={editModal.id ? editModal : null}
+          items={items}
+          customers={customers}
+          onClose={() => setEditModal(null)}
+          onSaved={load}
+        />
+      )}
     </div>
   );
 }
