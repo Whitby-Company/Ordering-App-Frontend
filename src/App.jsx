@@ -3333,10 +3333,16 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     return resolved.map(({ o, item, unit }) => {
       const pack = packFor(item, unit);
       // Price: a manual per-line override wins; otherwise the resolved price.
-      // BUT when qty is 0, the per-each price shows 0 too (and total is 0).
+      // Zeroed only when NOTHING was asked for. A backordered line (qty capped
+      // to 0 because the item is out of stock, but a real quantity requested)
+      // keeps its true per-each price -- the item was genuinely ordered, and
+      // blanking its price made it look like a $0 item rather than one that
+      // can't ship yet. The line total is still qty x price, so it correctly
+      // stays $0.00 until something actually ships.
       const ov = priceOverrides[o.id];
       const basePrice = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit, orderAllCases);
-      const price = (Number(o.qty) || 0) <= 0 ? 0 : basePrice;
+      const asked = Number(o.requestedQty != null ? o.requestedQty : o.qty) || 0;
+      const price = asked <= 0 ? 0 : basePrice;
       return { ...item, qty: o.qty, requestedQty: o.requestedQty, unit, pack, price, priceOverridden: ov !== undefined && ov !== '' };
     });
   }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf, priceOverrides]);
