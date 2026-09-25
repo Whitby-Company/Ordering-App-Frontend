@@ -5933,7 +5933,6 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
   useEffect(() => { if (section !== 'neworder' && editingOrder) setEditingOrder(null); }, [section]); // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshing, setRefreshing] = useState(false);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
-  const [taiyoMenuOpen, setTaiyoMenuOpen] = useState(false);
   // Badge counts only submitted-but-new orders (real work to process). Pending
   // drafts still appear in the Orders tab but don't inflate this "to-do" count.
   const activeOrderCount = useMemo(() => orders.filter(o => o.status !== 'pending' && !o.processed).length, [orders]);
@@ -6037,40 +6036,12 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
           >
             Purchasing
           </button>
-          <div style={{ position: 'relative' }}>
-            <button
-              style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(['taiyoin', 'taiyoout', 'taiyostorage'].includes(section) ? officeStyles.navBtnActive : {}) }}
-              onClick={() => setTaiyoMenuOpen(o => !o)}
-            >
-              {section === 'taiyoin' ? 'Taiyo In' : section === 'taiyostorage' ? 'Taiyo Storage' : section === 'taiyoout' ? 'Taiyo Out' : 'Taiyo'}
-              <ChevronDown size={14} style={{ transform: taiyoMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-            </button>
-            {taiyoMenuOpen && (
-              <>
-                <div style={officeStyles.navMenuOverlay} onClick={() => setTaiyoMenuOpen(false)} />
-                <div style={officeStyles.navMenu}>
-                  <button
-                    style={{ ...officeStyles.navMenuItem, ...(section === 'taiyoin' ? officeStyles.navMenuItemActive : {}) }}
-                    onClick={() => { setSection('taiyoin'); setTaiyoMenuOpen(false); }}
-                  >
-                    Taiyo In
-                  </button>
-                  <button
-                    style={{ ...officeStyles.navMenuItem, ...(section === 'taiyoout' ? officeStyles.navMenuItemActive : {}) }}
-                    onClick={() => { setSection('taiyoout'); setTaiyoMenuOpen(false); }}
-                  >
-                    Taiyo Out
-                  </button>
-                  <button
-                    style={{ ...officeStyles.navMenuItem, ...(section === 'taiyostorage' ? officeStyles.navMenuItemActive : {}) }}
-                    onClick={() => { setSection('taiyostorage'); setTaiyoMenuOpen(false); }}
-                  >
-                    Taiyo Storage
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            style={{ ...officeStyles.navBtn, ...(section === 'taiyoin' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('taiyoin')}
+          >
+            Taiyo
+          </button>
         </div>
         {isManualOverride && (
           <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
@@ -6112,12 +6083,12 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'promos' && <OfficePromos customers={activeCustomers} items={items} />}
         {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
+        {/* The embedded page is Taiyo's own, which carries its own tab bar
+            (Taiyo In / Storage / Out / Inventory), so one nav button landing
+            on Taiyo In is enough -- switching between them happens inside the
+            page rather than needing a duplicate dropdown out here. */}
         {section === 'taiyoin' && (
-          <iframe src="/taiyo?tab=current" title="Taiyo In" style={{ width: '100%', height: 'calc(100vh - 130px)', border: '1px solid #E3E1D6', borderRadius: 8 }} />
-        )}
-        {section === 'taiyoout' && <OfficePodUploads />}
-        {section === 'taiyostorage' && (
-          <iframe src="/taiyo?tab=storage" title="Taiyo Storage" style={{ width: '100%', height: 'calc(100vh - 130px)', border: '1px solid #E3E1D6', borderRadius: 8 }} />
+          <iframe src="/taiyo?tab=current" title="Taiyo" style={{ width: '100%', height: 'calc(100vh - 130px)', border: '1px solid #E3E1D6', borderRadius: 8 }} />
         )}
       </div>
     </div>
@@ -12447,6 +12418,12 @@ function OfficePriceChecks({ onBack } = {}) {
 // plus a way to remove a mistaken entry; matches each upload's reference
 // (an invoice number) against the real orders to show customer/date, same
 // as the warehouse page itself does.
+// NOTE: currently not reachable from the nav. This is the office-side view of
+// Taiyo Out (searchable by reference/customer/uploader, and can delete a
+// document) -- distinct from the Taiyo Out tab inside Taiyo's own embedded
+// page, which is their warehouse-side view and has neither. Kept here because
+// the Taiyo nav was collapsed to a single button pointing at Taiyo's page; wire
+// it back to a section if the office-side search/delete is wanted again.
 function OfficePodUploads() {
   const [docs, setDocs] = useState([]);
   const [orders, setOrders] = useState([]);
