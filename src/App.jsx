@@ -13268,64 +13268,69 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
-      <div style={{ background: '#F7F8F4', borderRadius: 14, padding: 22, width: 520, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(20,24,31,0.28)' }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 17, fontWeight: 800, color: '#14181F', marginBottom: 16 }}>{isEdit ? 'Edit promo' : 'New promo'}</div>
-
-        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>NAME</label>
-        <input style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', marginBottom: 14 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Halloween scan-back, Storck" />
-
-        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>ITEMS</label>
-        <div style={{ marginBottom: 14 }}>
-          <TagPicker options={itemOptions} selectedIds={itemIds} onChange={setItemIds} placeholder="Search items to add…" />
+      <div style={{ boxSizing: 'border-box', background: '#F7F8F4', borderRadius: 16, padding: 26, width: 680, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 16px 50px rgba(20,24,31,0.3)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ fontSize: 19, fontWeight: 800, color: '#14181F' }}>{isEdit ? 'Edit promo' : 'New promo'}</div>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', color: '#8A8F87', borderRadius: 6 }} onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
         </div>
 
-        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>CUSTOMERS</label>
-        <div style={{ display: 'flex', gap: 14, marginBottom: 8, fontSize: 13 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <input type="radio" checked={allCustomers} onChange={() => setAllCustomers(true)} /> All customers
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-            <input type="radio" checked={!allCustomers} onChange={() => setAllCustomers(false)} /> Specific customers
-          </label>
-        </div>
-        {!allCustomers && (
-          <div style={{ marginBottom: 14 }}>
-            <TagPicker options={customerOptions} selectedIds={customerIds} onChange={setCustomerIds} placeholder="Search customers to add…" />
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>NAME</label>
+        <input style={{ boxSizing: 'border-box', width: '100%', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14.5, fontFamily: 'inherit', marginBottom: 20 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Halloween scan-back, Storck" />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 20 }}>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>ITEMS</label>
+            <TagPicker options={itemOptions} selectedIds={itemIds} onChange={setItemIds} placeholder="Search items to add…" />
           </div>
-        )}
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>CUSTOMERS</label>
+            <div style={{ display: 'flex', gap: 14, marginBottom: 9, fontSize: 13 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="radio" checked={allCustomers} onChange={() => setAllCustomers(true)} /> All customers
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="radio" checked={!allCustomers} onChange={() => setAllCustomers(false)} /> Specific
+              </label>
+            </div>
+            {allCustomers ? (
+              <div style={{ fontSize: 13, color: '#8A8F87', padding: '9px 0' }}>Applies to every customer.</div>
+            ) : (
+              <TagPicker options={customerOptions} selectedIds={customerIds} onChange={setCustomerIds} placeholder="Search customers to add…" />
+            )}
+          </div>
+        </div>
 
-        <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>AMOUNT</label>
-            <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>AMOUNT</label>
+            <div style={{ display: 'flex', gap: 8 }}>
               <select style={{ padding: '9px 8px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }} value={amountType} onChange={e => setAmountType(e.target.value)}>
                 <option value="flat_per_box">$/box</option>
                 <option value="percent">%</option>
               </select>
-              <input style={{ flex: 1, minWidth: 0, padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit' }} type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
+              <input style={{ boxSizing: 'border-box', flex: 1, minWidth: 0, padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit' }} type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
             </div>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>START DATE</label>
-            <input style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>START DATE</label>
+            <input style={{ boxSizing: 'border-box', width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>END DATE</label>
-            <input style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>END DATE</label>
+            <input style={{ boxSizing: 'border-box', width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
         </div>
 
-        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>NOTES (OPTIONAL)</label>
-        <textarea style={{ width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', marginBottom: 14, minHeight: 60, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Vendor reference, terms, anything worth remembering about this deal" />
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>NOTES (OPTIONAL)</label>
+        <textarea style={{ boxSizing: 'border-box', width: '100%', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', marginBottom: 18, minHeight: 64, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Vendor reference, terms, anything worth remembering about this deal" />
 
-        {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 12 }}>{err}</div>}
+        {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 14 }}>{err}</div>}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button style={{ ...officeStyles.smallBtn }} onClick={onClose} disabled={saving}>Cancel</button>
-          <button style={{ ...officeStyles.primarySmallBtn, opacity: saving ? 0.6 : 1 }} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save promo'}</button>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid #E3E1D6', paddingTop: 18 }}>
+          <button style={{ ...officeStyles.smallBtn, padding: '10px 18px' }} onClick={onClose} disabled={saving}>Cancel</button>
+          <button style={{ ...officeStyles.primarySmallBtn, padding: '10px 18px', opacity: saving ? 0.6 : 1 }} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save promo'}</button>
         </div>
       </div>
     </div>
