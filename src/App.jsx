@@ -2717,7 +2717,15 @@ function QuickEntryGrid({ allItems, catalog, priceOf, orderLines, setQty, onSetQ
                     key={l.id + ':price'}
                     type="text"
                     inputMode="decimal"
-                    defaultValue={l.price != null ? String(l.price) : ''}
+                    // basePrice, not price: this column is what the item costs
+                    // per each, which is worth seeing whether or not the line
+                    // can ship right now. `price` is the billing figure and is
+                    // 0 when nothing was ordered, which would blank this box on
+                    // an out-of-stock line. Using basePrice also keeps the box
+                    // stable as the quantity changes -- it's an uncontrolled
+                    // input, so a value that moved with qty could otherwise go
+                    // stale against what's actually stored.
+                    defaultValue={l.basePrice != null ? String(l.basePrice) : (l.price != null ? String(l.price) : '')}
                     onChange={e => { const v = e.target.value.trim().replace(/[^0-9.]/g, ''); if (v !== '') setPriceOverrides(p => ({ ...p, [l.id]: v })); }}
                     onBlur={e => { const v = e.target.value.trim().replace(/[^0-9.]/g, ''); if (v !== '') setPriceOverrides(p => ({ ...p, [l.id]: v })); }}
                     style={{ width: 64, textAlign: 'right', fontSize: 12, borderRadius: 4, padding: '2px 4px', border: '1px solid #D6D3C6', background: '#fff', color: '#14181F' }}
@@ -3343,7 +3351,7 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       const basePrice = (ov !== undefined && ov !== '' && Number.isFinite(Number(ov))) ? Number(ov) : priceOf(item, unit, orderAllCases);
       const asked = Number(o.requestedQty != null ? o.requestedQty : o.qty) || 0;
       const price = asked <= 0 ? 0 : basePrice;
-      return { ...item, qty: o.qty, requestedQty: o.requestedQty, unit, pack, price, priceOverridden: ov !== undefined && ov !== '' };
+      return { ...item, qty: o.qty, requestedQty: o.requestedQty, unit, pack, price, basePrice, priceOverridden: ov !== undefined && ov !== '' };
     });
   }, [order, catalogItems, items, isEdit, editOrder, catalog, unitOf, packFor, priceOf, priceOverrides]);
 
