@@ -3765,7 +3765,9 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
         offCatalog,
       });
       resetForm();
-      await onOrderSubmitted(); // refresh items + order history from server
+      // Pass the created order back: a caller that started this from a stock
+      // hold needs its id to record which invoice the hold turned into.
+      await onOrderSubmitted(result); // refresh items + order history from server
     } catch (err) {
       setSubmitError(err.message || `Something went wrong ${pending ? 'saving' : 'submitting'} this order.`);
     } finally {
@@ -6058,9 +6060,34 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
     setCopySeed(s => s + 1);
     setSection('neworder');
   }, [setSection]);
+  // Turn a stock hold into a real order: seed New Order with the hold's
+  // customer and lines, then remember which hold it came from so that once the
+  // order actually submits, the hold is marked as having become that invoice.
+  // The order itself goes through the normal create flow, so it gets invoice
+  // numbering, PO#, catalog auto-add and everything else as usual.
+  const [pendingHoldId, setPendingHoldId] = useState(null);
+  const convertHoldToOrder = useCallback((h) => {
+    const draft = {
+      customerId: h.customerId || null,
+      deliveryDate: '',
+      order: (h.lines || []).map(l => ({ id: l.itemId, qty: l.qty, unit: l.unit || undefined })),
+      notes: h.notes || '',
+      priceOverrides: {},
+      nonInventory: false,
+    };
+    try { localStorage.setItem('orderDraft', JSON.stringify(draft)); } catch { /* ignore */ }
+    setEditingOrder(null);
+    setPendingHoldId(h.id);
+    setCopySeed(s => s + 1);
+    setSection('neworder');
+  }, [setSection]);
+
   // If the user navigates away from the New Order tab, drop the edit context so
   // coming back later starts a fresh order.
   useEffect(() => { if (section !== 'neworder' && editingOrder) setEditingOrder(null); }, [section]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Leaving New Order abandons a hold conversion too, so a later unrelated
+  // order doesn't accidentally close out someone's hold.
+  useEffect(() => { if (section !== 'neworder' && pendingHoldId) setPendingHoldId(null); }, [section]); // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshing, setRefreshing] = useState(false);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
   // Badge counts only submitted-but-new orders (real work to process). Pending
@@ -6204,7 +6231,19 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
               setBarcodesOff={setBarcodesOff}
               editOrder={editingOrder}
               onClose={editingOrder ? (() => { setEditingOrder(null); setSection('orders'); }) : null}
-              onOrderSubmitted={async () => { setEditingOrder(null); await onRefresh(); }}
+              onOrderSubmitted={async (result) => {
+                setEditingOrder(null);
+                // Started from a hold? Now that the order exists, release the
+                // hold against it so its stock stops being held and the hold
+                // records which invoice it became. Done after the order is
+                // safely created, so a failed submit leaves the hold in place.
+                if (pendingHoldId && result && result.id) {
+                  try { await apiPost(`/holds/${pendingHoldId}/release`, { orderId: result.id }); }
+                  catch { /* the order is what matters; the hold can be released by hand */ }
+                }
+                setPendingHoldId(null);
+                await onRefresh();
+              }}
               onEditExisting={editOrderInNewTab}
               desktop
             />
@@ -6223,7 +6262,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
             (Taiyo In / Storage / Out / Inventory), so one nav button landing
             on Taiyo In is enough -- switching between them happens inside the
             page rather than needing a duplicate dropdown out here. */}
-        {section === 'holds' && <OfficeHolds items={items} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
+        {section === 'holds' && <OfficeHolds items={items} onRefresh={onRefresh} onConvert={convertHoldToOrder} />}
         {section === 'taiyoin' && (
           <iframe src="/taiyo?tab=current" title="Taiyo" style={{ width: '100%', height: 'calc(100vh - 130px)', border: '1px solid #E3E1D6', borderRadius: 8 }} />
         )}
@@ -13685,7 +13724,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
 // never exports, and never shows in sales reports. Holds are created from the
 // New Order screen ("Save as hold"); this screen is where they're reviewed,
 // released, or turned into a real order.
-function OfficeHolds({ items = [], onRefresh = async () => {}, onEditOrder = null }) {
+function OfficeHolds({ items = [], onRefresh = async () => {}, onConvert = null }) {
   const [holds, setHolds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -13784,11 +13823,24 @@ function OfficeHolds({ items = [], onRefresh = async () => {}, onEditOrder = nul
                   <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {h.effectiveStatus === 'active' || h.effectiveStatus === 'expired' ? (
                       <>
+                        {onConvert && (
+                          <>
+                            <button
+                              style={officeStyles.primarySmallBtn}
+                              disabled={busyId === h.id}
+                              onClick={() => onConvert(h)}
+                              title="Open this hold as a new order — the hold closes out once that order is submitted"
+                            >
+                              Make invoice
+                            </button>
+                            {' '}
+                          </>
+                        )}
                         <button
                           style={officeStyles.smallBtn}
                           disabled={busyId === h.id}
                           onClick={() => act(h, 'release', `Release "${h.name}"? Its ${h.totalBoxes} box(es) go back into available stock.`)}
-                          title="Stop holding this stock"
+                          title="Stop holding this stock without ordering it"
                         >
                           {busyId === h.id ? '…' : 'Release'}
                         </button>
