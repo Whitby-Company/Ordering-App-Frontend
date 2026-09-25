@@ -13915,8 +13915,25 @@ function OfficePromos({ items, customers }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [editModal, setEditModal] = useState(null); // null = closed, {} = new, {...promo} = editing
   const [deleteBusyId, setDeleteBusyId] = useState(null);
-  const [expandedId, setExpandedId] = useState(null); // promo id showing its per-item net/TPR breakdown
+  const [expandedId, setExpandedId] = useState(null); // promo id showing its per-item cost/retail breakdown
   const custGroups = useMemo(() => customerGroupsFor(customers), [customers]);
+  // Shelf retail for whichever promo is expanded, fetched on demand rather than
+  // for every row -- most rows are never opened.
+  const [retailRows, setRetailRows] = useState([]);
+  useEffect(() => {
+    const p = promos.find(x => x.id === expandedId);
+    if (!p) { setRetailRows([]); return; }
+    const params = new URLSearchParams();
+    params.set('itemIds', p.items.map(i => i.id).join(','));
+    if (!p.appliesToAllCustomers && p.customers.length) {
+      params.set('customerIds', p.customers.map(c => c.id).join(','));
+    }
+    let cancelled = false;
+    apiGet(`/price-checks/latest-retail?${params.toString()}`)
+      .then(r => { if (!cancelled) setRetailRows(r || []); })
+      .catch(() => { if (!cancelled) setRetailRows([]); });
+    return () => { cancelled = true; };
+  }, [expandedId, promos]);
 
   async function load() {
     setLoading(true); setErr('');
@@ -13998,7 +14015,7 @@ function OfficePromos({ items, customers }) {
                       <button
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontSize: 13, color: '#14181F', textAlign: 'left' }}
                         onClick={() => setExpandedId(isOpen ? null : p.id)}
-                        title="Show net price and TPR per item"
+                        title="Show cost, net unit and shelf retail per item"
                       >
                         {isOpen ? '▾' : '▸'} {p.items.map(i => i.name).join(', ')}
                       </button>
@@ -14019,33 +14036,60 @@ function OfficePromos({ items, customers }) {
                 {canExpand && isOpen && (
                   <tr>
                     <td colSpan={9} style={{ ...officeStyles.td, background: '#FBFAF6', padding: '10px 14px' }}>
-                      <table style={{ width: '100%', maxWidth: 520, borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      {(() => {
+                        const th = { color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 10px 5px 0', whiteSpace: 'nowrap' };
+                        const thR = { ...th, textAlign: 'right' };
+                        const td = { padding: '3px 10px 3px 0', whiteSpace: 'nowrap' };
+                        const tdR = { ...td, textAlign: 'right' };
+                        const scan = Number(p.amount) || 0;
+                        return (
+                      <table style={{ borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead>
                           <tr>
-                            <th style={{ textAlign: 'left', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px 0' }}>Item</th>
-                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px' }}>Price/each</th>
-                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px' }}>Scan</th>
-                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px' }}>Net/each</th>
-                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 0 4px 8px' }}>TPR %</th>
+                            <th style={{ ...th, textAlign: 'left' }}>Item #</th>
+                            <th style={{ ...th, textAlign: 'left' }}>Description</th>
+                            <th style={{ ...th, textAlign: 'left' }}>Pack</th>
+                            <th style={thR} title="What the store pays per case">Case cost</th>
+                            <th style={thR} title="What the store pays per each">Unit cost</th>
+                            <th style={thR}>Scan</th>
+                            <th style={thR} title="Unit cost less the scan">Net unit</th>
+                            <th style={thR} title="Regular shelf retail from the latest price check">Regular price</th>
+                            <th style={thR} title="Shelf retail once the scan comes off">TPR price</th>
                           </tr>
                         </thead>
                         <tbody>
                           {p.items.map(i => {
-                            const price = Number(i.price) || 0;
-                            const net = price - Number(p.amount);
-                            const tpr = price > 0 ? (Number(p.amount) / price * 100) : null;
+                            // Full item record for pack/case figures -- the promo's
+                            // own item rows carry only id, name, brand and price.
+                            const full = items.find(x => x.id === i.id) || i;
+                            const unitCost = Number(full.price) || 0;
+                            const caseCost = casePrice(full);
+                            const netUnit = unitCost - scan;
+                            // Regular shelf retail: newest price check across this
+                            // promo's stores. Blank until someone has checked it.
+                            const checks = retailRows
+                              .filter(r => r.itemId === i.id && r.basePrice != null)
+                              .sort((a, b) => String(b.checkedAt).localeCompare(String(a.checkedAt)));
+                            const regular = checks.length ? Number(checks[0].basePrice) : null;
+                            const tprPrice = regular == null ? null : regular - scan;
                             return (
                               <tr key={i.id}>
-                                <td style={{ padding: '3px 8px 3px 0' }}>{i.name}</td>
-                                <td style={{ textAlign: 'right', padding: '3px 8px' }}>{formatMoney(price)}</td>
-                                <td style={{ textAlign: 'right', padding: '3px 8px', color: '#B5493B' }}>-{formatMoney(p.amount)}</td>
-                                <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 700, color: net < 0 ? '#B5493B' : '#2B5D50' }}>{formatMoney(net)}</td>
-                                <td style={{ textAlign: 'right', padding: '3px 0 3px 8px' }}>{tpr == null ? <span style={{ color: '#B9BDB2' }}>—</span> : `${tpr.toFixed(1)}%`}</td>
+                                <td style={td}>{displayCode(full.id)}</td>
+                                <td style={{ ...td, whiteSpace: 'normal' }}>{full.name}</td>
+                                <td style={{ ...td, color: '#5B6058' }}>{full.packLabel || (full.pack ? String(full.pack) : '—')}</td>
+                                <td style={tdR}>{caseCost > 0 ? formatMoney(caseCost) : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                                <td style={tdR}>{formatMoney(unitCost)}</td>
+                                <td style={{ ...tdR, color: '#B5493B' }}>-{formatMoney(scan)}</td>
+                                <td style={{ ...tdR, fontWeight: 700, color: netUnit < 0 ? '#B5493B' : '#14181F' }}>{formatMoney(netUnit)}</td>
+                                <td style={tdR}>{regular == null ? <span style={{ color: '#B9BDB2' }} title="No price check logged yet">—</span> : formatMoney(regular)}</td>
+                                <td style={{ ...tdR, fontWeight: 700, color: tprPrice == null ? '#B9BDB2' : (tprPrice < 0 ? '#B5493B' : '#2B5D50') }}>{tprPrice == null ? '—' : formatMoney(tprPrice)}</td>
                               </tr>
                             );
                           })}
                         </tbody>
                       </table>
+                        );
+                      })()}
                     </td>
                   </tr>
                 )}
