@@ -1668,7 +1668,15 @@ function WarehousePage() {
   const [printSequence, setPrintSequence] = useState([]);
   const [status, setStatus] = useState('loading');
   const [q, setQ] = useState('');
-  const [tab, setTab] = useState('current'); // 'current' | 'storage' | 'out'
+  // Deep-linkable so the Office View's Taiyo dropdown can open straight to a
+  // specific tab (e.g. /taiyo?tab=storage) instead of always landing on
+  // Taiyo In.
+  const [tab, setTab] = useState(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      return ['current', 'storage', 'out'].includes(t) ? t : 'current';
+    } catch { return 'current'; }
+  }); // 'current' | 'storage' | 'out'
   const [openMonths, setOpenMonths] = useState({}); // month key -> expanded in storage
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [batchBusy, setBatchBusy] = useState(false);
@@ -5925,6 +5933,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
   useEffect(() => { if (section !== 'neworder' && editingOrder) setEditingOrder(null); }, [section]); // eslint-disable-line react-hooks/exhaustive-deps
   const [refreshing, setRefreshing] = useState(false);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
+  const [taiyoMenuOpen, setTaiyoMenuOpen] = useState(false);
   // Badge counts only submitted-but-new orders (real work to process). Pending
   // drafts still appear in the Orders tab but don't inflate this "to-do" count.
   const activeOrderCount = useMemo(() => orders.filter(o => o.status !== 'pending' && !o.processed).length, [orders]);
@@ -6028,12 +6037,42 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
           >
             Purchasing
           </button>
-          <button
-            style={{ ...officeStyles.navBtn, ...(section === 'taiyoout' ? officeStyles.navBtnActive : {}) }}
-            onClick={() => setSection('taiyoout')}
-          >
-            Taiyo Out
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(section === 'taiyoout' ? officeStyles.navBtnActive : {}) }}
+              onClick={() => setTaiyoMenuOpen(o => !o)}
+            >
+              {section === 'taiyoout' ? 'Taiyo Out' : 'Taiyo'}
+              <ChevronDown size={14} style={{ transform: taiyoMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+            </button>
+            {taiyoMenuOpen && (
+              <>
+                <div style={officeStyles.navMenuOverlay} onClick={() => setTaiyoMenuOpen(false)} />
+                <div style={officeStyles.navMenu}>
+                  <button
+                    style={officeStyles.navMenuItem}
+                    onClick={() => { window.open('/taiyo?tab=current', '_blank'); setTaiyoMenuOpen(false); }}
+                    title="Opens Taiyo's own page in a new tab"
+                  >
+                    Taiyo In
+                  </button>
+                  <button
+                    style={{ ...officeStyles.navMenuItem, ...(section === 'taiyoout' ? officeStyles.navMenuItemActive : {}) }}
+                    onClick={() => { setSection('taiyoout'); setTaiyoMenuOpen(false); }}
+                  >
+                    Taiyo Out
+                  </button>
+                  <button
+                    style={officeStyles.navMenuItem}
+                    onClick={() => { window.open('/taiyo?tab=storage', '_blank'); setTaiyoMenuOpen(false); }}
+                    title="Opens Taiyo's own page in a new tab"
+                  >
+                    Taiyo Storage
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
         {isManualOverride && (
           <button style={officeStyles.autoLink} onClick={onResetToAuto} title="Go back to switching automatically by screen size">
