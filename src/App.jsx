@@ -13288,7 +13288,7 @@ function TagPicker({ options, selectedIds, onChange, placeholder, quickGroups })
               Clear all
             </button>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 112, overflowY: 'auto', padding: 6, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 258, overflowY: 'auto', padding: 6, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8 }}>
             {selectedOptions.map(o => (
               <span key={o.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 14, padding: '3px 6px 3px 10px', fontSize: 12.5, height: 'fit-content' }}>
                 {o.label}
@@ -13373,7 +13373,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
-      <div style={{ boxSizing: 'border-box', background: '#F7F8F4', borderRadius: 16, padding: 26, width: 680, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 16px 50px rgba(20,24,31,0.3)' }} onClick={e => e.stopPropagation()}>
+      <div style={{ boxSizing: 'border-box', background: '#F7F8F4', borderRadius: 16, padding: 26, width: 760, maxWidth: '94vw', maxHeight: '94vh', overflowY: 'auto', boxShadow: '0 16px 50px rgba(20,24,31,0.3)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div style={{ fontSize: 19, fontWeight: 800, color: '#14181F' }}>{isEdit ? 'Edit promo' : 'New promo'}</div>
           <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', color: '#8A8F87', borderRadius: 6 }} onClick={onClose} title="Close">
