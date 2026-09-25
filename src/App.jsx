@@ -5981,7 +5981,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
               style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(['items', 'customers', 'catalogs', 'promos'].includes(section) ? officeStyles.navBtnActive : {}) }}
               onClick={() => setDataMenuOpen(o => !o)}
             >
-              {section === 'customers' ? 'Customers' : section === 'catalogs' ? 'Catalogs' : section === 'promos' ? 'Promos' : 'Items'}
+              {section === 'customers' ? 'Customers' : section === 'catalogs' ? 'Catalogs' : section === 'promos' ? 'Promos' : 'Pricing'}
               <ChevronDown size={14} style={{ transform: dataMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
             </button>
             {dataMenuOpen && (
@@ -13168,12 +13168,22 @@ function BulkCatalogAddModal({ customers = [], items = [], onClose, onSaved }) {
 // Simple searchable multi-select: type to filter, click a match to add it as
 // a chip, click the chip's x to remove. Used for both the item and customer
 // pickers in the promo editor below.
+// Simple searchable multi-select: focusing the input shows the full list of
+// what's left to pick (scrollable), typing narrows it by label or sublabel;
+// click a match to add it as a chip, click the chip's x to remove. Used for
+// both the item and customer pickers in the promo editor below. An option's
+// optional `sublabel` (e.g. an item's number and pack) renders as a smaller
+// second line in the dropdown, so the right one can be confirmed at a
+// glance before picking -- worth reusing this same shape for any future
+// searchable item list, per the standing convention noted for this project.
 function TagPicker({ options, selectedIds, onChange, placeholder }) {
   const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
   const selectedSet = new Set(selectedIds);
-  const matches = query.trim()
-    ? options.filter(o => !selectedSet.has(o.id) && o.label.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8)
-    : [];
+  const q = query.trim().toLowerCase();
+  const available = options.filter(o => !selectedSet.has(o.id) &&
+    (!q || o.label.toLowerCase().includes(q) || (o.sublabel || '').toLowerCase().includes(q)));
+  const matches = available.slice(0, 100); // scrollable container handles the rest; this is just a sane render cap
   const selectedOptions = selectedIds.map(id => options.find(o => o.id === id)).filter(Boolean);
   return (
     <div>
@@ -13182,17 +13192,23 @@ function TagPicker({ options, selectedIds, onChange, placeholder }) {
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }}
           placeholder={placeholder}
           value={query}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
           onChange={e => setQuery(e.target.value)}
         />
-        {matches.length > 0 && (
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, marginTop: 4, maxHeight: 220, overflowY: 'auto', zIndex: 20, boxShadow: '0 6px 18px rgba(20,24,31,0.15)' }}>
+        {open && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #D6D3C6', borderRadius: 8, marginTop: 4, maxHeight: 260, overflowY: 'auto', zIndex: 20, boxShadow: '0 6px 18px rgba(20,24,31,0.15)' }}>
+            {matches.length === 0 && (
+              <div style={{ padding: '10px 10px', fontSize: 12.5, color: '#8A8F87' }}>{q ? 'No matches.' : 'Nothing left to pick.'}</div>
+            )}
             {matches.map(o => (
               <div
                 key={o.id}
-                style={{ padding: '8px 10px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #F0EEE6' }}
+                style={{ padding: '7px 10px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #F0EEE6' }}
                 onMouseDown={e => { e.preventDefault(); onChange([...selectedIds, o.id]); setQuery(''); }}
               >
-                {o.label}
+                <div>{o.label}</div>
+                {o.sublabel && <div style={{ fontSize: 11.5, color: '#8A8F87', marginTop: 1 }}>{o.sublabel}</div>}
               </div>
             ))}
           </div>
@@ -13210,6 +13226,7 @@ function TagPicker({ options, selectedIds, onChange, placeholder }) {
                 <X size={11} />
               </button>
             </span>
+
           ))}
         </div>
       )}
@@ -13238,7 +13255,11 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
-  const itemOptions = useMemo(() => items.map(i => ({ id: i.id, label: `${i.name}${i.brand ? ' · ' + i.brand : ''}` })), [items]);
+  const itemOptions = useMemo(() => items.map(i => ({
+    id: i.id,
+    label: `${i.name}${i.brand ? ' · ' + i.brand : ''}`,
+    sublabel: [displayCode(i.id), i.packLabel].filter(Boolean).join(' · '),
+  })), [items]);
   const customerOptions = useMemo(() => customers.map(c => ({ id: c.id, label: c.name })), [customers]);
 
   async function save() {
