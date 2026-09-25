@@ -13239,19 +13239,29 @@ function TagPicker({ options, selectedIds, onChange, placeholder, quickGroups })
         )}
       </div>
       {selectedOptions.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {selectedOptions.map(o => (
-            <span key={o.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 14, padding: '3px 6px 3px 10px', fontSize: 12.5 }}>
-              {o.label}
-              <button
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', color: '#5B6058' }}
-                onClick={() => onChange(selectedIds.filter(id => id !== o.id))}
-              >
-                <X size={11} />
-              </button>
-            </span>
-
-          ))}
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+            <span style={{ fontSize: 11.5, color: '#8A8F87', fontWeight: 700 }}>{selectedOptions.length} selected</span>
+            <button
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, color: '#8A8F87', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}
+              onClick={() => onChange([])}
+            >
+              Clear all
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 112, overflowY: 'auto', padding: 6, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+            {selectedOptions.map(o => (
+              <span key={o.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 14, padding: '3px 6px 3px 10px', fontSize: 12.5, height: 'fit-content' }}>
+                {o.label}
+                <button
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', color: '#5B6058' }}
+                  onClick={() => onChange(selectedIds.filter(id => id !== o.id))}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
