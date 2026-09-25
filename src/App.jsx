@@ -682,6 +682,7 @@ function buildItemHistory(itemId, currentStock = 0, receipts = [], manualLog = [
     rows.push({
       kind: 'order',
       orderId: o.id, customer: o.customer, deliveryDate: o.deliveryDate,
+      invoiceNumber: o.invoiceNumber, poNumber: o.poNumber,
       submittedAt: o.submittedAt, qty, unit, eaches: qty * pack,
       boxesConsumed, delta: -boxesConsumed, // stock change (negative = out)
       date: o.deliveryDate, status: o.status, processed: o.processed,
@@ -8242,7 +8243,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
                   switch (f) {
-                    case 'order': return Number(r.orderId) || 0;
+                    case 'invoice': return Number(r.invoiceNumber) || 0;
+                    case 'po': return (r.poNumber || r.poRef || '').toLowerCase();
                     case 'delivery': return r.deliveryDate || '';
                     case 'customer': return (r.customer || '').toLowerCase();
                     case 'qty': return Number(r.qty) || 0;
@@ -8296,7 +8298,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                           <table style={officeStyles.itemHistoryTable}>
                             <thead>
                               <tr>
-                                <HTh field="order" label="Order" />
+                                <HTh field="invoice" label="Invoice" />
+                                <HTh field="po" label="PO #" />
                                 <HTh field="delivery" label="Delivery" />
                                 <HTh field="customer" label="Customer" />
                                 <HTh field="qty" label="Qty" align="right" />
@@ -8310,6 +8313,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                             <tbody>
                               {sortedRows.map((r, ri) => r.kind === 'po' ? (
                                 <tr key={'po'+ri} style={{ background: '#F0F7F3' }}>
+                                  <td style={officeStyles.itemHistoryTd}>—</td>
                                   <td style={officeStyles.itemHistoryTd}>{r.poRef}</td>
                                   <td style={officeStyles.itemHistoryTd}>{formatDate(r.deliveryDate)}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, color: '#2B5D50', fontWeight: 600 }}>PO received{r.supplier ? ' · ' + r.supplier : ''}</td>
@@ -8323,6 +8327,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                               ) : r.kind === 'manual' ? (
                                 <tr key={'m'+ri} style={{ background: '#F5F1E6' }}>
                                   <td style={officeStyles.itemHistoryTd}>—</td>
+                                  <td style={officeStyles.itemHistoryTd}>—</td>
                                   <td style={officeStyles.itemHistoryTd}>{formatDate(r.date)}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, color: '#8A6D1B', fontWeight: 600 }}>{r.reason}{r.changedBy ? ' · ' + r.changedBy : ''}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.oldStock != null ? r.oldStock : <span style={{ color: '#B9BDB2' }}>—</span>} → {r.newStock}</td>
@@ -8334,7 +8339,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                                 </tr>
                               ) : (
                                 <tr key={r.orderId}>
-                                  <td style={officeStyles.itemHistoryTd}>#{r.orderId}</td>
+                                  <td style={officeStyles.itemHistoryTd}>{r.invoiceNumber != null ? r.invoiceNumber : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                                  <td style={officeStyles.itemHistoryTd}>{r.poNumber || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                                   <td style={officeStyles.itemHistoryTd}>{formatDate(r.deliveryDate)}</td>
                                   <td style={officeStyles.itemHistoryTd}>{r.customer}</td>
                                   <td style={{ ...officeStyles.itemHistoryTd, textAlign: 'right' }}>{r.qty}</td>
