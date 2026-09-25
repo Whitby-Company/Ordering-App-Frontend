@@ -2943,6 +2943,14 @@ const calStyles = {
   todayBtn: { marginTop: 8, width: '100%', background: '#EAF1EE', border: '1px solid #C4DDD2', color: '#2B5D50', borderRadius: 8, padding: '6px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
 };
 
+// Knoppers 6pc w/tear pad ships as either a single box or a full "shipper"
+// case of 6 -- staff have mixed the two up when adding it to an order, so
+// this one item prompts to clarify which is meant the first time it's added,
+// rather than silently defaulting to a box. Not a generalized mechanism;
+// if other items need the same treatment later, this can be extended then.
+const BOX_OR_SHIPPER_ITEM_ID = 'Storck:039955';
+const BOX_OR_SHIPPER_CASE_SIZE = 6;
+
 function OrderTab({ items, customers, customersAll, orders, brandColors, printSequence, onOrderSubmitted, barcodesOff = false, setBarcodesOff = () => {}, desktop = false, editOrder = null, onClose = null, onEditExisting = null }) {
   const isEdit = !!editOrder;
   // Look up a customer by id across the active list and the full list (so desktop
@@ -3062,6 +3070,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [hideSeasonal, setHideSeasonal] = useHideSeasonal();
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
   const [showNotesOnInvoice, setShowNotesOnInvoice] = useShowNotesOnInvoice();
+  const [boxOrShipperPromptId, setBoxOrShipperPromptId] = useState(null); // set to an item id to show the box/shipper clarifying prompt
+  const [shipperCount, setShipperCount] = useState('1'); // how many shippers, entered in that prompt
   const [quickEntry, setQuickEntry] = useState(desktop); // grid entry: desktop only — the toggle to turn it on is desktop-only too, so mobile should never default into it (including when editing), or there'd be no way back out of it
   const [priceOverrides, setPriceOverrides] = useState(() => (savedDraft.priceOverrides && typeof savedDraft.priceOverrides === 'object') ? savedDraft.priceOverrides : {}); // itemId -> manual price/each override (only when user changes it, or copied exactly from a duplicated order)
   // Adopt the customer's "is distributor" default (unless manually toggled).
@@ -3360,6 +3370,21 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   function setQty(id, qty) {
     const item = itemById[id];
     if (!item) return;
+    // First time this specific item is being added (currently at 0, and this
+    // is an increase, not a removal): ask box vs. shipper instead of
+    // silently assuming a box. Once it's on the order at a positive
+    // quantity, the stepper/qty input adjust the resolved quantity directly
+    // like any other item -- this only fires for the initial add.
+    if (id === BOX_OR_SHIPPER_ITEM_ID && qty > 0 && qtyFor(id) === 0) {
+      setShipperCount('1');
+      setBoxOrShipperPromptId(id);
+      return;
+    }
+    applyQty(id, qty);
+  }
+  function applyQty(id, qty) {
+    const item = itemById[id];
+    if (!item) return;
     const requested = Math.max(0, qty);
     if (requested === 0) {
       setOrder(prev => prev.filter(o => o.id !== id));
@@ -3379,6 +3404,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   function setQtyKeepZero(id, qty) {
     const item = itemById[id];
     if (!item) return;
+    // Same reasoning as setQty's box/shipper interception -- this is the
+    // function Quick entry's qty column actually calls, so without this
+    // check here too, typing a quantity for this item there would bypass
+    // the prompt entirely.
+    if (id === BOX_OR_SHIPPER_ITEM_ID && qty > 0 && qtyFor(id) === 0) {
+      setShipperCount('1');
+      setBoxOrShipperPromptId(id);
+      return;
+    }
     const requested = Math.max(0, qty);
     const split = splitQty(id, requested);
     setOrder(prev => {
@@ -3710,6 +3744,9 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const itemRowStyle = desktop
     ? { ...styles.itemRow, alignItems: 'flex-start', gap: 10, borderBottom: 'none', border: '1px solid #EAE8DD', borderRadius: 10, padding: '8px 10px', background: '#FFFFFF' }
     : styles.itemRow;
+  // Derived from the box/shipper prompt's shipper-count input.
+  const shipperN = Math.max(1, parseInt(shipperCount, 10) || 1);
+  const shipperBoxes = shipperN * BOX_OR_SHIPPER_CASE_SIZE;
 
   return (
     <div style={styles.screenWrap} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
@@ -3961,6 +3998,50 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       </div>
 
       {uploadOpen && <OrderUploadModal items={items} customers={customersAll || customers} onClose={() => setUploadOpen(false)} onCreated={async () => { setUploadOpen(false); await onOrderSubmitted(); }} />}
+
+      {boxOrShipperPromptId && (
+        <div style={overlayStyle} onClick={() => setBoxOrShipperPromptId(null)}>
+          <div style={{ ...sheetStyle, width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#14181F', marginBottom: 6 }}>Box or shipper?</div>
+            <div style={{ fontSize: 13.5, color: '#5B6058', marginBottom: 16 }}>
+              {(itemById[boxOrShipperPromptId] || {}).name} ships as a single box or a full shipper case of {BOX_OR_SHIPPER_CASE_SIZE}. Which do you want to add?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                style={{ ...styles.submitBtn, width: '100%' }}
+                onClick={() => { applyQty(boxOrShipperPromptId, 1); setBoxOrShipperPromptId(null); }}
+              >
+                1 Box
+              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  aria-label="Number of shippers"
+                  value={shipperCount}
+                  onChange={e => setShipperCount(e.target.value.replace(/[^0-9]/g, ''))}
+                  onKeyDown={e => { if (e.key === 'Enter') { applyQty(boxOrShipperPromptId, shipperBoxes); setBoxOrShipperPromptId(null); } }}
+                  onFocus={e => e.target.select()}
+                  autoFocus
+                  style={{ width: 56, textAlign: 'center', border: '1px solid #D6D3C6', borderRadius: 10, fontSize: 14.5, fontWeight: 700, fontFamily: 'inherit', padding: '0 6px' }}
+                />
+                <button
+                  style={{ ...styles.submitBtn, flex: 1, width: 'auto' }}
+                  onClick={() => { applyQty(boxOrShipperPromptId, shipperBoxes); setBoxOrShipperPromptId(null); }}
+                >
+                  {shipperN === 1 ? '1 Shipper' : `${shipperN} Shippers`} ({shipperBoxes} boxes)
+                </button>
+              </div>
+              <button
+                style={{ background: 'none', border: 'none', color: '#8A8F87', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0' }}
+                onClick={() => setBoxOrShipperPromptId(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!isEdit && customerId == null && (
         <div style={styles.catalogNote}>Pick a customer to see the items they carry.</div>
