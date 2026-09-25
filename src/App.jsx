@@ -13292,7 +13292,7 @@ function TagPicker({ options, selectedIds, onChange, placeholder, quickGroups })
               Clear all
             </button>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 258, overflowY: 'auto', padding: 6, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 'min(258px, 28vh)', overflowY: 'auto', padding: 6, background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8 }}>
             {selectedOptions.map(o => (
               <span key={o.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#EAE8DD', border: '1px solid #D6D3C6', borderRadius: 14, padding: '3px 6px 3px 10px', fontSize: 12.5, height: 'fit-content' }}>
                 {o.label}
@@ -13377,7 +13377,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
-      <div style={{ boxSizing: 'border-box', background: '#F7F8F4', borderRadius: 16, padding: 26, width: 760, maxWidth: '94vw', maxHeight: '94vh', overflowY: 'auto', boxShadow: '0 16px 50px rgba(20,24,31,0.3)' }} onClick={e => e.stopPropagation()}>
+      <div style={{ boxSizing: 'border-box', background: '#F7F8F4', borderRadius: 16, padding: 26, width: 1040, maxWidth: '96vw', maxHeight: '96vh', overflowY: 'auto', boxShadow: '0 16px 50px rgba(20,24,31,0.3)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div style={{ fontSize: 19, fontWeight: 800, color: '#14181F' }}>{isEdit ? 'Edit promo' : 'New promo'}</div>
           <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', color: '#8A8F87', borderRadius: 6 }} onClick={onClose} title="Close">
@@ -13411,7 +13411,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.9fr 0.9fr 1.6fr', gap: 16, marginBottom: 18, alignItems: 'start' }}>
           <div>
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>AMOUNT</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -13431,10 +13431,11 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>END DATE</label>
             <input style={{ boxSizing: 'border-box', width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>NOTES (OPTIONAL)</label>
+            <textarea style={{ boxSizing: 'border-box', width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', minHeight: 38, height: 38, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Vendor ref, terms, etc." />
+          </div>
         </div>
-
-        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>NOTES (OPTIONAL)</label>
-        <textarea style={{ boxSizing: 'border-box', width: '100%', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', marginBottom: 18, minHeight: 64, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Vendor reference, terms, anything worth remembering about this deal" />
 
         {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 14 }}>{err}</div>}
 
