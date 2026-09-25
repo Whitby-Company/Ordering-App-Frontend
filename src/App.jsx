@@ -13350,6 +13350,31 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
   // store one at a time.
   const customerGroups = useMemo(() => customerGroupsFor(customers), [customers]);
 
+  // Live preview of what the scan does to each selected item's price, so the
+  // effect is visible while the promo is being entered rather than only after
+  // saving. Uses items.price (the per-each price we charge the store) -- the
+  // system has no separate consumer shelf-retail field. Per-box scans are
+  // skipped: the per-each effect depends on pack size and isn't a straight
+  // subtraction, so showing one here would be misleading.
+  const pricePreview = useMemo(() => {
+    const amt = Number(amount);
+    if (!itemIds.length || !amount || isNaN(amt) || amt === 0) return [];
+    if (amountType !== 'flat_per_each' && amountType !== 'percent') return [];
+    return itemIds.map(id => {
+      const it = items.find(i => i.id === id);
+      if (!it) return null;
+      const regular = Number(it.price) || 0;
+      const off = amountType === 'percent' ? regular * (amt / 100) : amt;
+      return {
+        id,
+        name: it.name,
+        regular,
+        promo: regular - off,
+        tpr: regular > 0 ? (off / regular * 100) : null,
+      };
+    }).filter(Boolean);
+  }, [itemIds, items, amount, amountType]);
+
   async function save() {
     setErr('');
     if (!name.trim()) { setErr('Give this promo a name.'); return; }
@@ -13392,6 +13417,31 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
           <div>
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>ITEMS</label>
             <TagPicker options={itemOptions} selectedIds={itemIds} onChange={setItemIds} placeholder="Search items to add…" />
+            {pricePreview.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', marginBottom: 5 }}>PRICE WITH THIS SCAN</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px 0' }}>Item</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>Regular</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>With scan</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 0 4px 8px' }}>TPR %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pricePreview.map(r => (
+                      <tr key={r.id}>
+                        <td style={{ padding: '3px 8px 3px 0' }}>{r.name}</td>
+                        <td style={{ textAlign: 'right', padding: '3px 8px' }}>{formatMoney(r.regular)}</td>
+                        <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 700, color: r.promo < 0 ? '#B5493B' : '#2B5D50' }}>{formatMoney(r.promo)}</td>
+                        <td style={{ textAlign: 'right', padding: '3px 0 3px 8px' }}>{r.tpr == null ? <span style={{ color: '#B9BDB2' }}>—</span> : `${r.tpr.toFixed(1)}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
           <div>
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>CUSTOMERS</label>
