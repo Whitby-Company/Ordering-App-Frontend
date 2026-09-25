@@ -13176,7 +13176,7 @@ function BulkCatalogAddModal({ customers = [], items = [], onClose, onSaved }) {
 // second line in the dropdown, so the right one can be confirmed at a
 // glance before picking -- worth reusing this same shape for any future
 // searchable item list, per the standing convention noted for this project.
-function TagPicker({ options, selectedIds, onChange, placeholder }) {
+function TagPicker({ options, selectedIds, onChange, placeholder, quickGroups }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const selectedSet = new Set(selectedIds);
@@ -13185,8 +13185,32 @@ function TagPicker({ options, selectedIds, onChange, placeholder }) {
     (!q || o.label.toLowerCase().includes(q) || (o.sublabel || '').toLowerCase().includes(q)));
   const matches = available.slice(0, 100); // scrollable container handles the rest; this is just a sane render cap
   const selectedOptions = selectedIds.map(id => options.find(o => o.id === id)).filter(Boolean);
+  // Adds a whole named group (e.g. "all Times stores") on top of whatever's
+  // already picked, rather than replacing it -- so clicking two group
+  // buttons in a row (e.g. Times, then DQ) combines them, matching how
+  // these presets actually get used together.
+  function addGroup(ids) {
+    const merged = [...selectedIds];
+    for (const id of ids) if (!merged.includes(id)) merged.push(id);
+    onChange(merged);
+  }
   return (
     <div>
+      {quickGroups && quickGroups.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {quickGroups.map(g => (
+            <button
+              key={g.label}
+              type="button"
+              style={{ background: '#E3EFE9', border: '1px solid #C4DDD2', borderRadius: 14, padding: '4px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', color: '#2B5D50' }}
+              onClick={() => addGroup(g.ids)}
+              title={`Add all ${g.ids.length} ${g.label} to the selection`}
+            >
+              + {g.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{ position: 'relative' }}>
         <input
           style={{ width: '100%', padding: '8px 10px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }}
@@ -13261,6 +13285,17 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
     sublabel: [displayCode(i.id), i.packLabel].filter(Boolean).join(' · '),
   })), [items]);
   const customerOptions = useMemo(() => customers.map(c => ({ id: c.id, label: c.name })), [customers]);
+  // Quick-select groups for customer scope -- these two chains come up
+  // constantly ("all the Times" or "all the DQ stores", sometimes both
+  // together), so a promo covering them shouldn't mean hand-picking each
+  // store one at a time.
+  const customerGroups = useMemo(() => {
+    const groups = [
+      { label: 'Times', ids: customers.filter(c => c.name.startsWith('Times ')).map(c => c.id) },
+      { label: 'DQ', ids: customers.filter(c => c.name.startsWith('Don Quijote')).map(c => c.id) },
+    ];
+    return groups.filter(g => g.ids.length > 0);
+  }, [customers]);
 
   async function save() {
     setErr('');
@@ -13318,7 +13353,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
             {allCustomers ? (
               <div style={{ fontSize: 13, color: '#8A8F87', padding: '9px 0' }}>Applies to every customer.</div>
             ) : (
-              <TagPicker options={customerOptions} selectedIds={customerIds} onChange={setCustomerIds} placeholder="Search customers to add…" />
+              <TagPicker options={customerOptions} selectedIds={customerIds} onChange={setCustomerIds} placeholder="Search customers to add…" quickGroups={customerGroups} />
             )}
           </div>
         </div>
