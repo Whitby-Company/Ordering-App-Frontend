@@ -3385,7 +3385,17 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     if (nonInventory) return { qty: requested, requestedQty: undefined };
     if (desktop && deliveryDate > todayISODate()) return { qty: requested, requestedQty: undefined };
     const item = itemById[id];
-    const maxQty = Math.max(0, (item && item.stock || 0) + (isEdit ? (origQtyById[id] || 0) : 0));
+    // When editing, this order's own existing quantity is already deducted
+    // from available, so it's added back to avoid double-counting it. It also
+    // acts as a FLOOR: whatever is already committed on this order can always
+    // be kept or typed back in. Without that floor, an item that's oversold
+    // (negative available) caps the ceiling below the line's own quantity, so
+    // merely touching the qty box collapses the line to "shipping 0" with no
+    // way to restore it -- silently zeroing an invoice line that was fine a
+    // moment ago. Raising the quantity beyond what's committed still caps
+    // normally, so a genuine new shortfall is still reported honestly.
+    const orig = isEdit ? (origQtyById[id] || 0) : 0;
+    const maxQty = Math.max(0, (item && item.stock || 0) + orig, orig);
     const shippable = Math.min(requested, maxQty);
     return { qty: shippable, requestedQty: shippable === requested ? undefined : requested };
   }
