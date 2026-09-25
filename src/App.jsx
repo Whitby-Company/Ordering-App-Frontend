@@ -9689,7 +9689,7 @@ function TaiyoReport({ onBack, items = [], onRefresh = async () => {} }) {
 // This one totals net_cost x eaches sold per invoice, then applies the fee
 // rate, over a date range (delivery date) -- defaulting to the current
 // calendar month since that's how it's paid out.
-function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
+function TaiyoFeeReport({ onBack, items = [], customers = [], printSequence = [], onRefresh = async () => {} }) {
   function monthBounds() {
     const now = new Date();
     const y = now.getFullYear(), m = now.getMonth();
@@ -9733,6 +9733,23 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
     finally { setBusy(false); }
   }
   useEffect(() => { run(); /* eslint-disable-next-line */ }, []);
+
+  // Same pattern as the Orders/History screens' own "Invoice" button: find
+  // the customer this order belongs to, fetch the order fresh (the report's
+  // own data is summary-only -- invoice/delivery/PO/cost totals, no line
+  // items -- so this pulls the full order to actually render one), then
+  // print it exactly like every other invoice in the app.
+  const custFor = (order) => customers.find(cc => cc.name === order.customer) || customers.find(cc => cc.id === order.customerId) || null;
+  async function handleViewInvoice(inv) {
+    try {
+      const orders = await apiGet('/orders');
+      const found = (orders || []).find(o => o.id === inv.orderId);
+      if (!found) { window.alert('Could not find this order anymore — it may have been deleted.'); return; }
+      printInvoice(found, custFor(found), printSequence, items, {});
+    } catch (e) {
+      window.alert(e.message || 'Could not open this invoice.');
+    }
+  }
 
   const [excludeBusyId, setExcludeBusyId] = useState(null);
   async function toggleExcluded(inv) {
@@ -9844,6 +9861,13 @@ function TaiyoFeeReport({ onBack, items = [], onRefresh = async () => {} }) {
                     <td style={{ ...repStyles.tdItem, textAlign: 'right', textDecoration: inv.taiyoFeeExcluded ? 'line-through' : 'none' }}>{formatMoney(inv.netCostTotal)}</td>
                     <td style={{ ...repStyles.tdItem, textAlign: 'right', fontWeight: 700, color: inv.taiyoFeeExcluded ? '#8A8F87' : '#2B5D50', textDecoration: inv.taiyoFeeExcluded ? 'line-through' : 'none' }}>{formatMoney(inv.feeOwed)}</td>
                     <td style={{ ...repStyles.tdItem, textAlign: 'right' }}>
+                      <button
+                        style={{ ...officeStyles.smallBtn, padding: '3px 9px', fontSize: 11.5, marginRight: 6 }}
+                        onClick={() => handleViewInvoice(inv)}
+                        title="View this invoice's line items"
+                      >
+                        Invoice
+                      </button>
                       <button
                         style={{ ...officeStyles.smallBtn, padding: '3px 9px', fontSize: 11.5, ...(inv.taiyoFeeExcluded ? {} : { color: '#B5493B' }) }}
                         onClick={() => toggleExcluded(inv)}
@@ -12536,7 +12560,7 @@ function OfficeReports({ items = [], customers = [], orders = [], printSequence 
   if (active === 'matching-totals') return <MatchingTotalsReport onBack={() => setActive(null)} orders={orders} />;
   if (active === 'item-sales') return <ItemSalesReport onBack={() => setActive(null)} orders={orders} items={items} />;
   if (active === 'taiyo') return <TaiyoReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
-  if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} onRefresh={onRefresh} />;
+  if (active === 'taiyo-fee') return <TaiyoFeeReport onBack={() => setActive(null)} items={items} customers={customers} printSequence={printSequence} onRefresh={onRefresh} />;
   if (active === 'sales-by-person') return <SalesByPersonReport onBack={() => setActive(null)} />;
   if (active === 'pricechecks') return <OfficePriceChecks onBack={() => setActive(null)} />;
   if (active === 'fulfillable-shortfalls') return <FulfillableShortfallsReport onBack={() => setActive(null)} onEditOrder={onEditOrder} orders={orders} />;
