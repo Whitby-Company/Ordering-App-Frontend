@@ -13512,6 +13512,10 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
   const [customerIds, setCustomerIds] = useState(promo ? promo.customers.map(c => c.id) : []);
   const [amountType, setAmountType] = useState(promo ? promo.amountType : 'flat_per_each');
   const [amount, setAmount] = useState(promo ? String(promo.amount) : '');
+  // What the promo is actually advertised at. A decision, not a calculation --
+  // stores routinely advertise a round number that isn't exactly regular
+  // retail minus the scan, so it's captured rather than derived.
+  const [adRetail, setAdRetail] = useState(promo && promo.adRetail != null ? String(promo.adRetail) : '');
   const [startDate, setStartDate] = useState(promo ? promo.startDate : todayISODate());
   const [endDate, setEndDate] = useState(promo ? promo.endDate : todayISODate());
   const [notes, setNotes] = useState(promo ? (promo.notes || '') : '');
@@ -13594,7 +13598,8 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
     try {
       const body = {
         name: name.trim(), itemIds, appliesToAllCustomers: allCustomers, customerIds,
-        amountType, amount: Number(amount), startDate, endDate, notes: notes.trim() || null,
+        amountType, amount: Number(amount), adRetail: adRetail.trim() === '' ? null : Number(adRetail),
+        startDate, endDate, notes: notes.trim() || null,
         createdBy: getSubmitterName() || undefined,
       };
       if (isEdit) await apiPatch(`/promos/${promo.id}`, body);
@@ -13625,7 +13630,9 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
           <div>
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>ITEMS</label>
             <TagPicker options={itemOptions} selectedIds={itemIds} onChange={setItemIds} placeholder="Search items to add…" />
-            {pricePreview.length > 0 && (
+            {pricePreview.length > 0 && (() => {
+              const adNum = adRetail.trim() === '' || isNaN(Number(adRetail)) ? null : Number(adRetail);
+              return (
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', marginBottom: 5 }}>SHELF RETAIL WITH THIS SCAN</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -13635,7 +13642,8 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
                       <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>Our $/ea</th>
                       <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>Retail</th>
                       <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>TPR retail</th>
-                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 0 4px 8px' }}>TPR %</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>TPR %</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 0 4px 8px' }}>Ad retail</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -13654,15 +13662,28 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
                           <>
                             <td style={{ textAlign: 'right', padding: '3px 8px' }}>{formatMoney(r.retail)}</td>
                             <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 700, color: r.retailAfter < 0 ? '#B5493B' : '#2B5D50' }}>{formatMoney(r.retailAfter)}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 0 3px 8px' }}>{r.tpr == null ? <span style={{ color: '#B9BDB2' }}>—</span> : `${r.tpr.toFixed(1)}%`}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{r.tpr == null ? <span style={{ color: '#B9BDB2' }}>—</span> : `${r.tpr.toFixed(1)}%`}</td>
                           </>
                         )}
+                        {/* The advertised price sits beside the calculated one so a
+                            gap between them is obvious -- they often differ on
+                            purpose (a round ad price), but an accidental mismatch
+                            is worth catching before the promo goes out. */}
+                        <td style={{ textAlign: 'right', padding: '3px 0 3px 8px', fontWeight: 700,
+                          color: adNum == null ? '#B9BDB2'
+                            : (r.retailAfter != null && Math.abs(adNum - r.retailAfter) > 0.005) ? '#8A6D1B' : '#2B5D50' }}
+                          title={adNum != null && r.retailAfter != null && Math.abs(adNum - r.retailAfter) > 0.005
+                            ? `Advertised ${formatMoney(adNum)} vs ${formatMoney(r.retailAfter)} calculated from the scan`
+                            : undefined}>
+                          {adNum == null ? '—' : formatMoney(adNum)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            )}
+              );
+            })()}
           </div>
           <div>
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>CUSTOMERS</label>
@@ -13682,7 +13703,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.9fr 0.9fr 1.6fr', gap: 16, marginBottom: 18, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.8fr 0.85fr 0.85fr 1.4fr', gap: 14, marginBottom: 18, alignItems: 'start' }}>
           <div>
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>AMOUNT</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -13693,6 +13714,10 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
               </select>
               <input style={{ boxSizing: 'border-box', flex: 1, minWidth: 0, padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit' }} type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
             </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>AD RETAIL</label>
+            <input style={{ boxSizing: 'border-box', width: '100%', padding: '9px 11px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit' }} type="number" step="0.01" value={adRetail} onChange={e => setAdRetail(e.target.value)} placeholder="optional" title="The shelf price being advertised for this promo" />
           </div>
           <div>
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>START DATE</label>
@@ -13953,6 +13978,7 @@ function OfficePromos({ items, customers }) {
                 <th style={{ ...officeStyles.th, position: 'static' }}>Items</th>
                 <th style={{ ...officeStyles.th, position: 'static' }}>Customers</th>
                 <th style={{ ...officeStyles.th, position: 'static', textAlign: 'right' }}>Amount</th>
+                <th style={{ ...officeStyles.th, position: 'static', textAlign: 'right' }}>Ad retail</th>
                 <th style={{ ...officeStyles.th, position: 'static' }}>Start</th>
                 <th style={{ ...officeStyles.th, position: 'static' }}>End</th>
                 <th style={{ ...officeStyles.th, position: 'static' }}>Status</th>
@@ -13980,6 +14006,7 @@ function OfficePromos({ items, customers }) {
                   </td>
                   <td style={officeStyles.td}>{p.appliesToAllCustomers ? <span style={{ color: '#2B5D50', fontWeight: 600 }}>All customers</span> : summarizeCustomers(p.customers, custGroups).join(', ')}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.amountType === 'percent' ? `${p.amount}%` : formatMoney(p.amount) + (p.amountType === 'flat_per_each' ? '/each' : '/box')}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: p.adRetail != null ? 700 : 400 }}>{p.adRetail != null ? formatMoney(p.adRetail) : <span style={{ color: '#B9BDB2' }}>—</span>}</td>
                   <td style={officeStyles.td}>{formatDate(p.startDate)}</td>
                   <td style={officeStyles.td}>{formatDate(p.endDate)}</td>
                   <td style={officeStyles.td}>{statusBadge(p)}</td>
@@ -13991,7 +14018,7 @@ function OfficePromos({ items, customers }) {
                 </tr>
                 {canExpand && isOpen && (
                   <tr>
-                    <td colSpan={8} style={{ ...officeStyles.td, background: '#FBFAF6', padding: '10px 14px' }}>
+                    <td colSpan={9} style={{ ...officeStyles.td, background: '#FBFAF6', padding: '10px 14px' }}>
                       <table style={{ width: '100%', maxWidth: 520, borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead>
                           <tr>
@@ -14026,7 +14053,7 @@ function OfficePromos({ items, customers }) {
                 );
               })}
               {shown.length === 0 && (
-                <tr><td colSpan={8} style={{ ...officeStyles.td, textAlign: 'center', color: '#8A8F87' }}>{promos.length === 0 ? 'No promos yet — add one to get started.' : 'No promos match your filters.'}</td></tr>
+                <tr><td colSpan={9} style={{ ...officeStyles.td, textAlign: 'center', color: '#8A8F87' }}>{promos.length === 0 ? 'No promos yet — add one to get started.' : 'No promos match your filters.'}</td></tr>
               )}
             </tbody>
           </table>
