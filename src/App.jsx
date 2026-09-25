@@ -3080,6 +3080,15 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
   const [printInvOrder, setPrintInvOrder] = usePrintInvOrder();
   const [showNotesOnInvoice, setShowNotesOnInvoice] = useShowNotesOnInvoice();
   const [boxOrShipperPromptId, setBoxOrShipperPromptId] = useState(null); // set to an item id to show the box/shipper clarifying prompt
+  // Saving the current cart as a stock hold instead of an order. A hold sets
+  // the stock aside (reducing AVAILABLE, not on-hand) without being a sale, so
+  // it needs neither a customer nor a delivery date -- just a name to find it
+  // by later, and optionally a date it should stop holding on.
+  const [holdModalOpen, setHoldModalOpen] = useState(false);
+  const [holdName, setHoldName] = useState('');
+  const [holdEndDate, setHoldEndDate] = useState('');
+  const [holdSaving, setHoldSaving] = useState(false);
+  const [holdErr, setHoldErr] = useState('');
   const [shipperCount, setShipperCount] = useState('1'); // how many shippers, entered in that prompt
   const [quickEntry, setQuickEntry] = useState(desktop); // grid entry: desktop only — the toggle to turn it on is desktop-only too, so mobile should never default into it (including when editing), or there'd be no way back out of it
   const [priceOverrides, setPriceOverrides] = useState(() => (savedDraft.priceOverrides && typeof savedDraft.priceOverrides === 'object') ? savedDraft.priceOverrides : {}); // itemId -> manual price/each override (only when user changes it, or copied exactly from a duplicated order)
@@ -3622,6 +3631,33 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
     }
   }
 
+  // Save the current cart as a stock hold rather than an order. Customer is
+  // carried over when one happens to be picked (a hold is often for a specific
+  // store's ad) but isn't required.
+  async function saveAsHold() {
+    if (orderLines.length === 0) return;
+    if (!holdName.trim()) { setHoldErr('Give this hold a name.'); return; }
+    setHoldSaving(true); setHoldErr('');
+    try {
+      await apiPost('/holds', {
+        name: holdName.trim(),
+        customerId: customerId || undefined,
+        endDate: holdEndDate || undefined,
+        notes: notes.trim() || undefined,
+        createdBy: submitterName || undefined,
+        lines: orderLines.map(l => ({ itemId: l.id, qty: l.qty, unit: l.unit })),
+      });
+      setHoldModalOpen(false);
+      setHoldName(''); setHoldEndDate('');
+      discardOrder();
+      await onOrderSubmitted();
+    } catch (e) {
+      setHoldErr(e.message || 'Could not save this hold.');
+    } finally {
+      setHoldSaving(false);
+    }
+  }
+
   async function submitOrder(pending = false) {
     if (!customerId || !deliveryDate || orderLines.length === 0) return;
     // Synchronous guard against double-submit: state updates are async, so a
@@ -4012,6 +4048,46 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       </div>
 
       {uploadOpen && <OrderUploadModal items={items} customers={customersAll || customers} onClose={() => setUploadOpen(false)} onCreated={async () => { setUploadOpen(false); await onOrderSubmitted(); }} />}
+
+      {holdModalOpen && (
+        <div style={{ ...styles.sheetOverlay, alignItems: 'center', justifyContent: 'center', zIndex: 60 }} onClick={() => !holdSaving && setHoldModalOpen(false)}>
+          <div style={{ ...styles.sheet, width: 420, maxWidth: '92vw', maxHeight: 'none', borderRadius: 16, boxShadow: '0 8px 30px rgba(20,24,31,0.25)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#14181F', marginBottom: 6 }}>Save as hold</div>
+            <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 14 }}>
+              Sets these {orderLines.length} item{orderLines.length === 1 ? '' : 's'} aside so they come out of available stock. This isn't an order — nothing gets invoiced.
+            </div>
+
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>NAME</label>
+            <input
+              style={{ boxSizing: 'border-box', width: '100%', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14.5, fontFamily: 'inherit', marginBottom: 12 }}
+              placeholder="e.g. Times October ad"
+              value={holdName}
+              onChange={e => setHoldName(e.target.value)}
+              autoFocus
+            />
+
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 4 }}>HOLD UNTIL (OPTIONAL)</label>
+            <input
+              style={{ boxSizing: 'border-box', width: '100%', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', marginBottom: 6 }}
+              type="date"
+              value={holdEndDate}
+              onChange={e => setHoldEndDate(e.target.value)}
+            />
+            <div style={{ fontSize: 11.5, color: '#8A8F87', marginBottom: 14 }}>
+              Leave empty to hold until you release it by hand.
+            </div>
+
+            {holdErr && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 10 }}>{holdErr}</div>}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button style={officeStyles.smallBtn} onClick={() => setHoldModalOpen(false)} disabled={holdSaving}>Cancel</button>
+              <button style={{ ...officeStyles.primarySmallBtn, opacity: holdSaving ? 0.6 : 1 }} onClick={saveAsHold} disabled={holdSaving}>
+                {holdSaving ? 'Saving…' : 'Save hold'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {boxOrShipperPromptId && (
         <div style={{ ...styles.sheetOverlay, alignItems: 'center', justifyContent: 'center' }} onClick={() => setBoxOrShipperPromptId(null)}>
@@ -4427,6 +4503,14 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
                     title="Save this order as pending — it shows in Orders and can be submitted later"
                   >
                     Save as pending
+                  </button>
+                  <button
+                    style={{ ...styles.pendingBtn, ...((orderLines.length > 0 && !submitting) ? {} : styles.pendingBtnDisabled) }}
+                    disabled={orderLines.length === 0 || submitting}
+                    onClick={() => { setHoldErr(''); setHoldName(''); setHoldEndDate(''); setHoldModalOpen(true); }}
+                    title="Set this stock aside for an ad or anything upcoming — it comes out of available stock but isn't an order"
+                  >
+                    Save as hold
                   </button>
                   <button
                     style={styles.discardBtn}
@@ -6059,6 +6143,12 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
             Purchasing
           </button>
           <button
+            style={{ ...officeStyles.navBtn, ...(section === 'holds' ? officeStyles.navBtnActive : {}) }}
+            onClick={() => setSection('holds')}
+          >
+            Holds
+          </button>
+          <button
             style={{ ...officeStyles.navBtn, ...(section === 'taiyoin' ? officeStyles.navBtnActive : {}) }}
             onClick={() => setSection('taiyoin')}
           >
@@ -6109,6 +6199,7 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
             (Taiyo In / Storage / Out / Inventory), so one nav button landing
             on Taiyo In is enough -- switching between them happens inside the
             page rather than needing a duplicate dropdown out here. */}
+        {section === 'holds' && <OfficeHolds items={items} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
         {section === 'taiyoin' && (
           <iframe src="/taiyo?tab=current" title="Taiyo" style={{ width: '100%', height: 'calc(100vh - 130px)', border: '1px solid #E3E1D6', borderRadius: 8 }} />
         )}
@@ -8104,7 +8195,8 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 <>
                   <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="Physical stock on hand right now (edit this)">On hand</th>
                   <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="Boxes allocated to future-delivery orders (not shipped yet)">Allocated</th>
-                  <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders = what's left to sell">After allocation</th>
+                  <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="Boxes set aside on an active hold (for an ad or similar) — still on hand, but not available to sell">Held</th>
+                  <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="On hand minus allocated (future-delivery) orders and active holds = what's left to sell">After allocation</th>
                   <th style={{ ...officeStyles.th, top: invThTop, textAlign: 'right' }} title="Stock incoming on open purchase orders (not yet received)">Incoming</th>
                 </>
               ) : (
@@ -8233,7 +8325,10 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                     <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.futureBoxes || 0) > 0 ? '#B5793B' : '#B9BDB2', fontWeight: (item.futureBoxes || 0) > 0 ? 700 : 400 }} title="Allocated to future-delivery orders (not shipped yet)">
                       {(item.futureBoxes || 0) > 0 ? `−${item.futureBoxes}` : '0'}
                     </td>
-                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: (item.available != null ? item.available : item.stock) < 0 ? '#B5493B' : '#14181F' }} title="After allocation = on-hand minus allocated orders">{item.available != null ? item.available : item.stock}</td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.heldBoxes || 0) > 0 ? '#8A6D1B' : '#B9BDB2', fontWeight: (item.heldBoxes || 0) > 0 ? 700 : 400 }} title="Set aside on an active hold — still on hand, but not available to sell">
+                      {(item.heldBoxes || 0) > 0 ? `−${item.heldBoxes}` : '0'}
+                    </td>
+                    <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700, color: (item.available != null ? item.available : item.stock) < 0 ? '#B5493B' : '#14181F' }} title="After allocation = on-hand minus allocated orders and active holds">{item.available != null ? item.available : item.stock}</td>
                     <td style={{ ...officeStyles.td, textAlign: 'right', color: (item.incoming || 0) > 0 ? '#2B5D50' : '#B9BDB2', fontWeight: (item.incoming || 0) > 0 ? 700 : 400 }} title="Incoming on open purchase orders (not yet received)">
                       {(item.incoming || 0) > 0 ? `+${item.incoming}` : '0'}
                     </td>
@@ -8287,7 +8382,7 @@ function OfficeInventory({ items, customers = [], orders, brandColors, brandSett
                 // item.stock, which can drift out of sync with it.
                 const anchorStock = item.onHand != null ? item.onHand : item.stock;
                 const hist = orderHistoryFor(item.id, anchorStock, receiptsById[item.id] || [], manualLogById[item.id] || []);
-                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 13 : 12) : 7) + (showTodays ? 3 : 0);
+                const colSpan = (isItems ? (editMode && (editField === "all" || editField === "photo") ? 13 : 12) : 7) + (showTodays ? 4 : 0);
                 // Sort the history rows by the chosen column.
                 const sortVal = (r, f) => {
                   switch (f) {
@@ -13557,6 +13652,156 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
           <button style={{ ...officeStyles.primarySmallBtn, padding: '10px 18px', opacity: saving ? 0.6 : 1 }} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save promo'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Stock holds: stock set aside for an ad or anything else upcoming. A hold
+// reduces available stock without being a sale, so it never gets an invoice,
+// never exports, and never shows in sales reports. Holds are created from the
+// New Order screen ("Save as hold"); this screen is where they're reviewed,
+// released, or turned into a real order.
+function OfficeHolds({ items = [], onRefresh = async () => {}, onEditOrder = null }) {
+  const [holds, setHolds] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [busyId, setBusyId] = useState(null);
+
+  async function load() {
+    setLoading(true); setErr('');
+    try { setHolds(await apiGet('/holds')); }
+    catch (e) { setErr(e.message || 'Could not load holds.'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return holds.filter(h => {
+      if (statusFilter !== 'all' && h.effectiveStatus !== statusFilter) return false;
+      if (q && !h.name.toLowerCase().includes(q) &&
+          !(h.customerName || '').toLowerCase().includes(q) &&
+          !h.lines.some(l => (l.itemName || '').toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [holds, query, statusFilter]);
+
+  async function act(h, path, confirmMsg) {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusyId(h.id);
+    try {
+      if (path === 'delete') await apiDelete(`/holds/${h.id}`);
+      else await apiPost(`/holds/${h.id}/${path}`, {});
+      await load();
+      await onRefresh(); // stock changed, so refresh the shared item list too
+    } catch (e) {
+      window.alert(e.message || 'Could not update this hold.');
+    } finally { setBusyId(null); }
+  }
+
+  const badge = (s) => {
+    if (s === 'active') return <span style={officeStyles.badgeProcessed}>Holding</span>;
+    if (s === 'expired') return <span style={{ ...officeStyles.badgePending, color: '#8A6D1B', background: '#F5E9C6', border: '1px solid #E2CE8E' }}>Expired</span>;
+    if (s === 'converted') return <span style={{ ...officeStyles.badgePending, color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2' }}>Ordered</span>;
+    return <span style={officeStyles.badgePending}>Released</span>;
+  };
+
+  return (
+    <div>
+      <div style={officeStyles.sectionHeader}>
+        <div style={officeStyles.sectionTitle}>Holds</div>
+        <input style={officeStyles.search} placeholder="Search by name, item, or customer…" value={query} onChange={e => setQuery(e.target.value)} />
+        <select style={{ padding: '8px 10px', border: '1px solid #E3E1D6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="active">Holding</option>
+          <option value="expired">Expired</option>
+          <option value="released">Released</option>
+          <option value="converted">Ordered</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 14, maxWidth: 720 }}>
+        Stock set aside for ads or anything else coming up. A hold comes out of available stock but stays on hand — it isn't an order, so nothing is invoiced. Create one from New Order using "Save as hold".
+      </div>
+
+      {err && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 12 }}>{err}</div>}
+      {loading ? <div style={{ color: '#8A8F87', fontSize: 13 }}>Loading…</div> : (
+        <div style={{ border: '1px solid #E3E1D6', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Hold</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Items</th>
+                <th style={{ ...officeStyles.th, position: 'static', textAlign: 'right' }}>Boxes</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Hold until</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Status</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(h => (
+                <tr key={h.id}>
+                  <td style={{ ...officeStyles.td, fontWeight: 700 }}>
+                    {h.name}
+                    <div style={{ fontWeight: 400, fontSize: 11.5, color: '#8A8F87', marginTop: 2 }}>
+                      {h.customerName ? h.customerName + ' · ' : ''}{h.createdBy ? 'by ' + h.createdBy + ' · ' : ''}{formatDate(String(h.createdAt).slice(0, 10))}
+                    </div>
+                    {h.notes && <div style={{ fontWeight: 400, fontSize: 11.5, color: '#8A8F87', fontStyle: 'italic', marginTop: 2 }}>{h.notes}</div>}
+                  </td>
+                  <td style={officeStyles.td}>
+                    {h.lines.map(l => (
+                      <div key={l.itemId}>{l.itemName || l.itemId} <span style={{ color: '#8A8F87' }}>× {l.qty} {l.unit}</span></div>
+                    ))}
+                  </td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', fontWeight: 700 }}>{h.totalBoxes}</td>
+                  <td style={officeStyles.td}>{h.endDate ? formatDate(h.endDate) : <span style={{ color: '#B9BDB2' }}>no end date</span>}</td>
+                  <td style={officeStyles.td}>{badge(h.effectiveStatus)}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {h.effectiveStatus === 'active' || h.effectiveStatus === 'expired' ? (
+                      <>
+                        <button
+                          style={officeStyles.smallBtn}
+                          disabled={busyId === h.id}
+                          onClick={() => act(h, 'release', `Release "${h.name}"? Its ${h.totalBoxes} box(es) go back into available stock.`)}
+                          title="Stop holding this stock"
+                        >
+                          {busyId === h.id ? '…' : 'Release'}
+                        </button>
+                        {' '}
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          style={officeStyles.smallBtn}
+                          disabled={busyId === h.id}
+                          onClick={() => act(h, 'reactivate')}
+                          title="Put this hold back in place"
+                        >
+                          {busyId === h.id ? '…' : 'Re-hold'}
+                        </button>
+                        {' '}
+                      </>
+                    )}
+                    <button
+                      style={{ ...officeStyles.smallBtn, color: '#B5493B' }}
+                      disabled={busyId === h.id}
+                      onClick={() => act(h, 'delete', `Delete "${h.name}"? This can't be undone.`)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {shown.length === 0 && (
+                <tr><td colSpan={6} style={{ ...officeStyles.td, textAlign: 'center', color: '#8A8F87' }}>
+                  {holds.length === 0 ? 'No holds yet — create one from New Order using "Save as hold".' : 'No holds match your filters.'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
