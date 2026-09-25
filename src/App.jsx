@@ -4000,8 +4000,8 @@ function OrderTab({ items, customers, customersAll, orders, brandColors, printSe
       {uploadOpen && <OrderUploadModal items={items} customers={customersAll || customers} onClose={() => setUploadOpen(false)} onCreated={async () => { setUploadOpen(false); await onOrderSubmitted(); }} />}
 
       {boxOrShipperPromptId && (
-        <div style={overlayStyle} onClick={() => setBoxOrShipperPromptId(null)}>
-          <div style={{ ...sheetStyle, width: 360, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
+        <div style={{ ...styles.sheetOverlay, alignItems: 'center', justifyContent: 'center' }} onClick={() => setBoxOrShipperPromptId(null)}>
+          <div style={{ ...styles.sheet, width: 360, maxWidth: '90vw', maxHeight: 'none', borderRadius: 16, boxShadow: '0 8px 30px rgba(20,24,31,0.25)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, color: '#14181F', marginBottom: 6 }}>Box or shipper?</div>
             <div style={{ fontSize: 13.5, color: '#5B6058', marginBottom: 16 }}>
               {(itemById[boxOrShipperPromptId] || {}).name} ships as a single box or a full shipper case of {BOX_OR_SHIPPER_CASE_SIZE}. Which do you want to add?
