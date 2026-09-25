@@ -13288,6 +13288,35 @@ function TagPicker({ options, selectedIds, onChange, placeholder, quickGroups })
   );
 }
 
+// The two store chains that promos are routinely scoped to as a whole. Shared
+// by the editor's quick-select buttons and by the list's Customers column, so
+// "what counts as the Times group" is defined in exactly one place.
+function customerGroupsFor(customers) {
+  const groups = [
+    { label: 'Times', ids: customers.filter(c => c.name.startsWith('Times ')).map(c => c.id) },
+    { label: 'DQ', ids: customers.filter(c => c.name.startsWith('Don Quijote')).map(c => c.id) },
+  ];
+  return groups.filter(g => g.ids.length > 0);
+}
+
+// Collapse a promo's customer list for display: when every store in a group is
+// covered, show the group's name instead of naming each store. Anything picked
+// outside a fully-covered group is still listed individually, so nothing is
+// silently hidden.
+function summarizeCustomers(promoCustomers, groups) {
+  const selected = new Set(promoCustomers.map(c => c.id));
+  const covered = new Set();
+  const labels = [];
+  for (const g of groups) {
+    if (g.ids.length > 0 && g.ids.every(id => selected.has(id))) {
+      labels.push(g.label);
+      for (const id of g.ids) covered.add(id);
+    }
+  }
+  for (const c of promoCustomers) if (!covered.has(c.id)) labels.push(c.name);
+  return labels;
+}
+
 function promoStatus(p) {
   const today = todayISODate();
   if (p.endDate < today) return 'expired';
@@ -13319,13 +13348,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
   // constantly ("all the Times" or "all the DQ stores", sometimes both
   // together), so a promo covering them shouldn't mean hand-picking each
   // store one at a time.
-  const customerGroups = useMemo(() => {
-    const groups = [
-      { label: 'Times', ids: customers.filter(c => c.name.startsWith('Times ')).map(c => c.id) },
-      { label: 'DQ', ids: customers.filter(c => c.name.startsWith('Don Quijote')).map(c => c.id) },
-    ];
-    return groups.filter(g => g.ids.length > 0);
-  }, [customers]);
+  const customerGroups = useMemo(() => customerGroupsFor(customers), [customers]);
 
   async function save() {
     setErr('');
@@ -13434,6 +13457,7 @@ function OfficePromos({ items, customers }) {
   const [editModal, setEditModal] = useState(null); // null = closed, {} = new, {...promo} = editing
   const [deleteBusyId, setDeleteBusyId] = useState(null);
   const [expandedId, setExpandedId] = useState(null); // promo id showing its per-item net/TPR breakdown
+  const custGroups = useMemo(() => customerGroupsFor(customers), [customers]);
 
   async function load() {
     setLoading(true); setErr('');
@@ -13520,7 +13544,7 @@ function OfficePromos({ items, customers }) {
                       </button>
                     ) : p.items.map(i => i.name).join(', ')}
                   </td>
-                  <td style={officeStyles.td}>{p.appliesToAllCustomers ? <span style={{ color: '#2B5D50', fontWeight: 600 }}>All customers</span> : p.customers.map(c => c.name).join(', ')}</td>
+                  <td style={officeStyles.td}>{p.appliesToAllCustomers ? <span style={{ color: '#2B5D50', fontWeight: 600 }}>All customers</span> : summarizeCustomers(p.customers, custGroups).join(', ')}</td>
                   <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.amountType === 'percent' ? `${p.amount}%` : formatMoney(p.amount) + (p.amountType === 'flat_per_each' ? '/each' : '/box')}</td>
                   <td style={officeStyles.td}>{formatDate(p.startDate)}</td>
                   <td style={officeStyles.td}>{formatDate(p.endDate)}</td>
