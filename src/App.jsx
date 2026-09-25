@@ -6039,10 +6039,10 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
           </button>
           <div style={{ position: 'relative' }}>
             <button
-              style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(section === 'taiyoout' ? officeStyles.navBtnActive : {}) }}
+              style={{ ...officeStyles.navBtn, ...officeStyles.navBtnGroup, ...(['taiyoin', 'taiyoout', 'taiyostorage'].includes(section) ? officeStyles.navBtnActive : {}) }}
               onClick={() => setTaiyoMenuOpen(o => !o)}
             >
-              {section === 'taiyoout' ? 'Taiyo Out' : 'Taiyo'}
+              {section === 'taiyoin' ? 'Taiyo In' : section === 'taiyostorage' ? 'Taiyo Storage' : section === 'taiyoout' ? 'Taiyo Out' : 'Taiyo'}
               <ChevronDown size={14} style={{ transform: taiyoMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
             </button>
             {taiyoMenuOpen && (
@@ -6050,9 +6050,8 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
                 <div style={officeStyles.navMenuOverlay} onClick={() => setTaiyoMenuOpen(false)} />
                 <div style={officeStyles.navMenu}>
                   <button
-                    style={officeStyles.navMenuItem}
-                    onClick={() => { window.open('/taiyo?tab=current', '_blank'); setTaiyoMenuOpen(false); }}
-                    title="Opens Taiyo's own page in a new tab"
+                    style={{ ...officeStyles.navMenuItem, ...(section === 'taiyoin' ? officeStyles.navMenuItemActive : {}) }}
+                    onClick={() => { setSection('taiyoin'); setTaiyoMenuOpen(false); }}
                   >
                     Taiyo In
                   </button>
@@ -6063,9 +6062,8 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
                     Taiyo Out
                   </button>
                   <button
-                    style={officeStyles.navMenuItem}
-                    onClick={() => { window.open('/taiyo?tab=storage', '_blank'); setTaiyoMenuOpen(false); }}
-                    title="Opens Taiyo's own page in a new tab"
+                    style={{ ...officeStyles.navMenuItem, ...(section === 'taiyostorage' ? officeStyles.navMenuItemActive : {}) }}
+                    onClick={() => { setSection('taiyostorage'); setTaiyoMenuOpen(false); }}
                   >
                     Taiyo Storage
                   </button>
@@ -6114,7 +6112,13 @@ function OfficeView({ items, customers, customersAll, activeItems, activeCustome
         {section === 'promos' && <OfficePromos customers={activeCustomers} items={items} />}
         {section === 'reports' && <OfficeReports items={activeItems} customers={activeCustomers} orders={orders} printSequence={printSequence} onRefresh={onRefresh} onEditOrder={editOrderInNewTab} />}
         {section === 'purchasing' && <OfficePurchasing items={activeItems || items} onRefresh={onRefresh} />}
+        {section === 'taiyoin' && (
+          <iframe src="/taiyo?tab=current" title="Taiyo In" style={{ width: '100%', height: 'calc(100vh - 130px)', border: '1px solid #E3E1D6', borderRadius: 8 }} />
+        )}
         {section === 'taiyoout' && <OfficePodUploads />}
+        {section === 'taiyostorage' && (
+          <iframe src="/taiyo?tab=storage" title="Taiyo Storage" style={{ width: '100%', height: 'calc(100vh - 130px)', border: '1px solid #E3E1D6', borderRadius: 8 }} />
+        )}
       </div>
     </div>
   );
@@ -13320,7 +13324,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
   const [itemIds, setItemIds] = useState(promo ? promo.items.map(i => i.id) : []);
   const [allCustomers, setAllCustomers] = useState(promo ? promo.appliesToAllCustomers : false);
   const [customerIds, setCustomerIds] = useState(promo ? promo.customers.map(c => c.id) : []);
-  const [amountType, setAmountType] = useState(promo ? promo.amountType : 'flat_per_box');
+  const [amountType, setAmountType] = useState(promo ? promo.amountType : 'flat_per_each');
   const [amount, setAmount] = useState(promo ? String(promo.amount) : '');
   const [startDate, setStartDate] = useState(promo ? promo.startDate : todayISODate());
   const [endDate, setEndDate] = useState(promo ? promo.endDate : todayISODate());
@@ -13412,6 +13416,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
             <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>AMOUNT</label>
             <div style={{ display: 'flex', gap: 8 }}>
               <select style={{ padding: '9px 8px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }} value={amountType} onChange={e => setAmountType(e.target.value)}>
+                <option value="flat_per_each">$/each</option>
                 <option value="flat_per_box">$/box</option>
                 <option value="percent">%</option>
               </select>
@@ -13450,6 +13455,7 @@ function OfficePromos({ items, customers }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [editModal, setEditModal] = useState(null); // null = closed, {} = new, {...promo} = editing
   const [deleteBusyId, setDeleteBusyId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null); // promo id showing its per-item net/TPR breakdown
 
   async function load() {
     setLoading(true); setErr('');
@@ -13518,12 +13524,26 @@ function OfficePromos({ items, customers }) {
               </tr>
             </thead>
             <tbody>
-              {shown.map(p => (
-                <tr key={p.id}>
+              {shown.map(p => {
+                const canExpand = p.amountType === 'flat_per_each';
+                const isOpen = expandedId === p.id;
+                return (
+                <React.Fragment key={p.id}>
+                <tr>
                   <td style={{ ...officeStyles.td, fontWeight: 700 }}>{p.name}{p.notes ? <div style={{ fontWeight: 400, fontSize: 11.5, color: '#8A8F87', marginTop: 2 }}>{p.notes}</div> : null}</td>
-                  <td style={officeStyles.td}>{p.items.map(i => i.name).join(', ')}</td>
+                  <td style={officeStyles.td}>
+                    {canExpand ? (
+                      <button
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontSize: 13, color: '#14181F', textAlign: 'left' }}
+                        onClick={() => setExpandedId(isOpen ? null : p.id)}
+                        title="Show net price and TPR per item"
+                      >
+                        {isOpen ? '▾' : '▸'} {p.items.map(i => i.name).join(', ')}
+                      </button>
+                    ) : p.items.map(i => i.name).join(', ')}
+                  </td>
                   <td style={officeStyles.td}>{p.appliesToAllCustomers ? <span style={{ color: '#2B5D50', fontWeight: 600 }}>All customers</span> : p.customers.map(c => c.name).join(', ')}</td>
-                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.amountType === 'percent' ? `${p.amount}%` : formatMoney(p.amount) + '/box'}</td>
+                  <td style={{ ...officeStyles.td, textAlign: 'right' }}>{p.amountType === 'percent' ? `${p.amount}%` : formatMoney(p.amount) + (p.amountType === 'flat_per_each' ? '/each' : '/box')}</td>
                   <td style={officeStyles.td}>{formatDate(p.startDate)}</td>
                   <td style={officeStyles.td}>{formatDate(p.endDate)}</td>
                   <td style={officeStyles.td}>{statusBadge(p)}</td>
@@ -13533,7 +13553,42 @@ function OfficePromos({ items, customers }) {
                     <button style={{ ...officeStyles.smallBtn, color: '#B5493B' }} onClick={() => handleDelete(p)} disabled={deleteBusyId === p.id}>{deleteBusyId === p.id ? '…' : 'Delete'}</button>
                   </td>
                 </tr>
-              ))}
+                {canExpand && isOpen && (
+                  <tr>
+                    <td colSpan={8} style={{ ...officeStyles.td, background: '#FBFAF6', padding: '10px 14px' }}>
+                      <table style={{ width: '100%', maxWidth: 520, borderCollapse: 'collapse', fontSize: 12.5 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px 0' }}>Item</th>
+                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px' }}>Price/each</th>
+                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px' }}>Scan</th>
+                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 8px 4px' }}>Net/each</th>
+                            <th style={{ textAlign: 'right', color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 0 4px 8px' }}>TPR %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {p.items.map(i => {
+                            const price = Number(i.price) || 0;
+                            const net = price - Number(p.amount);
+                            const tpr = price > 0 ? (Number(p.amount) / price * 100) : null;
+                            return (
+                              <tr key={i.id}>
+                                <td style={{ padding: '3px 8px 3px 0' }}>{i.name}</td>
+                                <td style={{ textAlign: 'right', padding: '3px 8px' }}>{formatMoney(price)}</td>
+                                <td style={{ textAlign: 'right', padding: '3px 8px', color: '#B5493B' }}>-{formatMoney(p.amount)}</td>
+                                <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 700, color: net < 0 ? '#B5493B' : '#2B5D50' }}>{formatMoney(net)}</td>
+                                <td style={{ textAlign: 'right', padding: '3px 0 3px 8px' }}>{tpr == null ? <span style={{ color: '#B9BDB2' }}>—</span> : `${tpr.toFixed(1)}%`}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
+                );
+              })}
               {shown.length === 0 && (
                 <tr><td colSpan={8} style={{ ...officeStyles.td, textAlign: 'center', color: '#8A8F87' }}>{promos.length === 0 ? 'No promos yet — add one to get started.' : 'No promos match your filters.'}</td></tr>
               )}
