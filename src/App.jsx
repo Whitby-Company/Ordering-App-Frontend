@@ -2378,7 +2378,7 @@ function MainApp() {
           />
         )}
         {tab === 'inventory' && <InventoryTab items={items} orders={orderHistory} brandColors={brandColors} printSequence={printSequence} />}
-        {tab === 'pricecheck' && <PriceCheckTab items={items} />}
+        {tab === 'pricecheck' && <PriceCheckTab items={items} customers={customers} />}
         {tab === 'orders' && (
           <OrdersTab
             orders={orderHistory}
@@ -5213,7 +5213,7 @@ function BarcodeScanner({ onDetected, onClose }) {
   );
 }
 
-function PriceCheckTab({ items }) {
+function PriceCheckTab({ items, customers = [] }) {
   const [screen, setScreen] = useState('list'); // list | scan | form
   const [checks, setChecks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5224,6 +5224,8 @@ function PriceCheckTab({ items }) {
   const [locations, setLocations] = useState([]);
 
   // Form fields
+  const [isOurStore, setIsOurStore] = useState(true); // our account vs a store we don't service
+  const [customerId, setCustomerId] = useState('');
   const [retailLocation, setRetailLocation] = useState('');
   const [basePrice, setBasePrice] = useState('');
   const [promoPrice, setPromoPrice] = useState('');
@@ -5269,7 +5271,7 @@ function PriceCheckTab({ items }) {
   }
 
   function resetForm() {
-    setRetailLocation(''); setBasePrice(''); setPromoPrice(''); setNotes('');
+    setRetailLocation(''); setCustomerId(''); setBasePrice(''); setPromoPrice(''); setNotes('');
     setPhotoFile(null); setPhotoPreview(''); setSaveErr('');
   }
 
@@ -5283,12 +5285,15 @@ function PriceCheckTab({ items }) {
   }
 
   async function submitCheck() {
-    if (!scannedItem || !retailLocation.trim()) { setSaveErr('Enter which store this is for.'); return; }
+    if (!scannedItem) { setSaveErr('No item selected.'); return; }
+    if (isOurStore && !customerId) { setSaveErr('Pick which of our stores this is.'); return; }
+    if (!isOurStore && !retailLocation.trim()) { setSaveErr('Enter which store this is for.'); return; }
     setSaving(true); setSaveErr('');
     try {
       const res = await apiPost('/price-checks', {
         itemId: scannedItem.id,
-        retailLocation: retailLocation.trim(),
+        customerId: isOurStore ? Number(customerId) : undefined,
+        retailLocation: isOurStore ? undefined : retailLocation.trim(),
         basePrice: basePrice || undefined,
         promoPrice: promoPrice || undefined,
         notes: notes.trim() || undefined,
@@ -5398,17 +5403,34 @@ function PriceCheckTab({ items }) {
 
           {saveErr && <div style={{ color: '#B5493B', fontSize: 13, marginBottom: 10 }}>{saveErr}</div>}
 
-          <label style={pcStyles.lbl}>Retail location</label>
-          <input
-            style={pcStyles.input}
-            placeholder="e.g. Foodland Kailua"
-            value={retailLocation}
-            onChange={e => setRetailLocation(e.target.value)}
-            list="pc-locations"
-          />
-          <datalist id="pc-locations">
-            {locations.map(l => <option key={l.location} value={l.location} />)}
-          </datalist>
+          <label style={pcStyles.lbl}>Store</label>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 8, fontSize: 13.5 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="radio" checked={isOurStore} onChange={() => { setIsOurStore(true); setRetailLocation(''); }} /> Our account
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="radio" checked={!isOurStore} onChange={() => { setIsOurStore(false); setCustomerId(''); }} /> Other store
+            </label>
+          </div>
+          {isOurStore ? (
+            <select style={pcStyles.input} value={customerId} onChange={e => setCustomerId(e.target.value)}>
+              <option value="">Select a store…</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <>
+              <input
+                style={pcStyles.input}
+                placeholder="e.g. Foodland Kailua"
+                value={retailLocation}
+                onChange={e => setRetailLocation(e.target.value)}
+                list="pc-locations"
+              />
+              <datalist id="pc-locations">
+                {locations.map(l => <option key={l.location} value={l.location} />)}
+              </datalist>
+            </>
+          )}
 
           <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
             <div style={{ flex: 1 }}>
@@ -13350,12 +13372,27 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
   // store one at a time.
   const customerGroups = useMemo(() => customerGroupsFor(customers), [customers]);
 
+  // Shelf retail from field price checks: the most recent check for each item
+  // at each of the stores this promo covers. This is the real shelf tag, as
+  // opposed to items.price (what we charge the store) -- so the TPR shown is
+  // the shopper-facing reduction rather than a wholesale one.
+  const [retailRows, setRetailRows] = useState([]);
+  useEffect(() => {
+    if (!itemIds.length) { setRetailRows([]); return; }
+    const params = new URLSearchParams();
+    params.set('itemIds', itemIds.join(','));
+    if (!allCustomers && customerIds.length) params.set('customerIds', customerIds.join(','));
+    let cancelled = false;
+    apiGet(`/price-checks/latest-retail?${params.toString()}`)
+      .then(rows => { if (!cancelled) setRetailRows(rows || []); })
+      .catch(() => { if (!cancelled) setRetailRows([]); });
+    return () => { cancelled = true; };
+  }, [itemIds, customerIds, allCustomers]);
+
   // Live preview of what the scan does to each selected item's price, so the
   // effect is visible while the promo is being entered rather than only after
-  // saving. Uses items.price (the per-each price we charge the store) -- the
-  // system has no separate consumer shelf-retail field. Per-box scans are
-  // skipped: the per-each effect depends on pack size and isn't a straight
-  // subtraction, so showing one here would be misleading.
+  // saving. Per-box scans are skipped: the per-each effect depends on pack
+  // size and isn't a straight subtraction, so showing one would be misleading.
   const pricePreview = useMemo(() => {
     const amt = Number(amount);
     if (!itemIds.length || !amount || isNaN(amt) || amt === 0) return [];
@@ -13363,17 +13400,30 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
     return itemIds.map(id => {
       const it = items.find(i => i.id === id);
       if (!it) return null;
-      const regular = Number(it.price) || 0;
-      const off = amountType === 'percent' ? regular * (amt / 100) : amt;
+      const ourPrice = Number(it.price) || 0;
+      // Retail checks for this item across the promo's stores. Prices can
+      // differ store to store, so show the newest as the headline and flag
+      // when the others disagree rather than pretending there's one number.
+      const checks = retailRows
+        .filter(r => r.itemId === id && r.basePrice != null)
+        .sort((a, b) => String(b.checkedAt).localeCompare(String(a.checkedAt)));
+      const latest = checks[0] || null;
+      const retail = latest ? Number(latest.basePrice) : null;
+      const distinct = new Set(checks.map(c => Number(c.basePrice)));
+      const off = retail != null && amountType === 'percent' ? retail * (amt / 100) : amt;
       return {
         id,
         name: it.name,
-        regular,
-        promo: regular - off,
-        tpr: regular > 0 ? (off / regular * 100) : null,
+        ourPrice,
+        retail,
+        retailAfter: retail == null ? null : retail - off,
+        tpr: retail != null && retail > 0 ? (off / retail * 100) : null,
+        storeCount: checks.length,
+        varies: distinct.size > 1,
+        latestStore: latest ? latest.customerName : null,
       };
     }).filter(Boolean);
-  }, [itemIds, items, amount, amountType]);
+  }, [itemIds, items, amount, amountType, retailRows]);
 
   async function save() {
     setErr('');
@@ -13419,23 +13469,36 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
             <TagPicker options={itemOptions} selectedIds={itemIds} onChange={setItemIds} placeholder="Search items to add…" />
             {pricePreview.length > 0 && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', marginBottom: 5 }}>PRICE WITH THIS SCAN</div>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', marginBottom: 5 }}>SHELF RETAIL WITH THIS SCAN</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: 'left', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px 0' }}>Item</th>
-                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>Regular</th>
-                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>With scan</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>Our $/ea</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>Retail</th>
+                      <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 8px 4px' }}>TPR retail</th>
                       <th style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 0 4px 8px' }}>TPR %</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pricePreview.map(r => (
                       <tr key={r.id}>
-                        <td style={{ padding: '3px 8px 3px 0' }}>{r.name}</td>
-                        <td style={{ textAlign: 'right', padding: '3px 8px' }}>{formatMoney(r.regular)}</td>
-                        <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 700, color: r.promo < 0 ? '#B5493B' : '#2B5D50' }}>{formatMoney(r.promo)}</td>
-                        <td style={{ textAlign: 'right', padding: '3px 0 3px 8px' }}>{r.tpr == null ? <span style={{ color: '#B9BDB2' }}>—</span> : `${r.tpr.toFixed(1)}%`}</td>
+                        <td style={{ padding: '3px 8px 3px 0' }}>
+                          {r.name}
+                          {r.retail != null && r.varies && (
+                            <span style={{ color: '#8A6D1B', fontSize: 10.5, marginLeft: 5 }} title={`Retail differs across the ${r.storeCount} checked stores — showing the most recent (${r.latestStore})`}>varies by store</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '3px 8px', color: '#8A8F87' }}>{formatMoney(r.ourPrice)}</td>
+                        {r.retail == null ? (
+                          <td colSpan={3} style={{ textAlign: 'right', padding: '3px 0 3px 8px', color: '#B9BDB2', fontStyle: 'italic' }}>no price check yet</td>
+                        ) : (
+                          <>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{formatMoney(r.retail)}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 700, color: r.retailAfter < 0 ? '#B5493B' : '#2B5D50' }}>{formatMoney(r.retailAfter)}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 0 3px 8px' }}>{r.tpr == null ? <span style={{ color: '#B9BDB2' }}>—</span> : `${r.tpr.toFixed(1)}%`}</td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
