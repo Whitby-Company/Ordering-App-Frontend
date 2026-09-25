@@ -343,6 +343,256 @@ function matchCodeToSkus(rawCode, codeIndex) {
   return null;
 }
 
+// ---- Retailer deal-sheet import -------------------------------------------
+// Reads a filled-in TPR / ad promo sheet and pulls out the promo it describes.
+// Two formats are recognised, both located by their column LABELS rather than
+// fixed positions, so a sheet with rows inserted above the grid still parses:
+//
+//   Times / Don Quijote  "NEW ITEM & PROMOTIONAL PRODUCT PRESENTATION"
+//     header row carries ITEM UPC# / DESCRIPTION / SCAN DOWN (PER UNIT) / ...
+//   Longs                "Promotion Information Sheet"
+//     carries a machine-readable field-code row (sku_nbr, unit_scan, ...)
+//     directly beneath the human header, which is what we key off.
+//
+// Nothing is saved from here -- the caller previews what was found and the
+// normal promo editor does the actual creating, so an odd sheet can't write
+// junk straight into the records.
+
+const DEAL_SHEET_FORMATS = {
+  timesdq: {
+    label: 'Times / Don Quijote',
+    // header cell text (lowercased, trimmed) -> field
+    columns: {
+      'vendor code': 'vendorCode',
+      'item upc#': 'upc',
+      'description': 'description',
+      'pack': 'pack',
+      'size uom': 'size',
+      'list cost': 'caseCost',
+      'net case': 'netCase',
+      'scan down (per unit)': 'scan',
+      'net unit': 'netUnit',
+      'reg retail': 'regRetail',
+      'edlp retail': 'edlpRetail',
+      'ad retail': 'adRetail',
+    },
+    required: ['upc', 'scan'],
+  },
+  longs: {
+    columns: {
+      'sku_nbr': 'vendorCode',
+      'upc': 'upc',
+      'descr': 'description',
+      'cs_pk_qty': 'pack',
+      'size': 'size',
+      'case_cost': 'caseCost',
+      'unit_cost': 'unitCost',
+      'unit_scan': 'scan',
+      'net_unit_cost': 'netUnit',
+      'ad_retail1': 'adRetail',
+    },
+    label: 'Longs',
+    required: ['upc', 'unit_scan_or_scan'],
+  },
+};
+
+const digitsOnly = v => String(v == null ? '' : v).replace(/\D/g, '');
+const numOrNull = v => {
+  if (v == null || v === '') return null;
+  const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+};
+
+// A sheet's example/instruction row shouldn't become a promo line. The Times
+// form ships one literally labelled "Sample" with placeholder 12345 codes.
+function isTemplateSampleRow(row) {
+  const d = String(row.description || '').trim().toLowerCase();
+  if (d === 'sample') return true;
+  return digitsOnly(row.upc) === '112345123451';
+}
+
+function parseDealSheetRows(rows, fmtKey) {
+  const fmt = DEAL_SHEET_FORMATS[fmtKey];
+  // Find the row whose cells match this format's column labels.
+  let headerIdx = -1, colMap = null;
+  for (let r = 0; r < rows.length; r++) {
+    const map = {};
+    let hits = 0;
+    (rows[r] || []).forEach((cell, c) => {
+      const key = String(cell == null ? '' : cell).trim().toLowerCase().replace(/\s+/g, ' ');
+      const field = fmt.columns[key];
+      if (field && map[field] === undefined) { map[field] = c; hits++; }
+    });
+    if (map.upc !== undefined && map.scan !== undefined && hits >= 4) { headerIdx = r; colMap = map; break; }
+  }
+  if (headerIdx < 0) return null;
+
+  const out = [];
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const get = f => (colMap[f] === undefined ? null : row[colMap[f]]);
+    const rec = {
+      vendorCode: get('vendorCode') == null ? '' : String(get('vendorCode')).trim(),
+      upc: get('upc') == null ? '' : String(get('upc')).trim(),
+      description: get('description') == null ? '' : String(get('description')).trim(),
+      pack: numOrNull(get('pack')),
+      size: get('size') == null ? '' : String(get('size')).trim(),
+      caseCost: numOrNull(get('caseCost')),
+      unitCost: numOrNull(get('unitCost')),
+      netCase: numOrNull(get('netCase')),
+      scan: numOrNull(get('scan')),
+      netUnit: numOrNull(get('netUnit')),
+      regRetail: numOrNull(get('regRetail')),
+      edlpRetail: numOrNull(get('edlpRetail')),
+      adRetail: numOrNull(get('adRetail')),
+    };
+    // A real line needs a UPC, or failing that a description WITH at least one
+    // figure beside it. Without the second half, footer text that happens to
+    // sit under the description column ("OAHU - HAWKEN GROUP", the island
+    // distributor list) gets read in as though it were a product.
+    const hasFigures = [rec.scan, rec.caseCost, rec.unitCost, rec.adRetail, rec.regRetail, rec.netUnit]
+      .some(v => v != null);
+    // A UPC has to actually look like one: these forms put other numbers in
+    // nearby cells (a phone number lands in the UPC column on the Times
+    // footer), and any digits at all would otherwise pass as a product.
+    const looksLikeUpc = digitsOnly(rec.upc).length >= 11;
+    // Likewise a description has to read like a name -- the fees rows carry a
+    // bare 0 in that column.
+    const looksLikeName = /[a-z]/i.test(rec.description);
+    if (!looksLikeUpc && !(looksLikeName && hasFigures)) continue;
+    if (isTemplateSampleRow(rec)) continue;
+    out.push(rec);
+  }
+  return out.length ? { rows: out, label: fmt.label } : null;
+}
+
+// Pull the promo window out of the surrounding form. Both sheets label their
+// dates rather than putting them anywhere fixed, so this scans for the label
+// and takes the nearest date to its right or below.
+function findSheetDates(rows) {
+  const asISO = v => {
+    if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+    const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[0];
+    const us = String(v || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (us) {
+      const yr = us[3].length === 2 ? `20${us[3]}` : us[3];
+      return `${yr}-${String(us[1]).padStart(2, '0')}-${String(us[2]).padStart(2, '0')}`;
+    }
+    return null;
+  };
+  const near = (r, c) => {
+    for (let cc = c + 1; cc < c + 8; cc++) {
+      const iso = asISO((rows[r] || [])[cc]);
+      if (iso) return iso;
+    }
+    for (let rr = r + 1; rr < r + 4; rr++) {
+      for (let cc = c; cc < c + 8; cc++) {
+        const iso = asISO((rows[rr] || [])[cc]);
+        if (iso) return iso;
+      }
+    }
+    return null;
+  };
+  let start = null, end = null;
+  for (let r = 0; r < rows.length; r++) {
+    (rows[r] || []).forEach((cell, c) => {
+      const t = String(cell == null ? '' : cell).trim().toLowerCase().replace(/:$/, '');
+      if (!start && (t === 'start date' || t === 'begin')) start = near(r, c);
+      if (!end && (t === 'end date' || t === 'end')) end = near(r, c);
+    });
+    if (start && end) break;
+  }
+  return { startDate: start, endDate: end };
+}
+
+// Parse a deal sheet and match every line back to one of our items by UPC,
+// falling back to an exact description match. Returns everything the preview
+// needs, including the lines that couldn't be matched -- those are worth
+// showing rather than silently dropping.
+async function parseDealSheet(file, items) {
+  const XLSX = await import('xlsx');
+  const buf = await file.arrayBuffer();
+  // cellDates so the sheets' allowance/ad dates arrive as real Dates rather
+  // than Excel serial numbers, which no amount of string parsing recovers.
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+
+  let parsed = null, allRows = null, otherSheets = [];
+  // A workbook can hold several usable tabs -- the Times form ships EDLP and
+  // AD PROMO side by side. Collect every one that parses and prefer the ad /
+  // promo tab, since that's what a promo import is for; the rest are reported
+  // so the preview can say what else was in the file.
+  const candidates = [];
+  for (const name of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows: false, defval: '' });
+    for (const key of Object.keys(DEAL_SHEET_FORMATS)) {
+      const got = parseDealSheetRows(rows, key);
+      if (got) { candidates.push({ ...got, sheetName: name, format: key, allRows }); candidates[candidates.length - 1].allRows = rows; break; }
+    }
+  }
+  if (candidates.length) {
+    const adTab = candidates.find(c => /\bad\b|promo/i.test(c.sheetName));
+    const chosen = adTab || candidates[0];
+    parsed = chosen;
+    allRows = chosen.allRows;
+    otherSheets = candidates.filter(c => c !== chosen).map(c => c.sheetName);
+  }
+  if (!parsed) {
+    throw new Error("This doesn't look like a TPR or ad promo sheet — no item grid with a UPC and a per-unit scan column was found.");
+  }
+
+  // UPC index over our own catalogue.
+  const byUpc = new Map();
+  const byName = new Map();
+  for (const it of items) {
+    for (const u of parseUpcList(it.upc)) {
+      const d = digitsOnly(u);
+      if (d) byUpc.set(d, it);
+      // also index without the leading/check digits, which retailers vary on
+      if (d.length === 12) byUpc.set(d.slice(0, 11), it);
+      if (d.length === 11) byUpc.set(d + '0', it);
+    }
+    byName.set(String(it.name || '').trim().toLowerCase(), it);
+  }
+
+  const matched = [], unmatched = [];
+  for (const r of parsed.rows) {
+    const d = digitsOnly(r.upc);
+    let item = byUpc.get(d) || (d.length === 12 ? byUpc.get(d.slice(0, 11)) : null) || null;
+    if (!item) item = byName.get(r.description.toLowerCase()) || null;
+    if (item) matched.push({ ...r, itemId: item.id, itemName: item.name });
+    else unmatched.push(r);
+  }
+
+  const dates = findSheetDates(allRows);
+  // One scan and one ad retail per promo: take the most common non-empty value
+  // across the lines, and say so when they aren't all the same.
+  const commonest = (vals) => {
+    const counts = new Map();
+    for (const v of vals) if (v != null) counts.set(v, (counts.get(v) || 0) + 1);
+    let best = null, bestN = 0;
+    for (const [v, n] of counts) if (n > bestN) { best = v; bestN = n; }
+    return { value: best, varied: counts.size > 1 };
+  };
+  const scan = commonest(parsed.rows.map(r => r.scan));
+  const ad = commonest(parsed.rows.map(r => r.adRetail));
+
+  return {
+    format: parsed.format,
+    formatLabel: parsed.label,
+    sheetName: parsed.sheetName,
+    matched,
+    unmatched,
+    scan: scan.value,
+    scanVaried: scan.varied,
+    adRetail: ad.value,
+    adRetailVaried: ad.varied,
+    startDate: dates.startDate,
+    endDate: dates.endDate,
+    otherSheets,
+  };
+}
+
 // Parse an uploaded .xlsx into an ordered SKU list plus a match report.
 // Reads the first sheet, finds the header row containing an item-code column,
 // then reads codes top-to-bottom. Skips blank rows and repeated header rows.
@@ -13475,6 +13725,7 @@ function customerGroupsFor(customers) {
   const groups = [
     { label: 'Times', ids: customers.filter(c => c.name.startsWith('Times ')).map(c => c.id) },
     { label: 'DQ', ids: customers.filter(c => c.name.startsWith('Don Quijote')).map(c => c.id) },
+    { label: 'Longs', ids: customers.filter(c => /^LD\s*\d/i.test(c.name)).map(c => c.id) },
   ];
   return groups.filter(g => g.ids.length > 0);
 }
@@ -13504,21 +13755,152 @@ function promoStatus(p) {
   return 'active';
 }
 
-function PromoEditModal({ promo, items, customers, onClose, onSaved }) {
+// Preview what a retailer deal sheet contains before anything is recorded.
+// Matching is by UPC, so a line that doesn't correspond to an item we carry is
+// shown rather than dropped -- usually it means the UPC needs adding to that
+// item, and silently importing a short promo would be worse than saying so.
+function PromoImportModal({ items, onClose, onUse }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [result, setResult] = useState(null);
+  const [fileName, setFileName] = useState('');
+
+  async function onPick(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setBusy(true); setErr(''); setResult(null); setFileName(file.name);
+    try {
+      setResult(await parseDealSheet(file, items));
+    } catch (ex) {
+      setErr(ex.message || 'Could not read that file.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const th = { textAlign: 'left', fontSize: 10.5, fontWeight: 700, color: '#8A8F87', padding: '0 10px 4px 0', whiteSpace: 'nowrap' };
+  const td = { padding: '3px 10px 3px 0', fontSize: 12.5, whiteSpace: 'nowrap' };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,31,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => !busy && onClose()}>
+      <div style={{ boxSizing: 'border-box', background: '#F7F8F4', borderRadius: 16, padding: 26, width: 900, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 16px 50px rgba(20,24,31,0.3)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ fontSize: 19, fontWeight: 800, color: '#14181F' }}>Import a deal sheet</div>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', color: '#8A8F87' }} onClick={onClose} title="Close"><X size={18} /></button>
+        </div>
+
+        <div style={{ fontSize: 13, color: '#5B6058', marginBottom: 14 }}>
+          Reads a filled-in Times / Don Quijote or Longs TPR / ad promo sheet and turns it into a promo. Nothing is saved until you review it on the next screen.
+        </div>
+
+        <label style={{ ...officeStyles.smallBtn, display: 'inline-block', cursor: busy ? 'default' : 'pointer', padding: '10px 16px' }}>
+          {busy ? 'Reading…' : (fileName ? 'Choose a different file' : 'Choose a sheet…')}
+          <input type="file" accept=".xlsx,.xlsm,.xls" onChange={onPick} disabled={busy} style={{ display: 'none' }} />
+        </label>
+        {fileName && <span style={{ marginLeft: 10, fontSize: 12.5, color: '#5B6058' }}>{fileName}</span>}
+
+        {err && <div style={{ color: '#B5493B', fontSize: 13, marginTop: 14 }}>{err}</div>}
+
+        {result && (
+          <div style={{ marginTop: 18 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, fontSize: 13, marginBottom: 14, padding: '10px 12px', background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8 }}>
+              <span><strong>{result.formatLabel}</strong> form</span>
+              <span style={{ color: '#5B6058' }}>tab: {result.sheetName}</span>
+              <span style={{ color: '#5B6058' }}>scan: {result.scan != null ? formatMoney(result.scan) + '/each' : '—'}{result.scanVaried ? ' (varies by line)' : ''}</span>
+              <span style={{ color: '#5B6058' }}>ad retail: {result.adRetail != null ? formatMoney(result.adRetail) : '—'}{result.adRetailVaried ? ' (varies by line)' : ''}</span>
+              <span style={{ color: '#5B6058' }}>dates: {result.startDate || '—'} → {result.endDate || '—'}</span>
+            </div>
+            {result.otherSheets.length > 0 && (
+              <div style={{ fontSize: 12, color: '#8A6D1B', marginBottom: 12 }}>
+                This file also has {result.otherSheets.join(', ')} — only {result.sheetName} was read.
+              </div>
+            )}
+
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', marginBottom: 6 }}>
+              {result.matched.length} MATCHED TO OUR ITEMS
+            </div>
+            {result.matched.length > 0 && (
+              <table style={{ borderCollapse: 'collapse', marginBottom: 16 }}>
+                <thead><tr>
+                  <th style={th}>Item</th><th style={th}>UPC</th><th style={{ ...th, textAlign: 'right' }}>Case cost</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Scan</th><th style={{ ...th, textAlign: 'right' }}>Net unit</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Reg retail</th><th style={{ ...th, textAlign: 'right' }}>Ad retail</th>
+                </tr></thead>
+                <tbody>
+                  {result.matched.map((m, i) => (
+                    <tr key={i}>
+                      <td style={td}>{m.itemName}</td>
+                      <td style={{ ...td, color: '#8A8F87' }}>{m.upc}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{m.caseCost != null ? formatMoney(m.caseCost) : '—'}</td>
+                      <td style={{ ...td, textAlign: 'right', color: '#B5493B' }}>{m.scan != null ? '-' + formatMoney(m.scan) : '—'}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{m.netUnit != null ? formatMoney(m.netUnit) : '—'}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{m.regRetail != null ? formatMoney(m.regRetail) : '—'}</td>
+                      <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{m.adRetail != null ? formatMoney(m.adRetail) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {result.unmatched.length > 0 && (
+              <>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: '#8A6D1B', marginBottom: 6 }}>
+                  {result.unmatched.length} NOT MATCHED — no item of ours carries these UPCs
+                </div>
+                <div style={{ fontSize: 12, color: '#5B6058', marginBottom: 6 }}>
+                  These lines are left out of the promo. To include one, add its UPC to the matching item first.
+                </div>
+                <table style={{ borderCollapse: 'collapse', marginBottom: 16 }}>
+                  <thead><tr><th style={th}>Description</th><th style={th}>UPC</th><th style={{ ...th, textAlign: 'right' }}>Scan</th><th style={{ ...th, textAlign: 'right' }}>Ad retail</th></tr></thead>
+                  <tbody>
+                    {result.unmatched.map((u, i) => (
+                      <tr key={i}>
+                        <td style={td}>{u.description || <span style={{ color: '#B9BDB2' }}>—</span>}</td>
+                        <td style={{ ...td, color: '#8A8F87' }}>{u.upc}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>{u.scan != null ? formatMoney(u.scan) : '—'}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>{u.adRetail != null ? formatMoney(u.adRetail) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid #E3E1D6', paddingTop: 16, marginTop: 6 }}>
+          <button style={{ ...officeStyles.smallBtn, padding: '10px 18px' }} onClick={onClose} disabled={busy}>Cancel</button>
+          <button
+            style={{ ...officeStyles.primarySmallBtn, padding: '10px 18px', opacity: (result && result.matched.length) ? 1 : 0.5 }}
+            disabled={!result || result.matched.length === 0}
+            onClick={() => onUse(result, fileName)}
+          >
+            Continue with {result ? result.matched.length : 0} item{result && result.matched.length === 1 ? '' : 's'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PromoEditModal({ promo, items, customers, onClose, onSaved, draft = null }) {
   const isEdit = !!promo;
-  const [name, setName] = useState(promo ? promo.name : '');
-  const [itemIds, setItemIds] = useState(promo ? promo.items.map(i => i.id) : []);
-  const [allCustomers, setAllCustomers] = useState(promo ? promo.appliesToAllCustomers : false);
-  const [customerIds, setCustomerIds] = useState(promo ? promo.customers.map(c => c.id) : []);
-  const [amountType, setAmountType] = useState(promo ? promo.amountType : 'flat_per_each');
-  const [amount, setAmount] = useState(promo ? String(promo.amount) : '');
+  // `draft` seeds a NEW promo from an imported deal sheet. Kept separate from
+  // `promo` so importing never looks like editing an existing record.
+  const seed = promo || draft || null;
+  const [name, setName] = useState(seed ? (seed.name || '') : '');
+  const [itemIds, setItemIds] = useState(seed && seed.items ? seed.items.map(i => i.id) : []);
+  const [allCustomers, setAllCustomers] = useState(seed ? !!seed.appliesToAllCustomers : false);
+  const [customerIds, setCustomerIds] = useState(seed && seed.customers ? seed.customers.map(c => c.id) : []);
+  const [amountType, setAmountType] = useState(seed && seed.amountType ? seed.amountType : 'flat_per_each');
+  const [amount, setAmount] = useState(seed && seed.amount != null ? String(seed.amount) : '');
   // What the promo is actually advertised at. A decision, not a calculation --
   // stores routinely advertise a round number that isn't exactly regular
   // retail minus the scan, so it's captured rather than derived.
-  const [adRetail, setAdRetail] = useState(promo && promo.adRetail != null ? String(promo.adRetail) : '');
-  const [startDate, setStartDate] = useState(promo ? promo.startDate : todayISODate());
-  const [endDate, setEndDate] = useState(promo ? promo.endDate : todayISODate());
-  const [notes, setNotes] = useState(promo ? (promo.notes || '') : '');
+  const [adRetail, setAdRetail] = useState(seed && seed.adRetail != null ? String(seed.adRetail) : '');
+  const [startDate, setStartDate] = useState(seed && seed.startDate ? seed.startDate : todayISODate());
+  const [endDate, setEndDate] = useState(seed && seed.endDate ? seed.endDate : todayISODate());
+  const [notes, setNotes] = useState(seed ? (seed.notes || '') : '');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
@@ -13914,6 +14296,8 @@ function OfficePromos({ items, customers }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [editModal, setEditModal] = useState(null); // null = closed, {} = new, {...promo} = editing
+  const [importOpen, setImportOpen] = useState(false);
+  const [importDraft, setImportDraft] = useState(null); // parsed sheet -> seeds a new promo
   const [deleteBusyId, setDeleteBusyId] = useState(null);
   const [expandedId, setExpandedId] = useState(null); // promo id showing its per-item cost/retail breakdown
   const custGroups = useMemo(() => customerGroupsFor(customers), [customers]);
@@ -13980,6 +14364,7 @@ function OfficePromos({ items, customers }) {
           <option value="upcoming">Upcoming</option>
           <option value="expired">Expired</option>
         </select>
+        <button style={officeStyles.smallBtn} onClick={() => setImportOpen(true)} title="Read a filled-in retailer TPR / ad promo sheet">Import sheet</button>
         <button style={officeStyles.primarySmallBtn} onClick={() => setEditModal({})}>+ New promo</button>
       </div>
 
@@ -14104,13 +14489,46 @@ function OfficePromos({ items, customers }) {
         </div>
       )}
 
+      {importOpen && (
+        <PromoImportModal
+          items={items}
+          onClose={() => setImportOpen(false)}
+          onUse={(res, fileName) => {
+            // Hand the parsed sheet to the normal editor rather than saving it
+            // here, so an import goes through exactly the same review and
+            // validation as a promo typed by hand.
+            const grp = customerGroupsFor(customers);
+            const pick = (label) => (grp.find(g => g.label === label) || { ids: [] }).ids;
+            // The form itself says who it's for, so preselect those stores.
+            const custIds = res.format === 'timesdq'
+              ? [...pick('Times'), ...pick('DQ')]
+              : pick('Longs');
+            setImportDraft({
+              name: (fileName || '').replace(/\.[^.]+$/, '') || 'Imported promo',
+              items: res.matched.map(m => ({ id: m.itemId })),
+              appliesToAllCustomers: false,
+              customers: custIds.map(id => ({ id })),
+              amountType: 'flat_per_each',
+              amount: res.scan,
+              adRetail: res.adRetail,
+              startDate: res.startDate,
+              endDate: res.endDate,
+              notes: `Imported from ${fileName} (${res.formatLabel} — ${res.sheetName})`,
+            });
+            setImportOpen(false);
+            setEditModal({});
+          }}
+        />
+      )}
+
       {editModal && (
         <PromoEditModal
           promo={editModal.id ? editModal : null}
+          draft={editModal.id ? null : importDraft}
           items={items}
           customers={customers}
-          onClose={() => setEditModal(null)}
-          onSaved={load}
+          onClose={() => { setEditModal(null); setImportDraft(null); }}
+          onSaved={async () => { setImportDraft(null); await load(); }}
         />
       )}
     </div>
