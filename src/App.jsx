@@ -575,7 +575,26 @@ async function parseDealSheet(file, items) {
     return { value: best, varied: counts.size > 1 };
   };
   const scan = commonest(parsed.rows.map(r => r.scan));
-  const ad = commonest(parsed.rows.map(r => r.adRetail));
+  // Which kind of deal this is. The Times workbook says so with its tab name
+  // (EDLP vs AD PROMO); the Longs form has an explicit AD/TPR field. Anything
+  // unrecognised stays TPR, the ordinary case.
+  let promoType = 'TPR';
+  if (parsed.format === 'timesdq') {
+    if (/edlp/i.test(parsed.sheetName)) promoType = 'EDLP';
+    else if (/\bad\b|promo/i.test(parsed.sheetName)) promoType = 'AD';
+  } else {
+    for (const row of allRows) {
+      const i = (row || []).findIndex(c => String(c == null ? '' : c).trim().toLowerCase().replace(/:$/, '') === 'ad/tpr');
+      if (i >= 0) {
+        const v = String((row.slice(i + 1).find(x => String(x || '').trim()) || '')).trim().toUpperCase();
+        if (v === 'AD' || v === 'TPR' || v === 'EDLP') promoType = v;
+        break;
+      }
+    }
+  }
+  // An EDLP deal's retail lives in its own column on the Times form, so take
+  // that rather than the ad retail beside it.
+  const ad = commonest(parsed.rows.map(r => (promoType === 'EDLP' && r.edlpRetail != null) ? r.edlpRetail : r.adRetail));
 
   return {
     format: parsed.format,
@@ -587,6 +606,7 @@ async function parseDealSheet(file, items) {
     scanVaried: scan.varied,
     adRetail: ad.value,
     adRetailVaried: ad.varied,
+    promoType,
     startDate: dates.startDate,
     endDate: dates.endDate,
     otherSheets,
@@ -13748,6 +13768,14 @@ function summarizeCustomers(promoCustomers, groups) {
   return labels;
 }
 
+// The three kinds of deal, matching what the retailers' own sheets ask for.
+const PROMO_TYPES = ['EDLP', 'TPR', 'AD'];
+const PROMO_TYPE_HINTS = {
+  EDLP: 'Everyday low price — an ongoing price reduction, not a limited-time event',
+  TPR: 'Temporary price reduction — a scan for a set window, no ad placement',
+  AD: 'Ad pricing — runs with an advertised feature',
+};
+
 function promoStatus(p) {
   const today = todayISODate();
   if (p.endDate < today) return 'expired';
@@ -13805,6 +13833,7 @@ function PromoImportModal({ items, onClose, onUse }) {
           <div style={{ marginTop: 18 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, fontSize: 13, marginBottom: 14, padding: '10px 12px', background: '#FBFAF6', border: '1px solid #E3E1D6', borderRadius: 8 }}>
               <span><strong>{result.formatLabel}</strong> form</span>
+              <span style={{ color: '#5B6058' }}>type: <strong>{result.promoType}</strong></span>
               <span style={{ color: '#5B6058' }}>tab: {result.sheetName}</span>
               <span style={{ color: '#5B6058' }}>scan: {result.scan != null ? formatMoney(result.scan) + '/each' : '—'}{result.scanVaried ? ' (varies by line)' : ''}</span>
               <span style={{ color: '#5B6058' }}>ad retail: {result.adRetail != null ? formatMoney(result.adRetail) : '—'}{result.adRetailVaried ? ' (varies by line)' : ''}</span>
@@ -13892,6 +13921,8 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved, draft = nul
   const [itemIds, setItemIds] = useState(seed && seed.items ? seed.items.map(i => i.id) : []);
   const [allCustomers, setAllCustomers] = useState(seed ? !!seed.appliesToAllCustomers : false);
   const [customerIds, setCustomerIds] = useState(seed && seed.customers ? seed.customers.map(c => c.id) : []);
+  // EDLP / TPR / AD -- the retailers' own forms draw the same distinction.
+  const [promoType, setPromoType] = useState(seed && seed.promoType ? seed.promoType : 'TPR');
   const [amountType, setAmountType] = useState(seed && seed.amountType ? seed.amountType : 'flat_per_each');
   const [amount, setAmount] = useState(seed && seed.amount != null ? String(seed.amount) : '');
   // What the promo is actually advertised at. A decision, not a calculation --
@@ -13979,7 +14010,7 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved, draft = nul
     setSaving(true);
     try {
       const body = {
-        name: name.trim(), itemIds, appliesToAllCustomers: allCustomers, customerIds,
+        name: name.trim(), promoType, itemIds, appliesToAllCustomers: allCustomers, customerIds,
         amountType, amount: Number(amount), adRetail: adRetail.trim() === '' ? null : Number(adRetail),
         startDate, endDate, notes: notes.trim() || null,
         createdBy: getSubmitterName() || undefined,
@@ -14005,8 +14036,33 @@ function PromoEditModal({ promo, items, customers, onClose, onSaved, draft = nul
           </button>
         </div>
 
-        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>NAME</label>
-        <input style={{ boxSizing: 'border-box', width: '100%', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14.5, fontFamily: 'inherit', marginBottom: 20 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Halloween scan-back, Storck" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 16, marginBottom: 20, alignItems: 'end' }}>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>NAME</label>
+            <input style={{ boxSizing: 'border-box', width: '100%', padding: '10px 12px', border: '1px solid #D6D3C6', borderRadius: 8, fontSize: 14.5, fontFamily: 'inherit' }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Halloween scan-back, Storck" />
+          </div>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 700, color: '#8A8F87', display: 'block', marginBottom: 5 }}>TYPE</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {PROMO_TYPES.map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  style={{
+                    flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                    ...(promoType === t
+                      ? { background: '#2B5D50', border: '1px solid #2B5D50', color: '#F7F8F4' }
+                      : { background: '#FFFFFF', border: '1px solid #D6D3C6', color: '#5B6058' }),
+                  }}
+                  onClick={() => setPromoType(t)}
+                  title={PROMO_TYPE_HINTS[t]}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 20 }}>
           <div>
@@ -14295,6 +14351,7 @@ function OfficePromos({ items, customers }) {
   const [err, setErr] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [editModal, setEditModal] = useState(null); // null = closed, {} = new, {...promo} = editing
   const [importOpen, setImportOpen] = useState(false);
   const [importDraft, setImportDraft] = useState(null); // parsed sheet -> seeds a new promo
@@ -14331,12 +14388,13 @@ function OfficePromos({ items, customers }) {
     const q = query.trim().toLowerCase();
     return promos.filter(p => {
       if (statusFilter !== 'all' && promoStatus(p) !== statusFilter) return false;
+      if (typeFilter !== 'all' && (p.promoType || 'TPR') !== typeFilter) return false;
       if (q && !p.name.toLowerCase().includes(q) &&
           !p.items.some(i => i.name.toLowerCase().includes(q)) &&
           !p.customers.some(c => c.name.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [promos, query, statusFilter]);
+  }, [promos, query, statusFilter, typeFilter]);
 
   async function handleDelete(p) {
     if (!window.confirm(`Delete "${p.name}"? This can't be undone.`)) return;
@@ -14358,6 +14416,10 @@ function OfficePromos({ items, customers }) {
       <div style={officeStyles.sectionHeader}>
         <div style={officeStyles.sectionTitle}>Promos</div>
         <input style={officeStyles.search} placeholder="Search by name, item, or customer…" value={query} onChange={e => setQuery(e.target.value)} />
+        <select style={{ padding: '8px 10px', border: '1px solid #E3E1D6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+          <option value="all">All types</option>
+          {PROMO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
         <select style={{ padding: '8px 10px', border: '1px solid #E3E1D6', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="active">Active</option>
@@ -14377,6 +14439,7 @@ function OfficePromos({ items, customers }) {
             <thead>
               <tr>
                 <th style={{ ...officeStyles.th, position: 'static' }}>Name</th>
+                <th style={{ ...officeStyles.th, position: 'static' }}>Type</th>
                 <th style={{ ...officeStyles.th, position: 'static' }}>Items</th>
                 <th style={{ ...officeStyles.th, position: 'static' }}>Customers</th>
                 <th style={{ ...officeStyles.th, position: 'static', textAlign: 'right' }}>Amount</th>
@@ -14395,6 +14458,14 @@ function OfficePromos({ items, customers }) {
                 <React.Fragment key={p.id}>
                 <tr>
                   <td style={{ ...officeStyles.td, fontWeight: 700 }}>{p.name}{p.notes ? <div style={{ fontWeight: 400, fontSize: 11.5, color: '#8A8F87', marginTop: 2 }}>{p.notes}</div> : null}</td>
+                  <td style={officeStyles.td}>
+                    <span style={{
+                      display: 'inline-block', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '2px 9px',
+                      ...(p.promoType === 'AD' ? { color: '#8A4B1B', background: '#F7E6D6', border: '1px solid #E2C3A3' }
+                        : p.promoType === 'EDLP' ? { color: '#2B5D50', background: '#E3EFE9', border: '1px solid #C4DDD2' }
+                        : { color: '#5B6058', background: '#EFEDE3', border: '1px solid #DAD7C8' }),
+                    }} title={PROMO_TYPE_HINTS[p.promoType] || ''}>{p.promoType || 'TPR'}</span>
+                  </td>
                   <td style={officeStyles.td}>
                     {canExpand ? (
                       <button
@@ -14420,7 +14491,7 @@ function OfficePromos({ items, customers }) {
                 </tr>
                 {canExpand && isOpen && (
                   <tr>
-                    <td colSpan={9} style={{ ...officeStyles.td, background: '#FBFAF6', padding: '10px 14px' }}>
+                    <td colSpan={10} style={{ ...officeStyles.td, background: '#FBFAF6', padding: '10px 14px' }}>
                       {(() => {
                         const th = { color: '#8A8F87', fontWeight: 700, fontSize: 11, padding: '2px 10px 5px 0', whiteSpace: 'nowrap' };
                         const thR = { ...th, textAlign: 'right' };
@@ -14482,7 +14553,7 @@ function OfficePromos({ items, customers }) {
                 );
               })}
               {shown.length === 0 && (
-                <tr><td colSpan={9} style={{ ...officeStyles.td, textAlign: 'center', color: '#8A8F87' }}>{promos.length === 0 ? 'No promos yet — add one to get started.' : 'No promos match your filters.'}</td></tr>
+                <tr><td colSpan={10} style={{ ...officeStyles.td, textAlign: 'center', color: '#8A8F87' }}>{promos.length === 0 ? 'No promos yet — add one to get started.' : 'No promos match your filters.'}</td></tr>
               )}
             </tbody>
           </table>
@@ -14508,6 +14579,7 @@ function OfficePromos({ items, customers }) {
               items: res.matched.map(m => ({ id: m.itemId })),
               appliesToAllCustomers: false,
               customers: custIds.map(id => ({ id })),
+              promoType: res.promoType,
               amountType: 'flat_per_each',
               amount: res.scan,
               adRetail: res.adRetail,
