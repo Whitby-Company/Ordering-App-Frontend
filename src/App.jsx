@@ -6558,7 +6558,13 @@ function parseWhitbyPO(text) {
   // silently discarding its quantity. With the alternative in place, every
   // line -- MP or normal -- has a nearby, valid stopping point right after
   // its own price, so no line can bleed into the next one.
-  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z][0-9A-Za-z*.\-\/]{1,14})\s+(\d+(?:\/[\d.]+)+\s?[a-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+(?:([\d,]+\.\d{2})|\*+\s*MP\s*\*+)(?=\s|$)/g;
+  // The pack column also carries RANGES, e.g. an assorted shipper's
+  // "48/7.4-14.1oz". The hyphen has to be part of the pack token: without it
+  // the group stops after "48/7.4", the next character is "-" rather than the
+  // whitespace the pattern needs, and the whole line fails to match. Every
+  // such line was then silently skipped -- a three-line PO of assorted
+  // shippers imported as one line, the plain-pack one at the bottom.
+  const lineRe = /(?:^|\s)(\d{1,4})\s+([0-9A-Za-z][0-9A-Za-z*.\-\/]{1,14})\s+(\d+\/[\d.]+(?:[-\/][\d.]+)*\s?[A-Za-z]*\.?)\s+(.+?)\s+([\d,]+\.\d{2})\s+(?:([\d,]+\.\d{2})|\*+\s*MP\s*\*+)(?=\s|$)/g;
   let m;
   while ((m = lineRe.exec(flat)) !== null) {
     const [, qty, code, pack, desc, price] = m;
